@@ -27,5 +27,6 @@ Below is a table of external projects similar to Yesterdays.
 | [PhillyHistory](https://www.phillyhistory.org) | unknown | A photograph exploration platform from the City of Philadelphia, including advanced search options with a map of results. |
 | [Route 66 Postcard Map](https://experience.arcgis.com/experience/9aef92b9a3c649339c4a227f88d27da2/) | proprietary | A visualization of Route 66 postcards created by the National Trust for Historic Preservation, using ArcGIS StoryMaps. |
 | [SepiaTown](https://www.sepiatown.com) | unknown | A platform for users to upload and georeference photos, presented on a slippy map. |
+| [Smapshot](https://smapshot.heig-vd.ch/) | see description | Featureful platform based in Switzerland. Includes a slippy map and advanced georeferencing tools. API code [is published](https://smapshot.heig-vd.ch/) under a BSD 3-Clause license, frontend code unknown. |
 | [Urban Archive](https://urbanarchive.org) | unknown | A platform for exploring historic photos of various cities, with specific institutional partners and an interactive slippy map of addresses and points of interest. |
 | [Vintage Greece](https://www.vintage-greece.gr/) | unknown | An interactive map of historical photos in Greece, with categorical filters. |
