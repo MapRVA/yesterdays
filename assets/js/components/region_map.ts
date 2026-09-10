@@ -203,7 +203,10 @@ export function initRegionMap({
       // Offset past the circle's 24px radius so the popup doesn't sit
       // on top of the photo.
       .setPopup(
-        new maplibregl.Popup({ offset: 28 }).setDOMContent(
+        new maplibregl.Popup({
+          offset: 28,
+          className: "region-map-popup",
+        }).setDOMContent(
           buildPinPopup(region, onSelect),
         ),
       )

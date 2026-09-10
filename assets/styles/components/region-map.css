@@ -76,3 +76,37 @@
     border-color: var(--bs-primary);
     transform: scale(1.12);
 }
+
+/* MapLibre supplies a white popup surface and tip itself. Scope the colour
+   overrides to the region picker so its previews follow the site's dark
+   scheme without changing the other map popups. */
+@media (prefers-color-scheme: dark) {
+    .region-map-popup .maplibregl-popup-content {
+        background-color: var(--bs-body-bg);
+        color: var(--bs-body-color);
+    }
+
+    .region-map-popup.maplibregl-popup-anchor-top .maplibregl-popup-tip {
+        border-bottom-color: var(--bs-body-bg);
+    }
+
+    .region-map-popup.maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+        border-top-color: var(--bs-body-bg);
+    }
+
+    .region-map-popup.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+        border-right-color: var(--bs-body-bg);
+    }
+
+    .region-map-popup.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+        border-left-color: var(--bs-body-bg);
+    }
+
+    .region-map-popup .maplibregl-popup-close-button {
+        color: var(--bs-body-color);
+    }
+
+    .region-map-popup .maplibregl-popup-close-button:hover {
+        background-color: var(--bs-secondary-bg);
+    }
+}
