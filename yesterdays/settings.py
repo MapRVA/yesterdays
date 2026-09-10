@@ -574,6 +574,47 @@ ACTIVITY_SITEWIDE_MILESTONE_THRESHOLDS = [
     20000,
 ]
 
+# ---------------------------------------------------------------------------
+# Community write endpoints
+# ---------------------------------------------------------------------------
+# Input limits applied by images.validation to every session-authenticated
+# mutation endpoint (georeferences, validations, comments, ratings, skips,
+# subject tagging, album membership). They bound what a single request can
+# cost us, so they are deliberately generous for humans and tight for scripts.
+
+# Maximum accepted request body, in bytes, for JSON mutation endpoints. Read
+# before json.loads so an oversized body is rejected without being parsed.
+COMMUNITY_WRITE_MAX_BODY_BYTES = int(
+    os.getenv("COMMUNITY_WRITE_MAX_BODY_BYTES", str(64 * 1024))
+)
+# Polygon submissions carry a whole ring of coordinates, so they get their own,
+# larger body budget.
+POLYGON_MAX_BODY_BYTES = int(os.getenv("POLYGON_MAX_BODY_BYTES", str(256 * 1024)))
+
+# Maximum lengths for free-text fields written by community endpoints.
+COMMENT_MAX_LENGTH = int(os.getenv("COMMENT_MAX_LENGTH", "10000"))
+GEOREFERENCE_NOTES_MAX_LENGTH = int(os.getenv("GEOREFERENCE_NOTES_MAX_LENGTH", "2000"))
+VALIDATION_NOTES_MAX_LENGTH = int(os.getenv("VALIDATION_NOTES_MAX_LENGTH", "2000"))
+SKIP_REASON_MAX_LENGTH = int(os.getenv("SKIP_REASON_MAX_LENGTH", "500"))
+
+# Album metadata. The title cap matches Album.title's max_length so the API and
+# the HTML edit form agree.
+ALBUM_TITLE_MAX_LENGTH = int(os.getenv("ALBUM_TITLE_MAX_LENGTH", "500"))
+ALBUM_DESCRIPTION_MAX_LENGTH = int(os.getenv("ALBUM_DESCRIPTION_MAX_LENGTH", "10000"))
+
+# Maximum number of image IDs accepted by a single bulk request.
+BULK_MAX_IMAGE_IDS = int(os.getenv("BULK_MAX_IMAGE_IDS", "500"))
+
+# Polygon georeference geometry limits, checked structurally on the GeoJSON
+# before any GEOS parsing or database work happens.
+POLYGON_MAX_RINGS = int(os.getenv("POLYGON_MAX_RINGS", "16"))
+POLYGON_MAX_VERTICES_PER_RING = int(os.getenv("POLYGON_MAX_VERTICES_PER_RING", "2000"))
+POLYGON_MAX_TOTAL_VERTICES = int(os.getenv("POLYGON_MAX_TOTAL_VERTICES", "4000"))
+# Area ceiling in square degrees. An aerial photograph covers a neighbourhood,
+# not a continent; 0.25 sq deg is roughly a 55 km by 43 km box at this
+# latitude, which is far larger than any legitimate submission.
+POLYGON_MAX_AREA_SQ_DEGREES = float(os.getenv("POLYGON_MAX_AREA_SQ_DEGREES", "0.25"))
+
 # Django REST Framework
 REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "api.pagination.DefaultPagination",

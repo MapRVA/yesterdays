@@ -4,12 +4,20 @@ The browse page renders ``Subject.representative_image`` directly via
 ``select_related``, so every Subject with mapped images must have a non-null
 value. These handlers keep that invariant without touching the explicit
 admin/user override.
+
+Election is restricted to ``images.policies.representable_images()``: the
+chosen image is published on a public subject page, so tagging an image staged
+in a private source or collection must not promote it into public view. That is
+the same invariant ``subjects.views.set_representative_image`` enforces for the
+explicit choice; a Subject whose only mapped images are private simply keeps a
+null representative rather than leaking one.
 """
 
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
 from images.models import SubjectMapping, TopRatedImageView
+from images.policies import representable_images
 
 
 @receiver(post_save, sender=SubjectMapping)
@@ -23,6 +31,9 @@ def _set_representative_on_new_mapping(sender, instance, created, **kwargs):
         return
 
     from .models import Subject
+
+    if not representable_images().filter(pk=instance.image_id).exists():
+        return
 
     Subject.objects.filter(
         pk=instance.subject_id,
@@ -53,9 +64,10 @@ def _reelect_representative_on_mapping_delete(sender, instance, **kwargs):
         return
 
     remaining_image_ids = (
-        SubjectMapping.objects.filter(subject_id=instance.subject_id)
-        .order_by("image_id")
-        .values_list("image_id", flat=True)
+        representable_images()
+        .filter(subject_mappings__subject_id=instance.subject_id)
+        .order_by("id")
+        .values_list("id", flat=True)
     )
 
     top_rated = (

@@ -1,11 +1,12 @@
 import json
+import logging
 
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
-from django.contrib.gis.geos import GEOSGeometry, Point
+from django.contrib.gis.geos import Point
 from django.db import IntegrityError, models, transaction
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, render
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from osm_auth.models import UserPreferences
@@ -20,6 +21,37 @@ from ..models import (
     GeoreferenceValidation,
     Image,
     Source,
+)
+from ..policies import (
+    editable_images_for,
+    georeferenceable_images_for,
+    get_image_or_404,
+)
+from ..validation import (
+    WGS84_SRID,
+    InvalidInput,
+    build_polygon,
+    parse_json_body,
+    validate_choice,
+    validate_direction,
+    validate_latitude,
+    validate_longitude,
+    validate_text,
+)
+
+logger = logging.getLogger(__name__)
+
+POINT_CONFIDENCE_LEVELS = [value for value, _ in Georeference.CONFIDENCE_CHOICES]
+POLYGON_CONFIDENCE_LEVELS = [
+    value for value, _ in AerialGeoreference.CONFIDENCE_CHOICES
+]
+VALIDATION_CHOICES = [
+    value for value, _ in GeoreferenceValidation.VALIDATION_CHOICES
+]
+
+ANONYMOUS_ALREADY_GEOREFERENCED = (
+    "This image has already been georeferenced. "
+    "Please login to submit a correction."
 )
 
 
@@ -52,11 +84,11 @@ def georeference_interface(request):
             if not request.user.is_staff:
                 query_params["aerial"] = False
 
+            # query_params already excludes aerials for non-staff, so an
+            # aerial reaching a non-staff caller here is impossible. The old
+            # follow-up PermissionDenied check was dead code that would have
+            # raised NameError (the name is never imported) rather than a 403.
             current_image = Image.objects.get(**query_params)
-
-            # If image is aerial but user is not admin, raise 403 Forbidden
-            if current_image.aerial and not request.user.is_staff:
-                raise PermissionDenied("Only admins can georeference aerial images")
         except (Image.DoesNotExist, ValueError):
             # If specific image not found or invalid, fall back to random selection
             pass
@@ -261,147 +293,100 @@ def georeference_interface(request):
 
 
 @require_http_methods(["POST"])
-@csrf_exempt
 def georeference_image(request, image_id):
     """API endpoint to georeference an image"""
+    # Authorization runs first and outside every broad exception handler, so an
+    # image the caller may not georeference answers 404 exactly as a missing
+    # one does — no 400, no 500, and nothing that distinguishes "private" from
+    # "never existed".
+    policy = georeferenceable_images_for(request.user, aerial=False)
+    get_image_or_404(policy, image_id)
+
     try:
-        data = json.loads(request.body)
-        image = get_object_or_404(Image, id=image_id)
+        data = parse_json_body(request)
+        longitude = validate_longitude(data)
+        latitude = validate_latitude(data)
+        direction = validate_direction(data)
+        confidence = validate_choice(data, "confidence", POINT_CONFIDENCE_LEVELS)
+        notes = validate_text(
+            data, "notes", max_length=settings.GEOREFERENCE_NOTES_MAX_LENGTH
+        )
+        if confidence == "low" and not notes:
+            raise InvalidInput("Low confidence requires explanatory notes")
+    except InvalidInput as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
 
-        # Check if image is a duplicate
-        if image.duplicate_of:
-            return JsonResponse(
-                {
-                    "success": False,
-                    "error": "Cannot georeference duplicate images. This image is marked as a duplicate of another image.",
-                },
-                status=400,
-            )
+    try:
+        with transaction.atomic():
+            # Lock the image row for the whole decision. Anonymous callers may
+            # only place the *first* georeference on an image; without the lock
+            # two simultaneous anonymous requests both see an empty set and
+            # both write. Authenticated submissions take the same lock so one
+            # cannot slip between an anonymous check and its insert.
+            image = get_image_or_404(policy.select_for_update(of=("self",)), image_id)
 
-        # For anonymous users, check if they can still georeference
-        # For authenticated users, allow corrections (multiple submissions)
-        if not request.user.is_authenticated:
-            # Anonymous users can only georeference if no georeferences exist yet
-            if image.georeferences.exists():
+            if not request.user.is_authenticated and image.georeferences.exists():
                 return JsonResponse(
-                    {
-                        "success": False,
-                        "error": "This image has already been georeferenced. Please login to submit a correction.",
-                    },
-                    status=400,
-                )
-        # Note: Authenticated users can always submit (the unique constraint in the model
-        # prevents duplicate submissions by the same user, but we'll handle that gracefully)
-
-        # Validate required fields
-        required_fields = ["latitude", "longitude", "confidence"]
-        for field in required_fields:
-            if field not in data:
-                return JsonResponse(
-                    {"success": False, "error": f"Missing required field: {field}"},
+                    {"success": False, "error": ANONYMOUS_ALREADY_GEOREFERENCED},
                     status=400,
                 )
 
-        # Validate confidence level
-        valid_confidence_levels = ["low", "medium", "high"]
-        if data["confidence"] not in valid_confidence_levels:
-            return JsonResponse(
-                {"success": False, "error": "Invalid confidence level"},
-                status=400,
+            # Submissions are append-only. The model deliberately allows a user
+            # several georeferences per image so corrections keep the full
+            # history; there is nothing here to update in place.
+            georeference = Georeference.objects.create(
+                image=image,
+                point=Point(longitude, latitude, srid=WGS84_SRID),
+                direction=direction,
+                confidence=confidence,
+                georeferenced_by=(
+                    request.user if request.user.is_authenticated else None
+                ),
+                confidence_notes=notes,
             )
-
-        # Validate rule: low confidence requires notes
-        if data["confidence"] == "low" and not data.get("notes", "").strip():
-            return JsonResponse(
-                {
-                    "success": False,
-                    "error": "Low confidence requires explanatory notes",
-                },
-                status=400,
-            )
-
-        # Handle georeference creation/update with proper transaction handling
-        georeference = None
-
-        # First, try to create a new georeference
-        try:
-            with transaction.atomic():
-                georeference = Georeference.objects.create(
-                    image=image,
-                    point=Point(float(data["longitude"]), float(data["latitude"])),
-                    direction=int(data["direction"]) if data.get("direction") else None,
-                    confidence=data["confidence"],
-                    georeferenced_by=request.user
-                    if request.user.is_authenticated
-                    else None,
-                    confidence_notes=data.get("notes", ""),
-                )
-        except IntegrityError:
-            # User has already georeferenced this image, update their existing georeference
-            if request.user.is_authenticated:
-                with transaction.atomic():
-                    georeference = Georeference.objects.filter(
-                        image=image, georeferenced_by=request.user
-                    ).first()
-                    if georeference:
-                        georeference.point = Point(
-                            float(data["longitude"]), float(data["latitude"])
-                        )
-                        georeference.direction = (
-                            int(data["direction"]) if data.get("direction") else None
-                        )
-                        georeference.confidence = data["confidence"]
-                        georeference.confidence_notes = data.get("notes", "")
-                        georeference.save()
-                    else:
-                        # This shouldn't happen, but handle it gracefully
-                        return JsonResponse(
-                            {
-                                "success": False,
-                                "error": "Unable to update existing georeference",
-                            },
-                            status=500,
-                        )
-            else:
-                # This shouldn't happen for anonymous users given our check above
-                return JsonResponse(
-                    {"success": False, "error": "Unable to create georeference"},
-                    status=500,
-                )
-
+    except Http404:
+        raise
+    except IntegrityError:
+        # The partial unique index on anonymous georeferences is the second
+        # line of defence behind the row lock; losing that race means somebody
+        # else placed the first georeference.
         return JsonResponse(
-            {
-                "success": True,
-                "georeference_id": georeference.id,
-                "message": "Image successfully georeferenced",
-            }
+            {"success": False, "error": ANONYMOUS_ALREADY_GEOREFERENCED},
+            status=400,
+        )
+    except Exception:
+        logger.exception(
+            "Point georeference failed for image %s (user %s)",
+            image_id,
+            request.user.pk if request.user.is_authenticated else "anonymous",
+        )
+        return JsonResponse(
+            {"success": False, "error": "Unable to save this georeference."},
+            status=500,
         )
 
-    except (ValueError, TypeError) as e:
-        return JsonResponse(
-            {"success": False, "error": f"Invalid data format: {str(e)}"}, status=400
-        )
-    except Exception as e:
-        return JsonResponse({"success": False, "error": str(e)}, status=500)
+    return JsonResponse(
+        {
+            "success": True,
+            "georeference_id": georeference.id,
+            "message": "Image successfully georeferenced",
+        }
+    )
 
 
 @login_required
 def aerial_georeference_interface(request, image_id):
     """Display the aerial georeference interface for a specific image"""
+    # Same policy the submission endpoint enforces, so the page and the POST
+    # agree about which images are eligible.
     try:
-        image = get_object_or_404(
-            Image,
-            id=image_id,
-            aerial=True,
-            will_not_georef=False,
-            duplicate_of__isnull=True,
-            collection__public=True,
-            collection__source__public=True,
+        image = get_image_or_404(
+            georeferenceable_images_for(request.user, aerial=True), image_id
         )
     except Http404:
         return render(
             request,
-            "images/aerial_georeference_interface.html",
+            "images/from_above_georeference_interface.html",
             {"image": None},
             status=404,
         )
@@ -418,203 +403,141 @@ def aerial_georeference_interface(request, image_id):
     return render(request, "images/from_above_georeference_interface.html", context)
 
 
-@login_required
 @require_http_methods(["POST"])
-@csrf_exempt
 def aerial_georeference_image(request, image_id):
     """API endpoint to submit an aerial georeference with polygon"""
-    try:
-        data = json.loads(request.body)
-        image = get_object_or_404(Image, id=image_id, aerial=True)
-
-        # Check if image is a duplicate
-        if image.duplicate_of:
-            return JsonResponse(
-                {
-                    "success": False,
-                    "error": "Cannot georeference duplicate images. This image is marked as a duplicate of another image.",
-                },
-                status=400,
-            )
-
-        # Validate required fields
-        required_fields = ["polygon", "confidence"]
-        for field in required_fields:
-            if field not in data:
-                return JsonResponse(
-                    {"success": False, "error": f"Missing required field: {field}"},
-                    status=400,
-                )
-
-        # Validate confidence level
-        valid_confidence_levels = ["low", "medium", "high"]
-        if data["confidence"] not in valid_confidence_levels:
-            return JsonResponse(
-                {"success": False, "error": "Invalid confidence level"},
-                status=400,
-            )
-
-        # Validate rule: low confidence requires notes
-        if data["confidence"] == "low" and not data.get("notes", "").strip():
-            return JsonResponse(
-                {
-                    "success": False,
-                    "error": "Low confidence requires explanatory notes",
-                },
-                status=400,
-            )
-
-        # Validate polygon geometry
-        if not isinstance(data["polygon"], dict) or data["polygon"].get("type") not in [
-            "Polygon",
-            "MultiPolygon",
-        ]:
-            return JsonResponse(
-                {"success": False, "error": "Invalid polygon geometry"},
-                status=400,
-            )
-
-        try:
-            # Convert GeoJSON to WKT format for storage
-            polygon_geojson = json.dumps(data["polygon"])
-            polygon = GEOSGeometry(polygon_geojson)
-
-            # If a MultiPolygon was submitted, validate it contains only one polygon
-            if polygon.geom_type == "MultiPolygon":
-                if len(polygon) == 0:
-                    return JsonResponse(
-                        {"success": False, "error": "MultiPolygon is empty"},
-                        status=400,
-                    )
-                elif len(polygon) > 1:
-                    return JsonResponse(
-                        {
-                            "success": False,
-                            "error": f"MultiPolygon contains {len(polygon)} polygons. Please draw only one polygon.",
-                        },
-                        status=400,
-                    )
-                else:
-                    # Single polygon in a MultiPolygon wrapper, extract it
-                    polygon = polygon[0]
-        except Exception as e:
-            return JsonResponse(
-                {"success": False, "error": f"Invalid polygon format: {str(e)}"},
-                status=400,
-            )
-
-        # Handle aerial georeference creation/update
-        aerial_georeference = None
-        try:
-            with transaction.atomic():
-                aerial_georeference = AerialGeoreference.objects.create(
-                    image=image,
-                    polygon=polygon,
-                    confidence=data["confidence"],
-                    georeferenced_by=request.user
-                    if request.user.is_authenticated
-                    else None,
-                    confidence_notes=data.get("notes", ""),
-                )
-        except IntegrityError:
-            # User has already georeferenced this image, update their existing georeference
-            if request.user.is_authenticated:
-                with transaction.atomic():
-                    aerial_georeference = AerialGeoreference.objects.filter(
-                        image=image, georeferenced_by=request.user
-                    ).first()
-                    if aerial_georeference:
-                        aerial_georeference.polygon = polygon
-                        aerial_georeference.confidence = data["confidence"]
-                        aerial_georeference.confidence_notes = data.get("notes", "")
-                        aerial_georeference.save()
-                    else:
-                        return JsonResponse(
-                            {
-                                "success": False,
-                                "error": "Unable to update existing georeference",
-                            },
-                            status=500,
-                        )
-            else:
-                return JsonResponse(
-                    {"success": False, "error": "Unable to create georeference"},
-                    status=500,
-                )
-
-        return JsonResponse(
-            {
-                "success": True,
-                "georeference_id": aerial_georeference.id,
-                "message": "Polygonal georeference successfully created",
-            }
-        )
-
-    except json.JSONDecodeError:
-        return JsonResponse(
-            {"success": False, "error": "Invalid JSON format"}, status=400
-        )
-    except (ValueError, TypeError) as e:
-        return JsonResponse(
-            {"success": False, "error": f"Invalid data format: {str(e)}"}, status=400
-        )
-    except Exception as e:
-        return JsonResponse({"success": False, "error": str(e)}, status=500)
-
-
-@require_http_methods(["POST"])
-@csrf_exempt
-def validate_georeference(request, georeference_id):
-    """API endpoint to validate a georeference"""
-    # Check if user is authenticated
     if not request.user.is_authenticated:
         return JsonResponse(
             {"success": False, "error": "Authentication required"}, status=401
         )
+
+    # Aerial-only for everyone, staff included: a polygon georeference is
+    # meaningless on a ground-level photograph.
+    policy = georeferenceable_images_for(request.user, aerial=True)
+    get_image_or_404(policy, image_id)
+
     try:
-        data = json.loads(request.body)
-        georeference = get_object_or_404(Georeference, id=georeference_id)
+        data = parse_json_body(request, max_bytes=settings.POLYGON_MAX_BODY_BYTES)
+        if "polygon" not in data:
+            raise InvalidInput("Missing required field: polygon")
+        # Structural limits (ring count, vertex counts, coordinate bounds) are
+        # applied to the raw GeoJSON before GEOS or the database sees it.
+        polygon = build_polygon(data["polygon"])
+        confidence = validate_choice(data, "confidence", POLYGON_CONFIDENCE_LEVELS)
+        notes = validate_text(
+            data, "notes", max_length=settings.GEOREFERENCE_NOTES_MAX_LENGTH
+        )
+        if confidence == "low" and not notes:
+            raise InvalidInput("Low confidence requires explanatory notes")
+    except InvalidInput as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
 
-        # Check if user is trying to validate their own work
-        if georeference.georeferenced_by == request.user:
-            return JsonResponse(
-                {"success": False, "error": "Cannot validate your own georeference"},
-                status=400,
+    try:
+        with transaction.atomic():
+            # Same row lock as the point path, so the two submission routes
+            # serialize against each other on a given image.
+            image = get_image_or_404(policy.select_for_update(of=("self",)), image_id)
+
+            # Append-only, matching the point path: corrections add a row.
+            aerial_georeference = AerialGeoreference.objects.create(
+                image=image,
+                polygon=polygon,
+                confidence=confidence,
+                georeferenced_by=request.user,
+                confidence_notes=notes,
             )
+    except Http404:
+        raise
+    except Exception:
+        logger.exception(
+            "Polygon georeference failed for image %s (user %s)",
+            image_id,
+            request.user.pk,
+        )
+        return JsonResponse(
+            {"success": False, "error": "Unable to save this georeference."},
+            status=500,
+        )
 
-        # Check if user has already validated this georeference
-        if GeoreferenceValidation.objects.filter(
-            georeference=georeference, validated_by=request.user
-        ).exists():
-            return JsonResponse(
-                {
-                    "success": False,
-                    "error": "You have already validated this georeference",
-                },
-                status=400,
-            )
+    return JsonResponse(
+        {
+            "success": True,
+            "georeference_id": aerial_georeference.id,
+            "message": "Polygonal georeference successfully created",
+        }
+    )
 
-        validation_choice = data.get("validation")
-        if validation_choice not in ["correct", "incorrect", "uncertain"]:
-            return JsonResponse(
-                {"success": False, "error": "Invalid validation choice"}, status=400
-            )
 
+@require_http_methods(["POST"])
+def validate_georeference(request, georeference_id):
+    """API endpoint to validate a georeference"""
+    if not request.user.is_authenticated:
+        return JsonResponse(
+            {"success": False, "error": "Authentication required"}, status=401
+        )
+
+    # Resolve the georeference through its image, so a vote can never be
+    # attached to something the caller cannot see. editable_images_for rather
+    # than georeferenceable_images_for: the staff validation queue serves
+    # georeferences whose image may since have been flagged will_not_georef,
+    # and voting on that existing history stays legitimate.
+    try:
+        georeference = Georeference.objects.select_related("image").get(
+            id=georeference_id,
+            image__in=editable_images_for(request.user),
+        )
+    except (Georeference.DoesNotExist, TypeError, ValueError):
+        raise Http404("Georeference not found")
+
+    try:
+        data = parse_json_body(request)
+        validation_choice = validate_choice(data, "validation", VALIDATION_CHOICES)
+        notes = validate_text(
+            data, "notes", max_length=settings.VALIDATION_NOTES_MAX_LENGTH
+        )
+    except InvalidInput as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
+
+    if georeference.georeferenced_by_id == request.user.pk:
+        return JsonResponse(
+            {"success": False, "error": "Cannot validate your own georeference"},
+            status=400,
+        )
+
+    try:
         with transaction.atomic():
             validation = GeoreferenceValidation.objects.create(
                 georeference=georeference,
                 validated_by=request.user,
                 validation=validation_choice,
-                notes=data.get("notes", ""),
+                notes=notes,
             )
-
+    except IntegrityError:
+        # unique_together (georeference, validated_by). Catching the constraint
+        # rather than pre-checking with exists() covers the concurrent
+        # double-submit that used to surface as a 500.
         return JsonResponse(
             {
-                "success": True,
-                "validation_id": validation.id,
-                "message": "Validation recorded successfully",
-            }
+                "success": False,
+                "error": "You have already validated this georeference",
+            },
+            status=400,
+        )
+    except Exception:
+        logger.exception(
+            "Validation failed for georeference %s (user %s)",
+            georeference_id,
+            request.user.pk,
+        )
+        return JsonResponse(
+            {"success": False, "error": "Unable to record this validation."},
+            status=500,
         )
 
-    except Exception as e:
-        return JsonResponse({"success": False, "error": str(e)}, status=500)
+    return JsonResponse(
+        {
+            "success": True,
+            "validation_id": validation.id,
+            "message": "Validation recorded successfully",
+        }
+    )

@@ -13,6 +13,8 @@ from django.utils.text import slugify
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from images.policies import representable_images
+
 
 def _first_time_claim(claims, pid):
     """Return the first CE date of entity-JSON claim ``pid`` as ``YYYY-MM-DD``.
@@ -275,7 +277,7 @@ class WikidataItem(models.Model):
         if meta["demolished"]:
             self.demolished = meta["demolished"]
 
-    def queue_sparql_refresh(self):
+    def queue_sparql_refresh(self, *, reset_failures=True):
         """Move this item to the front of the WDQS refresh rotation.
 
         The Beat-driven refresher normally works through seed items
@@ -285,14 +287,22 @@ class WikidataItem(models.Model):
         exhausted its retries becomes eligible again — a manual queue is a
         deliberate "try this one again". Targeted UPDATE rather than
         ``save()`` to keep clear of the is_new WDQS fetch path.
+
+        ``reset_failures=False`` is for automated callers (the region
+        containment repair in ``subjects.tasks``): they queue an item
+        because the mirror looks wrong, which is no evidence that a run
+        of fetch failures has stopped, and clearing the counter on a
+        schedule would keep any item they touch permanently below the
+        retry cap.
         """
         now = timezone.now()
-        WikidataItem.objects.filter(pk=self.pk).update(
-            sparql_refresh_requested_at=now,
-            sparql_fetch_failures=0,
-        )
+        fields = {"sparql_refresh_requested_at": now}
+        if reset_failures:
+            fields["sparql_fetch_failures"] = 0
+        WikidataItem.objects.filter(pk=self.pk).update(**fields)
         self.sparql_refresh_requested_at = now
-        self.sparql_fetch_failures = 0
+        if reset_failures:
+            self.sparql_fetch_failures = 0
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
@@ -501,12 +511,20 @@ class Subject(models.Model):
         the field is the source of truth. The mapping fallback handles the
         edge case of a Subject with mappings but a null FK (e.g., a row
         predating the backfill).
+
+        The fallback is restricted to publishable images for the same reason
+        the signals are: this value is rendered on a public subject page, so a
+        Subject whose only mappings are private or duplicate images has no
+        representative rather than an undisclosable one.
         """
         if self.representative_image_id is not None:
             return self.representative_image
 
         first_mapping = (
-            self.image_mappings.select_related("image").order_by("order", "id").first()
+            self.image_mappings.filter(image__in=representable_images())
+            .select_related("image")
+            .order_by("order", "id")
+            .first()
         )
         return first_mapping.image if first_mapping else None
 

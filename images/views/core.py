@@ -1,7 +1,8 @@
 import json
+import logging
 import math
-import traceback
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.core.paginator import Paginator
@@ -10,7 +11,6 @@ from django.db.models import Avg, Case, When
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.clickjacking import xframe_options_exempt
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from ..models import (
@@ -21,7 +21,19 @@ from ..models import (
     ImageRating,
     ImageSkip,
 )
+from ..policies import (
+    editable_images_for,
+    georeferenceable_images_for,
+    get_image_or_404,
+)
+from ..validation import (
+    InvalidInput,
+    parse_json_body,
+    validate_text,
+)
 from .search import _get_text_embedding
+
+logger = logging.getLogger(__name__)
 
 # Try to import PostgreSQL search functions
 try:
@@ -151,7 +163,6 @@ def image_list(request):
 
 
 @require_http_methods(["POST"])
-@csrf_exempt
 def add_comment(request, image_id):
     """API endpoint to add a comment to an image"""
     if not request.user.is_authenticated:
@@ -159,164 +170,177 @@ def add_comment(request, image_id):
             {"success": False, "error": "Authentication required"}, status=401
         )
 
+    # Resolved through the policy, so an image the caller cannot see 404s the
+    # same way a missing one does.
+    image = get_image_or_404(editable_images_for(request.user), image_id)
+
     try:
-        data = json.loads(request.body)
-        image = get_object_or_404(Image, id=image_id)
+        data = parse_json_body(request)
+        comment_text = validate_text(
+            data,
+            "text",
+            max_length=settings.COMMENT_MAX_LENGTH,
+            required=True,
+        )
+    except InvalidInput as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
 
-        comment_text = data.get("text", "").strip()
-        if not comment_text:
-            return JsonResponse(
-                {"success": False, "error": "Comment text is required"}, status=400
-            )
-
+    try:
         comment = Comment.objects.create(
             image=image, text=comment_text, commented_by=request.user
         )
+    except Exception:
+        logger.exception(
+            "Comment failed for image %s (user %s)", image_id, request.user.pk
+        )
+        return JsonResponse(
+            {"success": False, "error": "Unable to save this comment."}, status=500
+        )
 
-        return JsonResponse(
-            {
-                "success": True,
-                "message": "Comment added successfully",
-                "comment_id": comment.id,
-            },
-            status=201,
-        )
-    except json.JSONDecodeError:
-        return JsonResponse(
-            {"success": False, "error": "Invalid JSON in request body"}, status=400
-        )
-    except Image.DoesNotExist:
-        return JsonResponse({"success": False, "error": "Image not found"}, status=404)
-    except Exception as e:
-        traceback.print_exc()
-        return JsonResponse({"success": False, "error": str(e)}, status=500)
+    return JsonResponse(
+        {
+            "success": True,
+            "message": "Comment added successfully",
+            "comment_id": comment.id,
+        },
+        status=201,
+    )
 
 
 @require_http_methods(["POST", "DELETE"])
-@csrf_exempt
 def submit_rating(request, image_id):
-    """API endpoint to submit, update, or delete a rating for an image"""
-    # Check if user is authenticated
+    """API endpoint to submit, update, or delete a rating for an image
+
+    DELETE is kept alongside POST because it is the supported way for a user to
+    clear a rating they previously left.
+    """
     if not request.user.is_authenticated:
         return JsonResponse(
             {"success": False, "error": "Authentication required"}, status=401
         )
 
-    try:
-        image = get_object_or_404(Image, id=image_id)
+    image = get_image_or_404(editable_images_for(request.user), image_id)
 
-        # Handle DELETE request (clear rating)
-        if request.method == "DELETE":
-            with transaction.atomic():
-                deleted_count, _ = ImageRating.objects.filter(
-                    image=image, user=request.user
-                ).delete()
+    if request.method == "DELETE":
+        deleted_count, _ = ImageRating.objects.filter(
+            image=image, user=request.user
+        ).delete()
 
-                if deleted_count == 0:
-                    return JsonResponse(
-                        {"success": False, "error": "No rating found to delete"},
-                        status=404,
-                    )
-
-            # Get updated average rating and count after deletion
-            image_ratings = image.ratings.all()
-            avg_rating = image_ratings.aggregate(Avg("rating"))["rating__avg"]
-            rating_count = image_ratings.count()
-
+        if deleted_count == 0:
             return JsonResponse(
-                {
-                    "success": True,
-                    "message": "Rating cleared successfully",
-                    "user_rating": None,
-                    "avg_rating": float(avg_rating) if avg_rating else None,
-                    "rating_count": rating_count,
-                }
+                {"success": False, "error": "No rating found to delete"},
+                status=404,
             )
-
-        # Handle POST request (submit/update rating)
-        data = json.loads(request.body)
-
-        rating = data.get("rating")
-        if rating is None:
-            return JsonResponse(
-                {"success": False, "error": "Missing 'rating' field"}, status=400
-            )
-
-        # Validate rating is an integer between 1 and 10
-        try:
-            rating = int(rating)
-        except (ValueError, TypeError):
-            return JsonResponse(
-                {"success": False, "error": "Rating must be an integer"}, status=400
-            )
-
-        if not (1 <= rating <= 10):
-            return JsonResponse(
-                {
-                    "success": False,
-                    "error": "Rating must be between 1 and 10",
-                },
-                status=400,
-            )
-
-        # Use update_or_create to handle both new ratings and updates
-        with transaction.atomic():
-            image_rating, created = ImageRating.objects.update_or_create(
-                image=image,
-                user=request.user,
-                defaults={"rating": rating},
-            )
-
-        # Get updated average rating and count
-        image_ratings = image.ratings.all()
-        avg_rating = image_ratings.aggregate(Avg("rating"))["rating__avg"]
-        rating_count = image_ratings.count()
 
         return JsonResponse(
             {
                 "success": True,
-                "message": "Rating submitted successfully",
-                "rating_id": image_rating.id,
-                "user_rating": rating,
-                "avg_rating": float(avg_rating) if avg_rating else None,
-                "rating_count": rating_count,
+                "message": "Rating cleared successfully",
+                "user_rating": None,
+                **_rating_summary(image),
             }
         )
 
-    except json.JSONDecodeError:
-        return JsonResponse(
-            {"success": False, "error": "Invalid JSON in request body"}, status=400
+    try:
+        data = parse_json_body(request)
+        rating = _validate_rating(data)
+    except InvalidInput as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
+
+    try:
+        with transaction.atomic():
+            image_rating, _ = ImageRating.objects.update_or_create(
+                image=image,
+                user=request.user,
+                defaults={"rating": rating},
+            )
+    except Exception:
+        logger.exception(
+            "Rating failed for image %s (user %s)", image_id, request.user.pk
         )
-    except Image.DoesNotExist:
-        return JsonResponse({"success": False, "error": "Image not found"}, status=404)
-    except Exception as e:
-        return JsonResponse({"success": False, "error": str(e)}, status=500)
+        return JsonResponse(
+            {"success": False, "error": "Unable to save this rating."}, status=500
+        )
+
+    return JsonResponse(
+        {
+            "success": True,
+            "message": "Rating submitted successfully",
+            "rating_id": image_rating.id,
+            "user_rating": rating,
+            **_rating_summary(image),
+        }
+    )
+
+
+def _rating_summary(image):
+    """Current average and count for an image, as returned to rating clients."""
+    ratings = image.ratings.all()
+    avg_rating = ratings.aggregate(Avg("rating"))["rating__avg"]
+    return {
+        "avg_rating": float(avg_rating) if avg_rating else None,
+        "rating_count": ratings.count(),
+    }
+
+
+def _validate_rating(data):
+    """Read the 1-10 star rating out of a request body."""
+    rating = data.get("rating")
+    if rating is None:
+        raise InvalidInput("Missing 'rating' field")
+    if isinstance(rating, bool):
+        raise InvalidInput("Rating must be an integer")
+
+    try:
+        rating = int(rating)
+    except (ValueError, TypeError):
+        raise InvalidInput("Rating must be an integer")
+
+    if not (1 <= rating <= 10):
+        raise InvalidInput("Rating must be between 1 and 10")
+
+    return rating
 
 
 @require_http_methods(["POST"])
-@csrf_exempt
 def skip_image(request, image_id):
     """API endpoint to skip an image"""
+    # A skip is a statement about the georeferencing queue, so it uses the same
+    # eligibility policy as a point submission.
+    image = get_image_or_404(
+        georeferenceable_images_for(request.user, aerial=False), image_id
+    )
+
     try:
-        data = json.loads(request.body)
-        image = get_object_or_404(Image, id=image_id)
+        data = parse_json_body(request)
+        reason = validate_text(
+            data, "reason", max_length=settings.SKIP_REASON_MAX_LENGTH
+        )
+    except InvalidInput as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
 
-        # Only track skips for authenticated users
-        if request.user.is_authenticated:
-            with transaction.atomic():
-                # Always allow skipping - don't check if already skipped
-                # This lets users skip multiple times if they want
-                skip, created = ImageSkip.objects.get_or_create(
-                    image=image,
-                    user=request.user,
-                    defaults={"reason": data.get("reason", "")},
-                )
+    # Anonymous skips are not tracked; there is no stable identity to attach
+    # them to, and the queue deliberately keeps showing skipped images anyway.
+    if request.user.is_authenticated:
+        try:
+            # A repeat skip is not an error: unique_together (image, user)
+            # means the first reason stands, and get_or_create already
+            # resolves a concurrent insert of the same pair.
+            ImageSkip.objects.get_or_create(
+                image=image,
+                user=request.user,
+                defaults={"reason": reason},
+            )
+        except Exception:
+            logger.exception(
+                "Skip failed for image %s (user %s)", image_id, request.user.pk
+            )
+            return JsonResponse(
+                {"success": False, "error": "Unable to record this skip."},
+                status=500,
+            )
 
-        # For anonymous users, we just return success without tracking
-        return JsonResponse({"success": True})
-
-    except Exception as e:
-        return JsonResponse({"success": False, "error": str(e)}, status=500)
+    return JsonResponse({"success": True})
 
 
 @require_http_methods(["POST"])

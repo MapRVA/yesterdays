@@ -1,4 +1,3 @@
-import json
 import logging
 
 from django.conf import settings
@@ -6,7 +5,7 @@ from django.contrib import messages
 from django.contrib.postgres.search import TrigramWordSimilarity
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
-from django.db import connection, models, transaction
+from django.db import IntegrityError, connection, models, transaction
 from django.db.models import (
     Case,
     Count,
@@ -18,7 +17,7 @@ from django.db.models import (
     When,
 )
 from django.db.models.functions import Lower
-from django.http import HttpResponseBadRequest, JsonResponse
+from django.http import Http404, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -34,6 +33,14 @@ from activity.models import (
     SubjectMappingActivityGroup,
 )
 from images.models import Image, SubjectMapping, SubjectMappingActivity
+from images.policies import (
+    editable_images_for,
+    get_image_or_404,
+    get_images_or_404,
+    parse_image_ids,
+    representable_images,
+)
+from images.validation import InvalidInput, parse_json_body, validate_text
 
 from .memgraph import GRAPH_ERRORS, MemgraphClient
 from .models import Subject, SubjectAncestor, WikidataItem
@@ -338,6 +345,71 @@ def all_subjects_api(request):
     return JsonResponse(list(subjects), safe=False)
 
 
+def _resolve_subject(wikidata_id):
+    """Get or create the Subject behind a Wikidata Q-ID.
+
+    Raises :class:`InvalidInput` if the Q-ID is malformed or Wikidata refuses
+    to yield an item for it.
+    """
+    try:
+        wikidata_id = validate_qid(wikidata_id)
+    except UnsafeSparqlInput:
+        raise InvalidInput("Invalid Wikidata ID format. Must look like 'Q42'.")
+
+    try:
+        wikidata_item, created = WikidataItem.objects.get_or_create(
+            wikidata_id=wikidata_id
+        )
+        if not created:
+            wikidata_item.ensure_display_label()
+    except ValidationError as exc:
+        raise InvalidInput("; ".join(exc.messages))
+
+    subject, subject_created = Subject.objects.get_or_create(
+        wikidata_item=wikidata_item,
+        defaults={"title": wikidata_item.title},
+    )
+
+    # Heal the title if an older row still has the Q-ID placeholder.
+    if not subject_created and subject.title == wikidata_id:
+        subject.title = wikidata_item.title
+        if subject.slug == slugify(wikidata_id):
+            subject.slug = ""
+        subject.save()
+
+    return subject
+
+
+def _append_subject_mapping(*, user, image, subject):
+    """Attach ``subject`` to ``image`` at the end of its subject order.
+
+    Returns the new mapping, or ``None`` if the pair already existed.
+    """
+    max_order = (
+        SubjectMapping.objects.filter(image=image).aggregate(
+            max_order=models.Max("order")
+        )["max_order"]
+        or 0
+    )
+
+    try:
+        mapping = SubjectMapping.objects.create(
+            image=image, subject=subject, order=max_order + 1
+        )
+    except IntegrityError:
+        # unique_together (image, subject): the pair already exists, either
+        # from an earlier request or a concurrent one.
+        return None
+
+    _record_subject_activity(
+        user=user,
+        image=image,
+        subject=subject,
+        action=SubjectMappingActivity.ACTION_ADDED,
+    )
+    return mapping
+
+
 @require_http_methods(["POST"])
 def bulk_add_subject_to_images(request):
     """Add a subject to multiple images at once (logged-in users only)"""
@@ -348,112 +420,49 @@ def bulk_add_subject_to_images(request):
         )
 
     try:
-        data = json.loads(request.body)
-        image_ids = data.get("image_ids", [])
-        wikidata_id = data.get("wikidata_id", "").strip()
+        data = parse_json_body(request)
+        image_ids = parse_image_ids(data.get("image_ids"))
+        wikidata_id = validate_text(data, "wikidata_id", max_length=32, required=True)
+    except (InvalidInput, ValueError) as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
 
-        if not image_ids:
-            return JsonResponse(
-                {"success": False, "error": "No images selected"},
-                status=400,
-            )
+    # Authorize the whole set before touching Wikidata or writing anything, so
+    # a request mixing authorized and unauthorized IDs tags nothing at all.
+    images = get_images_or_404(editable_images_for(request.user), image_ids)
 
-        if not wikidata_id or not wikidata_id.startswith("Q"):
-            return JsonResponse(
-                {
-                    "success": False,
-                    "error": "Invalid Wikidata ID format. Must start with 'Q'.",
-                },
-                status=400,
-            )
+    try:
+        subject = _resolve_subject(wikidata_id)
+    except InvalidInput as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
 
-        # Get or create WikidataItem
-        try:
-            wikidata_item, created = WikidataItem.objects.get_or_create(
-                wikidata_id=wikidata_id
-            )
-            if not created:
-                wikidata_item.ensure_display_label()
-        except ValidationError as e:
-            return JsonResponse({"success": False, "error": str(e)}, status=400)
+    added_count = 0
+    already_exists_count = 0
 
-        # Try to get or create Subject
-        subject, subject_created = Subject.objects.get_or_create(
-            wikidata_item=wikidata_item,
-            defaults={"title": wikidata_item.title},
-        )
+    with transaction.atomic():
+        for image in images:
+            if _append_subject_mapping(
+                user=request.user, image=image, subject=subject
+            ):
+                added_count += 1
+            else:
+                already_exists_count += 1
 
-        # Heal the title if an older row still has the Q-ID placeholder.
-        if not subject_created and subject.title == wikidata_id:
-            subject.title = wikidata_item.title
-            if subject.slug == slugify(wikidata_id):
-                subject.slug = ""
-            subject.save()
-
-        # Add subject to each image
-        added_count = 0
-        already_exists_count = 0
-
-        with transaction.atomic():
-            for image_id in image_ids:
-                try:
-                    image = Image.objects.get(id=image_id)
-
-                    if SubjectMapping.objects.filter(
-                        image=image, subject=subject
-                    ).exists():
-                        already_exists_count += 1
-                        continue
-
-                    max_order = (
-                        SubjectMapping.objects.filter(image=image).aggregate(
-                            max_order=models.Max("order")
-                        )["max_order"]
-                        or 0
-                    )
-
-                    SubjectMapping.objects.create(
-                        image=image,
-                        subject=subject,
-                        order=max_order + 1,
-                    )
-                    _record_subject_activity(
-                        user=request.user,
-                        image=image,
-                        subject=subject,
-                        action=SubjectMappingActivity.ACTION_ADDED,
-                    )
-                    added_count += 1
-
-                except Image.DoesNotExist:
-                    continue
-
-        return JsonResponse(
-            {
-                "success": True,
-                "added_count": added_count,
-                "already_exists_count": already_exists_count,
-                "subject": {
-                    "id": subject.id,
-                    "title": subject.title,
-                    "description": subject.get_description(),
-                },
+    return JsonResponse(
+        {
+            "success": True,
+            "added_count": added_count,
+            "already_exists_count": already_exists_count,
+            "subject": {
+                "id": subject.id,
+                "title": subject.title,
+                "description": subject.get_description(),
             },
-            status=200,
-        )
-
-    except json.JSONDecodeError:
-        return JsonResponse(
-            {"success": False, "error": "Invalid JSON in request body"},
-            status=400,
-        )
-    except Exception as e:
-        return JsonResponse(
-            {"success": False, "error": str(e)},
-            status=500,
-        )
+        },
+        status=200,
+    )
 
 
+@require_http_methods(["POST"])
 def add_subject_to_image(request, image_id):
     """Add a subject to an image via Wikidata ID (logged-in users only)"""
     if not request.user.is_authenticated:
@@ -462,94 +471,41 @@ def add_subject_to_image(request, image_id):
             status=403,
         )
 
-    image = get_object_or_404(Image, id=image_id)
+    image = get_image_or_404(editable_images_for(request.user), image_id)
 
     try:
-        data = json.loads(request.body)
-        wikidata_id = data.get("wikidata_id", "").strip()
+        data = parse_json_body(request)
+        wikidata_id = validate_text(data, "wikidata_id", max_length=32, required=True)
+        subject = _resolve_subject(wikidata_id)
+    except InvalidInput as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
 
-        if not wikidata_id or not wikidata_id.startswith("Q"):
-            return JsonResponse(
-                {
-                    "success": False,
-                    "error": "Invalid Wikidata ID format. Must start with 'Q'.",
-                },
-                status=400,
-            )
-
-        # The new model logic handles fetching on creation.
-        # We wrap this in a try-except block to catch validation errors if fetching fails.
-        try:
-            wikidata_item, created = WikidataItem.objects.get_or_create(
-                wikidata_id=wikidata_id
-            )
-            if not created:
-                wikidata_item.ensure_display_label()
-        except ValidationError as e:
-            return JsonResponse({"success": False, "error": str(e)}, status=400)
-
-        # Try to get or create Subject
-        subject, subject_created = Subject.objects.get_or_create(
-            wikidata_item=wikidata_item,
-            defaults={"title": wikidata_item.title},
-        )
-
-        # Heal the title if an older row still has the Q-ID placeholder.
-        if not subject_created and subject.title == wikidata_id:
-            subject.title = wikidata_item.title
-            if subject.slug == slugify(wikidata_id):
-                subject.slug = ""
-            subject.save()
-
-        if SubjectMapping.objects.filter(image=image, subject=subject).exists():
-            return JsonResponse(
-                {
-                    "success": False,
-                    "error": "This subject is already associated with this image.",
-                },
-                status=400,
-            )
-
-        max_order = (
-            SubjectMapping.objects.filter(image=image).aggregate(
-                max_order=models.Max("order")
-            )["max_order"]
-            or 0
-        )
-
-        subject_mapping = SubjectMapping.objects.create(
-            image=image, subject=subject, order=max_order + 1
-        )
-        _record_subject_activity(
-            user=request.user,
-            image=image,
-            subject=subject,
-            action=SubjectMappingActivity.ACTION_ADDED,
-        )
-
-        # Render the subject card partial for live insertion
-        html = render_to_string(
-            "subjects/partials/subject_card.html",
-            {"subject_relation": subject_mapping, "request": request},
-            request=request,
-        )
-
+    subject_mapping = _append_subject_mapping(
+        user=request.user, image=image, subject=subject
+    )
+    if subject_mapping is None:
         return JsonResponse(
             {
-                "success": True,
-                "message": f"Subject '{subject.title}' added to image",
-                "html": html,
-            }
+                "success": False,
+                "error": "This subject is already associated with this image.",
+            },
+            status=400,
         )
 
-    except json.JSONDecodeError:
-        return JsonResponse(
-            {"success": False, "error": "Invalid JSON in request body"}, status=400
-        )
-    except Exception as e:
-        return JsonResponse(
-            {"success": False, "error": f"Error adding subject: {str(e)}"}, status=500
-        )
+    # Render the subject card partial for live insertion
+    html = render_to_string(
+        "subjects/partials/subject_card.html",
+        {"subject_relation": subject_mapping, "request": request},
+        request=request,
+    )
+
+    return JsonResponse(
+        {
+            "success": True,
+            "message": f"Subject '{subject.title}' added to image",
+            "html": html,
+        }
+    )
 
 
 @require_http_methods(["POST"])
@@ -561,15 +517,24 @@ def remove_subject_from_image(request, subject_mapping_id):
             status=403,
         )
 
+    # Resolved through the mapping's image, so a mapping on an image the caller
+    # cannot edit is as invisible as one that does not exist.
     try:
-        # Find the specific subject mapping by its ID
-        subject_relation = get_object_or_404(SubjectMapping, id=subject_mapping_id)
-        subject_title = subject_relation.subject.title
-        removed_image = subject_relation.image
-        removed_subject = subject_relation.subject
+        subject_relation = SubjectMapping.objects.select_related(
+            "image", "subject"
+        ).get(
+            id=subject_mapping_id,
+            image__in=editable_images_for(request.user),
+        )
+    except (SubjectMapping.DoesNotExist, TypeError, ValueError):
+        raise Http404("Subject mapping not found")
 
+    subject_title = subject_relation.subject.title
+    removed_image = subject_relation.image
+    removed_subject = subject_relation.subject
+
+    with transaction.atomic():
         subject_relation.delete()
-
         _record_subject_activity(
             user=request.user,
             image=removed_image,
@@ -577,23 +542,12 @@ def remove_subject_from_image(request, subject_mapping_id):
             action=SubjectMappingActivity.ACTION_REMOVED,
         )
 
-        return JsonResponse(
-            {
-                "success": True,
-                "message": f"Subject '{subject_title}' removed from image.",
-            }
-        )
-    except SubjectMapping.DoesNotExist:
-        return JsonResponse(
-            {"success": False, "error": "Subject mapping not found."}, status=404
-        )
-    except Exception:
-        # Log the exception for debugging
-        # logger.error(f"Error removing subject mapping: {e}")
-        return JsonResponse(
-            {"success": False, "error": "An unexpected error occurred."},
-            status=500,
-        )
+    return JsonResponse(
+        {
+            "success": True,
+            "message": f"Subject '{subject_title}' removed from image.",
+        }
+    )
 
 
 @require_http_methods(["POST"])
@@ -606,7 +560,10 @@ def set_representative_image(request, subject_id, image_id):
         )
 
     subject = get_object_or_404(Subject, id=subject_id)
-    image = get_object_or_404(Image, id=image_id)
+    # representable_images rather than the caller's own access: this image is
+    # rendered on a public subject page, so a staff member must not be able to
+    # promote a staged image into public view.
+    image = get_image_or_404(representable_images(), image_id)
 
     # Verify the image is actually mapped to this subject
     if not SubjectMapping.objects.filter(subject=subject, image=image).exists():
@@ -621,7 +578,9 @@ def set_representative_image(request, subject_id, image_id):
     return JsonResponse(
         {
             "success": True,
-            "message": f"{image.title} is now the representative image for {subject.title}.",
+            "message": (
+                f"{image.title} is now the representative image for {subject.title}."
+            ),
             "thumbnail": image.thumbnail or "",
         }
     )
@@ -636,77 +595,72 @@ def reorder_subjects(request, image_id):
             status=403,
         )
 
-    image = get_object_or_404(Image, id=image_id)
+    image = get_image_or_404(editable_images_for(request.user), image_id)
 
     try:
-        data = json.loads(request.body)
-        ordered_ids = data.get("order")
+        data = parse_json_body(request)
+    except InvalidInput as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
 
-        if not isinstance(ordered_ids, list):
+    ordered_ids = data.get("order")
+    if not isinstance(ordered_ids, list):
+        return JsonResponse(
+            {
+                "success": False,
+                "error": "Invalid data format: 'order' must be a list.",
+            },
+            status=400,
+        )
+
+    with transaction.atomic():
+        # Get all subject relations for this image, in their current order
+        subject_relations = list(
+            SubjectMapping.objects.filter(image=image).order_by(
+                "order", "subject__title"
+            )
+        )
+
+        # Create a map of ID to instance
+        relation_map = {str(relation.id): relation for relation in subject_relations}
+
+        # The submitted list must be exactly this image's mappings — which also
+        # means a mapping belonging to another image can never be reordered
+        # into this one.
+        submitted_ids = [str(relation_id) for relation_id in ordered_ids]
+        if sorted(relation_map.keys()) != sorted(submitted_ids):
             return JsonResponse(
                 {
                     "success": False,
-                    "error": "Invalid data format: 'order' must be a list.",
+                    "error": (
+                        "Submitted subject IDs do not match existing subjects "
+                        "for this image."
+                    ),
                 },
                 status=400,
             )
 
-        with transaction.atomic():
-            # Get all subject relations for this image, in their current order
-            subject_relations = list(
-                SubjectMapping.objects.filter(image=image).order_by(
-                    "order", "subject__title"
-                )
+        previous_subject_ids = [r.subject_id for r in subject_relations]
+        new_subject_ids = [relation_map[rid].subject_id for rid in submitted_ids]
+
+        # Update the order field based on the new order
+        for index, relation_id in enumerate(submitted_ids):
+            relation = relation_map[relation_id]
+            relation.order = index
+            relation.save(update_fields=["order"])
+
+        if previous_subject_ids != new_subject_ids:
+            _record_subject_activity(
+                user=request.user,
+                image=image,
+                subject=None,
+                action=SubjectMappingActivity.ACTION_REORDERED,
+                previous_order=previous_subject_ids,
+                new_order=new_subject_ids,
             )
 
-            # Create a map of ID to instance
-            relation_map = {
-                str(relation.id): relation for relation in subject_relations
-            }
-
-            # Check if the received IDs match the existing relations
-            if set(relation_map.keys()) != set(ordered_ids):
-                return JsonResponse(
-                    {
-                        "success": False,
-                        "error": "Submitted subject IDs do not match existing subjects for this image.",
-                    },
-                    status=400,
-                )
-
-            previous_subject_ids = [r.subject_id for r in subject_relations]
-            new_subject_ids = [relation_map[str(rid)].subject_id for rid in ordered_ids]
-
-            # Update the order field based on the new order
-            for index, subject_relation_id in enumerate(ordered_ids):
-                relation = relation_map.get(str(subject_relation_id))
-                if relation:
-                    relation.order = index
-                    relation.save(update_fields=["order"])
-
-            if previous_subject_ids != new_subject_ids:
-                _record_subject_activity(
-                    user=request.user,
-                    image=image,
-                    subject=None,
-                    action=SubjectMappingActivity.ACTION_REORDERED,
-                    previous_order=previous_subject_ids,
-                    new_order=new_subject_ids,
-                )
-
-        return JsonResponse(
-            {"success": True, "message": "Subject order updated successfully."}
-        )
-
-    except json.JSONDecodeError:
-        return JsonResponse(
-            {"success": False, "error": "Invalid JSON in request body"}, status=400
-        )
-    except Exception as e:
-        return JsonResponse(
-            {"success": False, "error": f"An unexpected error occurred: {str(e)}"},
-            status=500,
-        )
+    return JsonResponse(
+        {"success": True, "message": "Subject order updated successfully."}
+    )
 
 
 def _public_image_count_annotations():

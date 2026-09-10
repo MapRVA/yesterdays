@@ -1,5 +1,6 @@
 import datetime
 import json
+import threading
 from contextlib import contextmanager
 from io import BytesIO
 from types import SimpleNamespace
@@ -12,20 +13,31 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
 from django.db.models import F, ProtectedError
-from django.test import SimpleTestCase, TestCase, TransactionTestCase, override_settings
+from django.http import Http404
+from django.test import (
+    Client,
+    SimpleTestCase,
+    TestCase,
+    TransactionTestCase,
+    override_settings,
+)
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.text import slugify
 from PIL import Image as PILImage
 
 from images.management.commands.detect_addresses import (
     Command as DetectAddressesCommand,
 )
+from images import policies
 from images.models import (
     AerialGeoreference,
     Album,
+    AlbumImage,
     Collection,
     CollectionRegionStats,
     CollectionStats,
+    Comment,
     Georeference,
     GeoreferenceValidation,
     Image,
@@ -1035,8 +1047,13 @@ class CollectionStatsTests(StatsEventsMixin, TestCase):
             georeferenced_at=timezone.now() - datetime.timedelta(days=1)
         )
         with self.stats_events():
+            # Attributed, because only the first georeference on an image may
+            # be anonymous (see the partial unique index on Georeference).
             Georeference.objects.create(
-                image=image, point=Point(-77.44, 37.54, srid=4326), confidence="medium"
+                image=image,
+                point=Point(-77.44, 37.54, srid=4326),
+                confidence="medium",
+                georeferenced_by=User.objects.create_user("stats_corrector"),
             )
         s = self.stats()
         self.assertEqual(
@@ -2987,3 +3004,986 @@ class DetectAddressesRegionTests(SimpleTestCase):
             bounded=True,
             exactly_one=True,
         )
+
+
+# ---------------------------------------------------------------------------
+# SA-01: object-level authorization, CSRF, and input limits on the community
+# write endpoints.
+# ---------------------------------------------------------------------------
+
+
+def _ring(west, south, size=0.01):
+    """A closed, counter-clockwise square ring for polygon fixtures."""
+    return [
+        [west, south],
+        [west + size, south],
+        [west + size, south + size],
+        [west, south + size],
+        [west, south],
+    ]
+
+
+def _polygon(west=-77.5, south=37.5, size=0.01):
+    return {"type": "Polygon", "coordinates": [_ring(west, south, size)]}
+
+
+class CommunityWriteFixtureMixin:
+    """The visibility matrix every SA-01 test works against.
+
+    One public image, one hidden behind a private collection, one hidden
+    behind a private source, plus the three eligibility variants (duplicate,
+    will_not_georef, aerial) that the georeferencing policies care about.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user("sa01_user", password="pw")
+        cls.other_user = User.objects.create_user("sa01_other", password="pw")
+        cls.staff = User.objects.create_user("sa01_staff", password="pw", is_staff=True)
+
+        public_source = Source.objects.create(
+            name="Public source",
+            slug="sa01-public-source",
+            url="https://example.com/public",
+            description="",
+            public=True,
+        )
+        private_source = Source.objects.create(
+            name="Private source",
+            slug="sa01-private-source",
+            url="https://example.com/private",
+            description="",
+            public=False,
+        )
+
+        cls.public_collection = Collection.objects.create(
+            source=public_source, name="Public collection", slug="sa01-public"
+        )
+        private_collection = Collection.objects.create(
+            source=public_source,
+            name="Private collection",
+            slug="sa01-private-collection",
+            public=False,
+        )
+        private_source_collection = Collection.objects.create(
+            source=private_source,
+            name="Collection in private source",
+            slug="sa01-private-source-collection",
+        )
+
+        def make_image(collection, title, **kwargs):
+            return Image.objects.create(
+                collection=collection,
+                title=title,
+                permalink=f"https://img.example.com/{slugify(title)}.jpg",
+                **kwargs,
+            )
+
+        cls.public_image = make_image(cls.public_collection, "sa01 public")
+        cls.second_public_image = make_image(cls.public_collection, "sa01 public two")
+        cls.private_collection_image = make_image(
+            private_collection, "sa01 private collection"
+        )
+        cls.private_source_image = make_image(
+            private_source_collection, "sa01 private source"
+        )
+        cls.duplicate_image = make_image(
+            cls.public_collection, "sa01 duplicate", duplicate_of=cls.public_image
+        )
+        cls.will_not_georef_image = make_image(
+            cls.public_collection, "sa01 will not georef", will_not_georef=True
+        )
+        cls.aerial_image = make_image(cls.public_collection, "sa01 aerial", aerial=True)
+
+        # Images the ordinary community may not write to at all.
+        cls.inaccessible_images = [
+            cls.private_collection_image,
+            cls.private_source_image,
+            cls.duplicate_image,
+        ]
+
+    def login(self, user=None):
+        self.client.force_login(user or self.user)
+
+    def post_json(self, url, payload=None, client=None, method="post"):
+        client = client or self.client
+        return getattr(client, method)(
+            url,
+            data=json.dumps({} if payload is None else payload),
+            content_type="application/json",
+        )
+
+
+class CommunityWriteAuthorizationTests(CommunityWriteFixtureMixin, TestCase):
+    """Every image-targeting mutation resolves its image through a policy."""
+
+    def image_routes(self):
+        """(label, url builder, payload) for each single-image mutation."""
+        return [
+            (
+                "georeference",
+                lambda image: reverse("images:georeference_image", args=[image.id]),
+                {"latitude": 37.5, "longitude": -77.4, "confidence": "high"},
+            ),
+            (
+                "skip",
+                lambda image: reverse("images:skip_image", args=[image.id]),
+                {"reason": "unclear"},
+            ),
+            (
+                "comment",
+                lambda image: reverse("images:add_comment", args=[image.id]),
+                {"text": "hello"},
+            ),
+            (
+                "rating",
+                lambda image: reverse("images:submit_rating", args=[image.id]),
+                {"rating": 5},
+            ),
+        ]
+
+    def test_inaccessible_images_are_indistinguishable_from_missing_ones(self):
+        self.login()
+        missing_id = Image.objects.order_by("-id").first().id + 1000
+
+        for label, build_url, payload in self.image_routes():
+            for image in self.inaccessible_images:
+                with self.subTest(route=label, image=image.title):
+                    response = self.post_json(build_url(image), payload)
+                    self.assertEqual(response.status_code, 404)
+
+            with self.subTest(route=label, image="missing"):
+                response = self.post_json(
+                    build_url(SimpleNamespace(id=missing_id)), payload
+                )
+                self.assertEqual(response.status_code, 404)
+
+    def test_authorized_public_image_operations_still_work(self):
+        self.login()
+        expected = {"georeference": 200, "skip": 200, "comment": 201, "rating": 200}
+
+        for label, build_url, payload in self.image_routes():
+            with self.subTest(route=label):
+                response = self.post_json(build_url(self.public_image), payload)
+                self.assertEqual(response.status_code, expected[label])
+
+    def test_staff_may_write_to_private_images(self):
+        self.login(self.staff)
+        response = self.post_json(
+            reverse("images:add_comment", args=[self.private_collection_image.id]),
+            {"text": "staff note"},
+        )
+        self.assertEqual(response.status_code, 201)
+
+    def test_staff_may_not_write_to_duplicates(self):
+        self.login(self.staff)
+        response = self.post_json(
+            reverse("images:add_comment", args=[self.duplicate_image.id]),
+            {"text": "on a copy"},
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_will_not_georef_images_reject_point_submissions_and_skips(self):
+        self.login()
+        for name, payload in (
+            ("images:georeference_image", {"latitude": 37.5, "longitude": -77.4,
+                                           "confidence": "high"}),
+            ("images:skip_image", {}),
+        ):
+            with self.subTest(route=name):
+                response = self.post_json(
+                    reverse(name, args=[self.will_not_georef_image.id]), payload
+                )
+                self.assertEqual(response.status_code, 404)
+
+    def test_ordinary_users_cannot_point_georeference_an_aerial(self):
+        self.login()
+        response = self.post_json(
+            reverse("images:georeference_image", args=[self.aerial_image.id]),
+            {"latitude": 37.5, "longitude": -77.4, "confidence": "high"},
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_staff_may_point_georeference_an_aerial(self):
+        """Deliberate: georeference_interface serves aerials to staff."""
+        self.login(self.staff)
+        response = self.post_json(
+            reverse("images:georeference_image", args=[self.aerial_image.id]),
+            {"latitude": 37.5, "longitude": -77.4, "confidence": "high"},
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_polygon_submission_requires_an_aerial_image_even_for_staff(self):
+        self.login(self.staff)
+        response = self.post_json(
+            reverse(
+                "images:aerial_georeference_image", args=[self.public_image.id]
+            ),
+            {"polygon": _polygon(), "confidence": "high"},
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_polygon_submission_requires_authentication(self):
+        response = self.post_json(
+            reverse(
+                "images:aerial_georeference_image", args=[self.aerial_image.id]
+            ),
+            {"polygon": _polygon(), "confidence": "high"},
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_polygon_submission_on_an_eligible_aerial_succeeds(self):
+        self.login()
+        response = self.post_json(
+            reverse(
+                "images:aerial_georeference_image", args=[self.aerial_image.id]
+            ),
+            {"polygon": _polygon(), "confidence": "high"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(AerialGeoreference.objects.filter(
+            image=self.aerial_image).count(), 1)
+
+    def test_validation_resolves_through_the_related_image(self):
+        hidden = Georeference.objects.create(
+            image=self.private_collection_image,
+            point=Point(-77.4, 37.5, srid=4326),
+            confidence="high",
+            georeferenced_by=self.other_user,
+        )
+        self.login()
+        response = self.post_json(
+            reverse("images:validate_georeference", args=[hidden.id]),
+            {"validation": "correct"},
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(GeoreferenceValidation.objects.exists())
+
+    def test_validation_of_a_visible_georeference_succeeds(self):
+        georeference = Georeference.objects.create(
+            image=self.public_image,
+            point=Point(-77.4, 37.5, srid=4326),
+            confidence="high",
+            georeferenced_by=self.other_user,
+        )
+        self.login()
+        response = self.post_json(
+            reverse("images:validate_georeference", args=[georeference.id]),
+            {"validation": "correct"},
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_duplicate_validation_is_a_400_not_a_500(self):
+        georeference = Georeference.objects.create(
+            image=self.public_image,
+            point=Point(-77.4, 37.5, srid=4326),
+            confidence="high",
+            georeferenced_by=self.other_user,
+        )
+        GeoreferenceValidation.objects.create(
+            georeference=georeference, validated_by=self.user, validation="correct"
+        )
+        self.login()
+        response = self.post_json(
+            reverse("images:validate_georeference", args=[georeference.id]),
+            {"validation": "incorrect"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_mutation_endpoints_reject_get(self):
+        self.login()
+        urls = [
+            reverse("images:georeference_image", args=[self.public_image.id]),
+            reverse("images:aerial_georeference_image", args=[self.aerial_image.id]),
+            reverse("images:add_comment", args=[self.public_image.id]),
+            reverse("images:submit_rating", args=[self.public_image.id]),
+            reverse("images:skip_image", args=[self.public_image.id]),
+            reverse("images:add_image_to_album"),
+            reverse("images:create_and_add_to_album"),
+            reverse("images:remove_image_from_album"),
+            reverse("images:bulk_add_to_album"),
+            reverse("images:bulk_create_and_add_to_album"),
+        ]
+        for url in urls:
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url).status_code, 405)
+
+    def test_anonymous_callers_cannot_comment_or_rate(self):
+        for name in ("images:add_comment", "images:submit_rating"):
+            with self.subTest(route=name):
+                response = self.post_json(
+                    reverse(name, args=[self.public_image.id]), {"text": "x", "rating": 3}
+                )
+                self.assertEqual(response.status_code, 401)
+
+
+class CommunityWriteCsrfTests(CommunityWriteFixtureMixin, TestCase):
+    """No cookie-authenticated mutation endpoint is CSRF-exempt any more."""
+
+    def setUp(self):
+        self.csrf_client = Client(enforce_csrf_checks=True)
+        self.csrf_client.force_login(self.user)
+
+    def formerly_exempt_routes(self):
+        return [
+            (
+                reverse("images:georeference_image", args=[self.public_image.id]),
+                {"latitude": 37.5, "longitude": -77.4, "confidence": "high"},
+            ),
+            (
+                reverse(
+                    "images:aerial_georeference_image", args=[self.aerial_image.id]
+                ),
+                {"polygon": _polygon(), "confidence": "high"},
+            ),
+            (
+                reverse("images:add_comment", args=[self.public_image.id]),
+                {"text": "hi"},
+            ),
+            (
+                reverse("images:submit_rating", args=[self.public_image.id]),
+                {"rating": 4},
+            ),
+            (
+                reverse("images:skip_image", args=[self.public_image.id]),
+                {},
+            ),
+            (
+                reverse("images:bulk_add_to_album"),
+                {"album_id": None, "image_ids": [self.public_image.id]},
+            ),
+            (
+                reverse("images:bulk_create_and_add_to_album"),
+                {"title": "t", "image_ids": [self.public_image.id]},
+            ),
+        ]
+
+    def test_missing_csrf_token_is_rejected(self):
+        for url, payload in self.formerly_exempt_routes():
+            with self.subTest(url=url):
+                response = self.post_json(url, payload, client=self.csrf_client)
+                self.assertEqual(response.status_code, 403)
+
+    def test_invalid_csrf_token_is_rejected(self):
+        for url, payload in self.formerly_exempt_routes():
+            with self.subTest(url=url):
+                response = self.csrf_client.post(
+                    url,
+                    data=json.dumps(payload),
+                    content_type="application/json",
+                    HTTP_X_CSRFTOKEN="not-a-real-token",
+                )
+                self.assertEqual(response.status_code, 403)
+
+    def fetch_csrf_token(self, client):
+        """Read the CSRF cookie a rendered page sets.
+
+        The georeferencing interface is the right page to ask: it serializes a
+        token into its config for anonymous and logged-in visitors alike,
+        because anonymous georeferencing is supported.
+        """
+        client.get(
+            reverse("images:georeference_interface"),
+            {"image": self.public_image.id},
+        )
+        self.assertIn(
+            "csrftoken",
+            client.cookies,
+            "expected the georeferencing interface to set a CSRF cookie",
+        )
+        return client.cookies["csrftoken"].value
+
+    def test_valid_csrf_token_is_accepted(self):
+        token = self.fetch_csrf_token(self.csrf_client)
+
+        response = self.csrf_client.post(
+            reverse("images:add_comment", args=[self.public_image.id]),
+            data=json.dumps({"text": "with a token"}),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=token,
+        )
+        self.assertEqual(response.status_code, 201)
+
+    def test_anonymous_georeference_also_requires_a_token(self):
+        anonymous = Client(enforce_csrf_checks=True)
+        url = reverse("images:georeference_image", args=[self.public_image.id])
+        payload = {"latitude": 37.5, "longitude": -77.4, "confidence": "high"}
+
+        self.assertEqual(
+            self.post_json(url, payload, client=anonymous).status_code, 403
+        )
+
+        response = anonymous.post(
+            url,
+            data=json.dumps(payload),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=self.fetch_csrf_token(anonymous),
+        )
+        self.assertEqual(response.status_code, 200)
+
+
+class GeoreferenceInputValidationTests(CommunityWriteFixtureMixin, TestCase):
+    """Malformed or over-limit input returns 400 without writing anything."""
+
+    def setUp(self):
+        self.login()
+        self.url = reverse("images:georeference_image", args=[self.public_image.id])
+
+    def submit(self, **overrides):
+        payload = {"latitude": 37.5, "longitude": -77.4, "confidence": "high"}
+        payload.update(overrides)
+        return self.post_json(self.url, payload)
+
+    def test_non_finite_json_literals_are_rejected(self):
+        for literal in ("NaN", "Infinity", "-Infinity"):
+            with self.subTest(literal=literal):
+                response = self.client.post(
+                    self.url,
+                    data=(
+                        '{"latitude": %s, "longitude": -77.4, "confidence": "high"}'
+                        % literal
+                    ),
+                    content_type="application/json",
+                )
+                self.assertEqual(response.status_code, 400)
+        self.assertFalse(Georeference.objects.exists())
+
+    def test_quoted_non_finite_coordinates_are_rejected(self):
+        self.assertEqual(self.submit(latitude="nan").status_code, 400)
+        self.assertEqual(self.submit(longitude="inf").status_code, 400)
+        self.assertFalse(Georeference.objects.exists())
+
+    def test_coordinate_bounds(self):
+        self.assertEqual(self.submit(latitude=90, longitude=180).status_code, 200)
+        self.assertEqual(self.submit(latitude=-90, longitude=-180).status_code, 200)
+        self.assertEqual(self.submit(latitude=90.0001).status_code, 400)
+        self.assertEqual(self.submit(longitude=-180.0001).status_code, 400)
+
+    def test_direction_zero_is_preserved(self):
+        response = self.submit(direction=0)
+        self.assertEqual(response.status_code, 200)
+        georeference = Georeference.objects.get(
+            id=response.json()["georeference_id"]
+        )
+        self.assertEqual(georeference.direction, 0)
+
+    def test_invalid_directions_are_rejected(self):
+        for direction in (-1, 360, 12.5, "north", True):
+            with self.subTest(direction=direction):
+                self.assertEqual(self.submit(direction=direction).status_code, 400)
+
+    def test_omitted_direction_stays_null(self):
+        response = self.submit()
+        georeference = Georeference.objects.get(
+            id=response.json()["georeference_id"]
+        )
+        self.assertIsNone(georeference.direction)
+
+    def test_unknown_confidence_is_rejected(self):
+        self.assertEqual(self.submit(confidence="perfect").status_code, 400)
+
+    def test_low_confidence_requires_notes(self):
+        self.assertEqual(self.submit(confidence="low").status_code, 400)
+        self.assertEqual(
+            self.submit(confidence="low", notes="a hunch").status_code, 200
+        )
+
+    @override_settings(GEOREFERENCE_NOTES_MAX_LENGTH=20)
+    def test_notes_length_boundary(self):
+        self.assertEqual(self.submit(notes="x" * 20).status_code, 200)
+        self.assertEqual(self.submit(notes="x" * 21).status_code, 400)
+
+    @override_settings(COMMUNITY_WRITE_MAX_BODY_BYTES=64)
+    def test_oversized_body_is_rejected_before_parsing(self):
+        self.assertEqual(self.submit(notes="x" * 500).status_code, 400)
+        self.assertFalse(Georeference.objects.exists())
+
+    @override_settings(COMMENT_MAX_LENGTH=10)
+    def test_comment_length_boundary(self):
+        url = reverse("images:add_comment", args=[self.public_image.id])
+        self.assertEqual(self.post_json(url, {"text": "x" * 10}).status_code, 201)
+        self.assertEqual(self.post_json(url, {"text": "x" * 11}).status_code, 400)
+
+    def test_empty_comment_is_rejected(self):
+        url = reverse("images:add_comment", args=[self.public_image.id])
+        self.assertEqual(self.post_json(url, {"text": "   "}).status_code, 400)
+        self.assertFalse(Comment.objects.exists())
+
+    @override_settings(SKIP_REASON_MAX_LENGTH=5)
+    def test_skip_reason_length_boundary(self):
+        url = reverse("images:skip_image", args=[self.public_image.id])
+        self.assertEqual(self.post_json(url, {"reason": "12345"}).status_code, 200)
+        self.assertEqual(self.post_json(url, {"reason": "123456"}).status_code, 400)
+
+    @override_settings(VALIDATION_NOTES_MAX_LENGTH=5)
+    def test_validation_notes_length_boundary(self):
+        georeference = Georeference.objects.create(
+            image=self.public_image,
+            point=Point(-77.4, 37.5, srid=4326),
+            confidence="high",
+            georeferenced_by=self.other_user,
+        )
+        url = reverse("images:validate_georeference", args=[georeference.id])
+        self.assertEqual(
+            self.post_json(url, {"validation": "correct", "notes": "123456"}).status_code,
+            400,
+        )
+        self.assertEqual(
+            self.post_json(url, {"validation": "correct", "notes": "12345"}).status_code,
+            200,
+        )
+
+    def test_rating_bounds(self):
+        url = reverse("images:submit_rating", args=[self.public_image.id])
+        self.assertEqual(self.post_json(url, {"rating": 0}).status_code, 400)
+        self.assertEqual(self.post_json(url, {"rating": 11}).status_code, 400)
+        self.assertEqual(self.post_json(url, {"rating": True}).status_code, 400)
+        self.assertEqual(self.post_json(url, {"rating": 1}).status_code, 200)
+
+    def test_corrections_append_rather_than_overwrite(self):
+        self.assertEqual(self.submit(latitude=37.5).status_code, 200)
+        self.assertEqual(self.submit(latitude=37.6).status_code, 200)
+        self.assertEqual(
+            Georeference.objects.filter(
+                image=self.public_image, georeferenced_by=self.user
+            ).count(),
+            2,
+        )
+
+
+class PolygonValidationTests(CommunityWriteFixtureMixin, TestCase):
+    """Polygon limits are enforced before any geometry or database work."""
+
+    def setUp(self):
+        self.login()
+        self.url = reverse(
+            "images:aerial_georeference_image", args=[self.aerial_image.id]
+        )
+
+    def submit(self, polygon, **overrides):
+        payload = {"polygon": polygon, "confidence": "high"}
+        payload.update(overrides)
+        return self.post_json(self.url, payload)
+
+    def assert_rejected(self, polygon, label):
+        with self.subTest(polygon=label):
+            self.assertEqual(self.submit(polygon).status_code, 400)
+            self.assertFalse(AerialGeoreference.objects.exists())
+
+    def test_structurally_invalid_polygons_are_rejected(self):
+        cases = {
+            "not an object": "a string",
+            "wrong type": {"type": "LineString", "coordinates": [[0, 0], [1, 1]]},
+            "no coordinates": {"type": "Polygon", "coordinates": []},
+            "too few positions": {
+                "type": "Polygon",
+                "coordinates": [[[0, 0], [1, 0], [0, 0]]],
+            },
+            "unclosed ring": {
+                "type": "Polygon",
+                "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1]]],
+            },
+            "non numeric coordinate": {
+                "type": "Polygon",
+                "coordinates": [[["a", 0], [1, 0], [1, 1], ["a", 0]]],
+            },
+            "longitude out of bounds": {
+                "type": "Polygon",
+                "coordinates": [_ring(180.5, 37.5)],
+            },
+            "latitude out of bounds": {
+                "type": "Polygon",
+                "coordinates": [_ring(-77.5, 90.5)],
+            },
+            "multipolygon with two polygons": {
+                "type": "MultiPolygon",
+                "coordinates": [[_ring(-77.5, 37.5)], [_ring(-77.4, 37.4)]],
+            },
+        }
+        for label, polygon in cases.items():
+            self.assert_rejected(polygon, label)
+
+    def test_self_intersecting_polygon_is_rejected(self):
+        bowtie = {
+            "type": "Polygon",
+            "coordinates": [
+                [
+                    [-77.5, 37.5],
+                    [-77.4, 37.6],
+                    [-77.4, 37.5],
+                    [-77.5, 37.6],
+                    [-77.5, 37.5],
+                ]
+            ],
+        }
+        self.assert_rejected(bowtie, "bowtie")
+
+    def test_zero_area_polygon_is_rejected(self):
+        degenerate = {
+            "type": "Polygon",
+            "coordinates": [
+                [[-77.5, 37.5], [-77.4, 37.5], [-77.3, 37.5], [-77.5, 37.5]]
+            ],
+        }
+        self.assert_rejected(degenerate, "collinear")
+
+    @override_settings(POLYGON_MAX_AREA_SQ_DEGREES=0.0001)
+    def test_over_area_polygon_is_rejected(self):
+        self.assert_rejected(_polygon(size=1.0), "too large")
+
+    @override_settings(POLYGON_MAX_RINGS=1)
+    def test_too_many_rings_are_rejected(self):
+        two_rings = {
+            "type": "Polygon",
+            "coordinates": [_ring(-77.5, 37.5, 0.1), _ring(-77.48, 37.52, 0.01)],
+        }
+        self.assert_rejected(two_rings, "two rings")
+
+    @override_settings(POLYGON_MAX_VERTICES_PER_RING=5)
+    def test_too_many_vertices_per_ring_are_rejected(self):
+        dense = _ring(-77.5, 37.5)
+        dense.insert(1, [-77.495, 37.5])
+        self.assert_rejected(
+            {"type": "Polygon", "coordinates": [dense]}, "dense ring"
+        )
+
+    @override_settings(POLYGON_MAX_TOTAL_VERTICES=5)
+    def test_total_vertex_budget_is_enforced_across_rings(self):
+        two_rings = {
+            "type": "Polygon",
+            "coordinates": [_ring(-77.5, 37.5, 0.1), _ring(-77.48, 37.52, 0.01)],
+        }
+        self.assert_rejected(two_rings, "over budget")
+
+    @override_settings(POLYGON_MAX_BODY_BYTES=64)
+    def test_oversized_polygon_body_is_rejected(self):
+        self.assert_rejected(_polygon(), "oversized body")
+
+    def test_missing_polygon_field_is_rejected(self):
+        response = self.post_json(self.url, {"confidence": "high"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_single_polygon_multipolygon_is_accepted(self):
+        response = self.submit(
+            {"type": "MultiPolygon", "coordinates": [[_ring(-77.5, 37.5)]]}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(AerialGeoreference.objects.count(), 1)
+
+    def test_polygon_is_stored_in_wgs84(self):
+        self.assertEqual(self.submit(_polygon()).status_code, 200)
+        self.assertEqual(AerialGeoreference.objects.get().polygon.srid, 4326)
+
+    def test_polygon_corrections_append(self):
+        self.assertEqual(self.submit(_polygon()).status_code, 200)
+        self.assertEqual(self.submit(_polygon(west=-77.6)).status_code, 200)
+        self.assertEqual(
+            AerialGeoreference.objects.filter(image=self.aerial_image).count(), 2
+        )
+
+
+class AnonymousGeoreferenceRuleTests(CommunityWriteFixtureMixin, TestCase):
+    """Anonymous callers may only place the first georeference on an image."""
+
+    def submit(self, image):
+        return self.post_json(
+            reverse("images:georeference_image", args=[image.id]),
+            {"latitude": 37.5, "longitude": -77.4, "confidence": "high"},
+        )
+
+    def test_first_anonymous_submission_is_accepted(self):
+        self.assertEqual(self.submit(self.public_image).status_code, 200)
+
+    def test_second_anonymous_submission_is_rejected(self):
+        self.assertEqual(self.submit(self.public_image).status_code, 200)
+        self.assertEqual(self.submit(self.public_image).status_code, 400)
+        self.assertEqual(
+            Georeference.objects.filter(image=self.public_image).count(), 1
+        )
+
+    def test_anonymous_submission_after_an_authenticated_one_is_rejected(self):
+        Georeference.objects.create(
+            image=self.public_image,
+            point=Point(-77.4, 37.5, srid=4326),
+            confidence="high",
+            georeferenced_by=self.user,
+        )
+        self.assertEqual(self.submit(self.public_image).status_code, 400)
+
+    def test_database_constraint_blocks_a_second_anonymous_row(self):
+        Georeference.objects.create(
+            image=self.public_image,
+            point=Point(-77.4, 37.5, srid=4326),
+            confidence="high",
+            georeferenced_by=None,
+        )
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                Georeference.objects.create(
+                    image=self.public_image,
+                    point=Point(-77.3, 37.6, srid=4326),
+                    confidence="high",
+                    georeferenced_by=None,
+                )
+
+
+class AlbumWriteAuthorizationTests(CommunityWriteFixtureMixin, TestCase):
+    """Album writes check both album ownership and image visibility."""
+
+    def setUp(self):
+        self.login()
+        self.album = Album.objects.create(owner=self.user, title="Mine")
+        self.foreign_album = Album.objects.create(
+            owner=self.other_user, title="Theirs"
+        )
+
+    def test_cannot_add_to_someone_elses_album(self):
+        response = self.post_json(
+            reverse("images:add_image_to_album"),
+            {"image_id": self.public_image.id, "album_id": str(self.foreign_album.id)},
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(AlbumImage.objects.exists())
+
+    def test_cannot_add_an_inaccessible_image(self):
+        for image in self.inaccessible_images:
+            with self.subTest(image=image.title):
+                response = self.post_json(
+                    reverse("images:add_image_to_album"),
+                    {"image_id": image.id, "album_id": str(self.album.id)},
+                )
+                self.assertEqual(response.status_code, 404)
+        self.assertFalse(AlbumImage.objects.exists())
+
+    def test_bulk_add_is_all_or_nothing(self):
+        response = self.post_json(
+            reverse("images:bulk_add_to_album"),
+            {
+                "album_id": str(self.album.id),
+                "image_ids": [
+                    self.public_image.id,
+                    self.private_collection_image.id,
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(AlbumImage.objects.exists())
+
+    def test_bulk_add_of_authorized_images_succeeds(self):
+        response = self.post_json(
+            reverse("images:bulk_add_to_album"),
+            {
+                "album_id": str(self.album.id),
+                "image_ids": [self.public_image.id, self.second_public_image.id],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["added_count"], 2)
+        self.assertEqual(
+            list(
+                AlbumImage.objects.filter(album=self.album)
+                .order_by("order")
+                .values_list("order", flat=True)
+            ),
+            [1, 2],
+        )
+
+    def test_bulk_create_leaves_no_orphan_album_when_unauthorized(self):
+        response = self.post_json(
+            reverse("images:bulk_create_and_add_to_album"),
+            {
+                "title": "Should not exist",
+                "image_ids": [self.public_image.id, self.private_source_image.id],
+            },
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(Album.objects.filter(title="Should not exist").exists())
+
+    @override_settings(BULK_MAX_IMAGE_IDS=1)
+    def test_bulk_request_over_the_id_cap_is_rejected(self):
+        response = self.post_json(
+            reverse("images:bulk_add_to_album"),
+            {
+                "album_id": str(self.album.id),
+                "image_ids": [self.public_image.id, self.second_public_image.id],
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_bulk_request_with_no_ids_is_rejected(self):
+        response = self.post_json(
+            reverse("images:bulk_add_to_album"),
+            {"album_id": str(self.album.id), "image_ids": []},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_public_album_cannot_gain_a_private_image(self):
+        self.client.force_login(self.staff)
+        staff_album = Album.objects.create(
+            owner=self.staff, title="Staff public", public=True
+        )
+        response = self.post_json(
+            reverse("images:add_image_to_album"),
+            {
+                "image_id": self.private_collection_image.id,
+                "album_id": str(staff_album.id),
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(AlbumImage.objects.exists())
+
+    def test_private_album_holding_a_private_image_cannot_be_published(self):
+        self.client.force_login(self.staff)
+        staff_album = Album.objects.create(owner=self.staff, title="Staging")
+        AlbumImage.objects.create(
+            album=staff_album, image=self.private_collection_image, order=1
+        )
+
+        response = self.post_json(
+            reverse("images:toggle_album_public", args=[staff_album.id]),
+            {"public": True},
+        )
+        self.assertEqual(response.status_code, 400)
+        staff_album.refresh_from_db()
+        self.assertFalse(staff_album.public)
+
+    def test_public_album_of_public_images_is_allowed(self):
+        AlbumImage.objects.create(
+            album=self.album, image=self.public_image, order=1
+        )
+        response = self.post_json(
+            reverse("images:toggle_album_public", args=[self.album.id]),
+            {"public": True},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.album.refresh_from_db()
+        self.assertTrue(self.album.public)
+
+    def test_creating_a_public_album_with_a_private_image_is_rejected(self):
+        self.client.force_login(self.staff)
+        response = self.post_json(
+            reverse("images:bulk_create_and_add_to_album"),
+            {
+                "title": "Leaky",
+                "is_public": True,
+                "image_ids": [self.private_collection_image.id],
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Album.objects.filter(title="Leaky").exists())
+
+
+class AnonymousGeoreferenceConcurrencyTests(TransactionTestCase):
+    """Two simultaneous anonymous submissions cannot both land.
+
+    Uses TransactionTestCase and real threads so each request runs on its own
+    database connection, which is the only way the row lock is exercised.
+    """
+
+    def setUp(self):
+        source = Source.objects.create(
+            name="Concurrency source",
+            slug="sa01-concurrency",
+            url="https://example.com/concurrency",
+            description="",
+        )
+        collection = Collection.objects.create(
+            source=source, name="Concurrency", slug="sa01-concurrency"
+        )
+        self.image = Image.objects.create(
+            collection=collection,
+            title="Concurrency",
+            permalink="https://img.example.com/concurrency.jpg",
+        )
+
+    def test_only_one_of_two_simultaneous_anonymous_submissions_wins(self):
+        url = reverse("images:georeference_image", args=[self.image.id])
+        payload = json.dumps(
+            {"latitude": 37.5, "longitude": -77.4, "confidence": "high"}
+        )
+        barrier = threading.Barrier(2)
+        statuses = []
+        lock = threading.Lock()
+
+        def submit():
+            try:
+                barrier.wait(timeout=10)
+                response = Client().post(
+                    url, data=payload, content_type="application/json"
+                )
+                with lock:
+                    statuses.append(response.status_code)
+            finally:
+                connection.close()
+
+        threads = [threading.Thread(target=submit) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+
+        self.assertEqual(sorted(statuses), [200, 400])
+        self.assertEqual(Georeference.objects.filter(image=self.image).count(), 1)
+
+
+class ImagePolicyTests(CommunityWriteFixtureMixin, TestCase):
+    """Direct coverage of the policy querysets the views delegate to."""
+
+    def test_public_images_excludes_private_sources_and_collections(self):
+        self.assertEqual(
+            set(policies.public_images().values_list("id", flat=True)),
+            {
+                self.public_image.id,
+                self.second_public_image.id,
+                self.duplicate_image.id,
+                self.will_not_georef_image.id,
+                self.aerial_image.id,
+            },
+        )
+
+    def test_accessible_images_for_staff_includes_private(self):
+        accessible = policies.accessible_images_for(self.staff)
+        self.assertIn(self.private_collection_image, accessible)
+        self.assertIn(self.private_source_image, accessible)
+
+    def test_editable_images_excludes_duplicates_for_everyone(self):
+        for user in (self.user, self.staff):
+            with self.subTest(user=user.username):
+                self.assertNotIn(
+                    self.duplicate_image, policies.editable_images_for(user)
+                )
+
+    def test_representable_images_ignores_staff_status(self):
+        representable = policies.representable_images()
+        self.assertIn(self.public_image, representable)
+        self.assertNotIn(self.private_collection_image, representable)
+        self.assertNotIn(self.duplicate_image, representable)
+
+    def test_parse_image_ids_normalizes_and_deduplicates(self):
+        self.assertEqual(policies.parse_image_ids([3, "1", 3, 2]), [3, 1, 2])
+
+    def test_parse_image_ids_rejects_bad_input(self):
+        for value in ([], "12", [None], [True], [{}], [1.5e400]):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    policies.parse_image_ids(value)
+
+    @override_settings(BULK_MAX_IMAGE_IDS=2)
+    def test_parse_image_ids_enforces_the_cap(self):
+        with self.assertRaises(ValueError):
+            policies.parse_image_ids([1, 2, 3])
+
+    def test_get_images_or_404_is_all_or_nothing(self):
+        queryset = policies.editable_images_for(self.user)
+        self.assertEqual(
+            len(
+                policies.get_images_or_404(
+                    queryset, [self.public_image.id, self.second_public_image.id]
+                )
+            ),
+            2,
+        )
+        with self.assertRaises(Http404):
+            policies.get_images_or_404(
+                queryset, [self.public_image.id, self.private_source_image.id]
+            )
