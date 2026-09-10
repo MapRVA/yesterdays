@@ -42,7 +42,7 @@ export interface RegionSummary {
   image_count: number;
   georeferenced_count: number;
   thumbnail: string | null;
-  is_grouping: boolean;
+  advertise: boolean;
 }
 
 export function readRegionSummaries(): RegionSummary[] {
@@ -160,7 +160,7 @@ export interface RegionMapOptions {
   container: HTMLElement;
   summaries: RegionSummary[];
   // Cards to keep in step with the pins, by slug. A region without a card
-  // (the directory lists grouping regions, which get no pin, and a page
+  // (the directory lists unadvertised regions, which get no pin, and a page
   // may show only its first few) simply isn't linked.
   cards: Map<string, HTMLElement>;
   // What a popup's button does: each page owns where selecting a region

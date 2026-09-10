@@ -16,21 +16,19 @@ _AUTOCOMPLETE_LIMIT = 3
 def region_index(request):
     """A browsable directory of the places represented on Yesterdays.
 
-    The resting page shows only destinations — the same leaf regions the
-    map above the grid pins, since that map is the global homepage's
-    picker map. Grouping regions (Virginia above Richmond) still get
-    cards, busiest first like the rest, but they render hidden and only
-    surface when the visitor searches. Both lists are built from one pass
-    and split here.
+    The resting page and map show regions an admin chose to advertise.
+    Every other region still gets a card, busiest first like the rest, but
+    it renders hidden and only surfaces when the visitor searches. Both
+    lists are built from one pass and split here.
     """
-    summaries = get_region_summaries(leaf_only=False)
+    summaries = get_region_summaries(advertised_only=False)
     return render(
         request,
         "regions/browse_regions.html",
         {
             "regions": summaries,
             "region_summaries": [
-                summary for summary in summaries if not summary["is_grouping"]
+                summary for summary in summaries if summary["advertise"]
             ],
         },
     )
@@ -45,10 +43,8 @@ def _popular_regions():
     reranked: the directory sorts by library size, this list by how much
     of that library is on the map.
 
-    Leaves only, like the global homepage's picker: because the rollup
-    counts a Richmond photograph toward Virginia as well, grouping
-    regions outrank by construction and would crowd every destination out
-    of a three-item list. Searching still finds them.
+    Only explicitly advertised regions are candidates. Searching still
+    finds every region.
     """
     summaries = sorted(
         get_region_summaries(),
@@ -71,9 +67,9 @@ def region_autocomplete(request):
     """Public GET returning regions matching ``q`` as a JSON array.
 
     An empty or missing ``q`` returns the three most-georeferenced
-    destination regions, which the dropdown heads with "Popular". A query
-    instead filters every region, grouping regions included, by either
-    display name, alphabetically, before that same cap is applied.
+    advertised regions, which the dropdown heads with "Popular". A query
+    instead filters every region by either display name, alphabetically,
+    before that same cap is applied.
     """
     query = request.GET.get("q", "").strip()
     if len(query) > _MAX_AUTOCOMPLETE_QUERY_LEN:

@@ -1,11 +1,11 @@
-from django.db.models import Exists, F, OuterRef, Sum
+from django.db.models import F, Sum
 
 from images.models import CollectionRegionStats
 
-from .models import Region, RegionAncestor
+from .models import Region
 
 
-def get_region_summaries(leaf_only=True):
+def get_region_summaries(advertised_only=True):
     """Regions, with everything a region picker shows for each of them.
 
     One entry per region: identity and centerpoint for the map pin, public
@@ -18,12 +18,10 @@ def get_region_summaries(leaf_only=True):
     endpoint's (regions.views) so both describe a region to the frontend
     the same way.
 
-    A region that is itself an ancestor is a grouping region (Virginia
-    above Richmond), which every entry reports as ``is_grouping``.
-    ``leaf_only`` drops them outright: the global homepage offers only
-    destinations, while the directory at /regions/ keeps them but renders
-    their cards hidden until a search surfaces them, leaving the pins —
-    and the resting grid — to the leaves.
+    ``advertised_only`` limits the result to regions an admin chose to
+    promote. The global homepage, directory map, and navbar's Popular list
+    use that subset. The directory also requests every region so it can keep
+    unadvertised cards hidden until a search surfaces them.
     """
     # Counts come from the denormalized per-region stats, restricted — as
     # every read of CollectionStats is — to public collections and sources
@@ -50,19 +48,11 @@ def get_region_summaries(leaf_only=True):
             ),
         )
     }
-    # RegionAncestor is a transitive closure, so one existence check covers
-    # descendants at any depth.
     regions = Region.objects.select_related(
         "representative_image", "wikidata_item"
-    ).annotate(
-        has_descendants=Exists(
-            RegionAncestor.objects.filter(
-                ancestor_id=OuterRef("wikidata_item_id")
-            )
-        )
     )
-    if leaf_only:
-        regions = regions.filter(has_descendants=False)
+    if advertised_only:
+        regions = regions.filter(advertise=True)
 
     summaries = []
     for region in regions:
@@ -85,7 +75,7 @@ def get_region_summaries(leaf_only=True):
                     if region.representative_image
                     else None
                 ),
-                "is_grouping": region.has_descendants,
+                "advertise": region.advertise,
             }
         )
     # Busiest regions first (the same "densest first" ordering the source

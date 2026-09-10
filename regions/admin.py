@@ -118,6 +118,7 @@ class RegionAdminForm(forms.ModelForm):
             "short_name",
             "long_name",
             "subtitle",
+            "advertise",
             "slug",
             "representative_image",
         ]
@@ -321,11 +322,13 @@ class RegionAdmin(admin.ModelAdmin):
     list_display = (
         "short_name",
         "long_name",
+        "advertise",
         "slug",
         "wikidata_item_link",
         "ancestor_count",
         "created_at",
     )
+    list_filter = ("advertise",)
     search_fields = (
         "short_name",
         "long_name",
@@ -348,6 +351,7 @@ class RegionAdmin(admin.ModelAdmin):
                     "short_name",
                     "long_name",
                     "subtitle",
+                    "advertise",
                     "slug",
                     "representative_image",
                 )

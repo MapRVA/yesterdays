@@ -50,6 +50,7 @@ ELIGIBLE = RegionCheck(eligible=True, coordinate=TEST_POINT)
 def make_region(**kwargs):
     """Create a Region, defaulting the required Wikidata coordinate."""
     kwargs.setdefault("wikidata_coordinate_location", TEST_POINT)
+    kwargs.setdefault("advertise", True)
     return Region.objects.create(**kwargs)
 
 
@@ -948,17 +949,18 @@ class RegionAutocompleteTests(TestCase):
             ["Manchester", "Shockoe Bottom", "Church Hill"],
         )
 
-    def test_popular_skips_grouping_regions_that_search_still_finds(self):
+    def test_popular_skips_unadvertised_regions_that_search_still_finds(self):
         item = WikidataItem.objects.create(wikidata_id="Q904", title="Richmond")
         richmond = make_region(
             short_name="Richmond",
             long_name="Richmond, Virginia",
             slug="richmond",
             wikidata_item=item,
+            advertise=False,
         )
         RegionAncestor.objects.create(region=self.regions[0], ancestor=item)
-        # Richmond outranks every fixture region, but it groups Church
-        # Hill, so only a search offers it.
+        # Richmond outranks every fixture region, but the admin has not
+        # advertised it, so only a search offers it.
         self._add_holdings(richmond, total=50, georeferenced=40)
         self.assertNotIn("Richmond", self._short_names(self.client.get(self.url)))
         self.assertIn(
@@ -1021,6 +1023,7 @@ class RegionAutocompleteTests(TestCase):
                     slug=f"ward-{i:03d}",
                     wikidata_item=item,
                     wikidata_coordinate_location=TEST_POINT,
+                    advertise=True,
                 )
                 for i, item in enumerate(items)
             ]
@@ -1262,7 +1265,7 @@ class RegionSummaryTests(TestCase):
             [s["slug"] for s in self._summaries()], ["texas", "virginia"]
         )
 
-    def test_region_with_a_descendant_is_not_a_summary(self):
+    def test_advertise_controls_summary_regardless_of_hierarchy(self):
         richmond_item = WikidataItem.objects.create(
             wikidata_id="Q43421", title="Richmond"
         )
@@ -1271,11 +1274,18 @@ class RegionSummaryTests(TestCase):
             long_name="Richmond, Virginia",
             slug="richmond",
             wikidata_item=richmond_item,
+            advertise=False,
         )
         RegionAncestor.objects.create(
             region=richmond, ancestor=self.virginia.wikidata_item
         )
 
+        self.assertEqual(
+            [s["slug"] for s in self._summaries()], ["texas", "virginia"]
+        )
+
+        Region.objects.filter(pk=self.virginia.pk).update(advertise=False)
+        Region.objects.filter(pk=richmond.pk).update(advertise=True)
         self.assertEqual(
             [s["slug"] for s in self._summaries()], ["richmond", "texas"]
         )
@@ -1409,9 +1419,9 @@ class RegionDirectoryTests(TestCase):
 
     It shows the global homepage's picker map over a card per region, so
     the assertions below are mostly about which regions reach which of the
-    two: every region gets a card, but grouping regions' cards start
-    hidden (search surfaces them client-side), and only the regions a
-    visitor lands in get a pin.
+    two: every region gets a card, but unadvertised regions' cards start
+    hidden (search surfaces them client-side), and only advertised regions
+    get a pin.
     """
 
     @classmethod
@@ -1433,6 +1443,7 @@ class RegionDirectoryTests(TestCase):
             long_name="Richmond, Virginia",
             slug="richmond",
             wikidata_item=items[1],
+            advertise=False,
         )
         RegionAncestor.objects.create(
             region=cls.richmond, ancestor=cls.virginia.wikidata_item
@@ -1477,20 +1488,20 @@ class RegionDirectoryTests(TestCase):
             response.content,
         ).group(0)
 
-    def test_grouping_regions_get_a_card_but_no_pin(self):
+    def test_unadvertised_regions_get_a_card_but_no_pin(self):
         response = self._get()
         self.assertEqual(sorted(self._card_slugs(response)), ["richmond", "virginia"])
-        self.assertEqual(self._pin_slugs(response), ["richmond"])
+        self.assertEqual(self._pin_slugs(response), ["virginia"])
 
-    def test_grouping_cards_start_hidden_until_a_search_surfaces_them(self):
+    def test_unadvertised_cards_start_hidden_until_a_search_surfaces_them(self):
         response = self._get()
         virginia = self._card_tag(response, "virginia")
-        self.assertIn(b"data-region-grouping", virginia)
-        self.assertIn(b"d-none", virginia)
+        self.assertNotIn(b"data-region-unadvertised", virginia)
+        self.assertNotIn(b"d-none", virginia)
         richmond = self._card_tag(response, "richmond")
-        self.assertNotIn(b"data-region-grouping", richmond)
-        self.assertNotIn(b"d-none", richmond)
-        # The visible count matches: one destination, not two regions.
+        self.assertIn(b"data-region-unadvertised", richmond)
+        self.assertIn(b"d-none", richmond)
+        # The visible count matches: one advertised region, not two regions.
         self.assertContains(response, "1 region<")
 
     def test_page_exposes_the_protomaps_key_for_the_picker_map(self):
