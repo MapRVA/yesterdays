@@ -40,7 +40,7 @@
                         </button>
                     {% endif %}
                     {% if request.user.is_staff %}
-                        <a href="{% url 'admin:maps_maplayer_change' layer.pk %}" class="btn btn-sm btn-outline-secondary">
+                        <a href="{% url 'maps:layer_edit' layer.pk %}" class="btn btn-sm btn-outline-secondary">
                             Edit Info
                         </a>
                     {% endif %}

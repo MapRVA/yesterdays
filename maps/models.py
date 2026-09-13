@@ -115,10 +115,23 @@ class MapLayer(models.Model):
     def clean(self):
         super().clean()
         if self.is_primary:
-            if self.type == "style" and not self.is_default:
-                # Style-type primary layers that aren't the default are allowed
-                # (future: will trigger map.setStyle() swap)
-                pass
+            if self.is_default:
+                # Only one primary layer may be the default basemap. Moving
+                # the default is a two-step edit: unset the old one first.
+                current_default = (
+                    MapLayer.objects.filter(collection__isnull=True, is_default=True)
+                    .exclude(pk=self.pk)
+                    .first()
+                )
+                if current_default is not None:
+                    raise ValidationError(
+                        {
+                            "is_default": (
+                                f'"{current_default.name}" is already the default '
+                                "base layer. Unset it first."
+                            )
+                        }
+                    )
         else:
             if self.type == "style":
                 raise ValidationError(
@@ -130,6 +143,40 @@ class MapLayer(models.Model):
                         "is_default": "Only primary layers (without a collection) can be the default."
                     }
                 )
+
+        url_error = self.url_shape_error(self.type, self.url)
+        if url_error:
+            raise ValidationError({"url": url_error})
+
+    @staticmethod
+    def url_shape_error(layer_type, url):
+        """Return a message if ``url`` is the wrong shape for ``layer_type``.
+
+        The frontend builds tile requests differently per type, so a URL of
+        the wrong shape fails silently on the public map rather than here.
+        """
+        if not url:
+            return None
+        if layer_type == "xyz":
+            missing = [p for p in ("{z}", "{x}", "{y}") if p not in url]
+            if missing:
+                return (
+                    "XYZ tile URLs must contain the {z}, {x} and {y} placeholders "
+                    f"(missing {', '.join(missing)})."
+                )
+        elif layer_type == "pmtiles":
+            if not url.endswith(".pmtiles"):
+                return (
+                    "PMTiles URLs must point at a .pmtiles file; tile placeholders "
+                    "are added automatically."
+                )
+        elif layer_type == "style":
+            if "{z}" in url:
+                return (
+                    "MapLibre Style URLs must point at a style document, "
+                    "not a tile template."
+                )
+        return None
 
     class Meta:
         ordering = ["order", "name"]

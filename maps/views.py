@@ -1,10 +1,13 @@
-import os
-
-from django.db.models import Prefetch
-from django.shortcuts import get_object_or_404, render
+from django.conf import settings
+from django.contrib import messages
+from django.contrib.admin.views.decorators import staff_member_required
+from django.db.models import F, Prefetch
+from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_http_methods
 
 from images.utils import render_markdown_safe
 
+from .forms import MapLayerForm
 from .models import LayerCollection, MapLayer
 
 
@@ -56,8 +59,69 @@ def layer_detail(request, collection_slug, layer_slug):
     context = {
         "layer": layer,
         "rendered_description": rendered_description,
-        "protomaps_api_key": os.environ.get("PROTOMAPS_API_KEY", ""),
+        "protomaps_api_key": settings.PROTOMAPS_API_KEY or "",
     }
     return render(request, "maps/map_detail.html", context)
+
+
+@staff_member_required
+def layer_manage(request):
+    """Staff list of every map layer, primaries first."""
+    layers = MapLayer.objects.select_related("collection").order_by(
+        F("collection__order").asc(nulls_first=True),
+        "collection__name",
+        "order",
+        "name",
+    )
+    return render(request, "maps/layer_manage.html", {"layers": layers})
+
+
+def _render_layer_form(request, form, layer=None):
+    context = {
+        "form": form,
+        "layer": layer,
+        "protomaps_api_key": settings.PROTOMAPS_API_KEY or "",
+    }
+    return render(request, "maps/layer_form.html", context)
+
+
+@staff_member_required
+def layer_create(request):
+    """Create a map layer, then land on its edit page."""
+    if request.method == "POST":
+        form = MapLayerForm(request.POST)
+        if form.is_valid():
+            layer = form.save()
+            messages.success(request, f'Created layer "{layer.name}".')
+            return redirect("maps:layer_edit", pk=layer.pk)
+    else:
+        form = MapLayerForm()
+    return _render_layer_form(request, form)
+
+
+@staff_member_required
+def layer_edit(request, pk):
+    """Edit an existing map layer beside a live preview."""
+    layer = get_object_or_404(MapLayer.objects.select_related("collection"), pk=pk)
+    if request.method == "POST":
+        form = MapLayerForm(request.POST, instance=layer)
+        if form.is_valid():
+            layer = form.save()
+            messages.success(request, f'Saved layer "{layer.name}".')
+            return redirect("maps:layer_edit", pk=layer.pk)
+    else:
+        form = MapLayerForm(instance=layer)
+    return _render_layer_form(request, form, layer=layer)
+
+
+@require_http_methods(["POST"])
+@staff_member_required
+def layer_delete(request, pk):
+    """Delete a map layer (confirmed by the modal on the edit page)."""
+    layer = get_object_or_404(MapLayer, pk=pk)
+    name = layer.name
+    layer.delete()
+    messages.success(request, f'Deleted layer "{name}".')
+    return redirect("maps:layer_manage")
 
 
