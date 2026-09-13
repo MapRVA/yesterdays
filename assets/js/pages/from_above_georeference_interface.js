@@ -85,45 +85,39 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Named event handlers so they can be detached and re-attached across
   // Geoman re-initializations (e.g. after style swaps).
-  function handleGmCreate(event) {
+  async function handleGmCreate(event) {
     if (event.shape === "polygon") {
       console.log("Polygon created:", event.feature.id);
 
+      const newFeature = event.feature;
+      const previousFeature = currentFeatureRef;
+      const previousPolygonId = currentPolygonId;
+
+      // Adopt the new polygon before removing the previous one so any removal
+      // event for the old feature cannot clear the new selection.
+      currentPolygonId = newFeature.id;
+      currentFeatureRef = newFeature;
+      drawnPolygon = null;
+      isEditing = true;
+      updateSubmitButton();
+
       // If there's already a polygon, remove it
       if (
-        currentPolygonId !== null &&
-        currentPolygonId !== event.feature.id
+        previousPolygonId !== null &&
+        previousPolygonId !== newFeature.id
       ) {
-        console.log("Removing previous polygon:", currentPolygonId);
+        console.log("Removing previous polygon:", previousPolygonId);
 
         try {
-          // Try the stored reference first (works for imported features)
-          if (currentFeatureRef) {
-            if (typeof currentFeatureRef.delete === "function") {
-              currentFeatureRef.delete();
-            } else if (typeof currentFeatureRef.remove === "function") {
-              currentFeatureRef.remove();
-            }
-          } else {
-            gm.features.forEach(function (feature) {
-              if (feature.id === currentPolygonId) {
-                if (typeof feature.delete === "function") {
-                  feature.delete();
-                } else if (typeof feature.remove === "function") {
-                  feature.remove();
-                }
-              }
-            });
-          }
+          await gm.features.delete(previousFeature || previousPolygonId);
         } catch (e) {
           console.warn("Error removing polygon:", e);
+          showAlert(
+            "danger",
+            "The previous polygon could not be removed. Please try again.",
+          );
         }
       }
-
-      // Store the new polygon's ID
-      currentPolygonId = event.feature.id;
-      currentFeatureRef = event.feature;
-      isEditing = true;
 
       // Update polygon data
       updatePolygonData();
