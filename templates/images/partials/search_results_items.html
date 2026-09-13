@@ -1,4 +1,9 @@
 {% for item in results %}
-    {% include 'images/partials/image_card.html' with image=item.image similarity_score=item.similarity_score georeference_url="/georeference/" show_collection_link=True badges=True buttons=True %}
+    {% include 'images/partials/image_card.html' with image=item.image similarity_score=item.similarity_score distance_label=item.distance_label georeference_url="/georeference/" show_collection_link=True badges=True buttons=True %}
 {% endfor %}
 <template data-has-more="{{ has_more|yesno:'true,false' }}" data-total-count="{{ total_count }}" data-page="{{ page }}"></template>
+{% comment %}
+Geometry for the modes that plot their results on a map (in-view search). Absent
+for the modes that don't, which is what the reading side keys off.
+{% endcomment %}
+{% if result_points %}{{ result_points|json_script:"search-result-points" }}{% endif %}

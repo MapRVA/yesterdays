@@ -1,5 +1,6 @@
 import datetime
 import json
+import re
 import threading
 from contextlib import contextmanager
 from io import BytesIO
@@ -2364,7 +2365,10 @@ class SearchGeoreferenceFilterTests(TestCase):
     # -- semantic search (CLIP embeddings; query encoding mocked) -----------
 
     def _semantic_search_ids(self, **params):
-        with patch("images.views.search._get_text_embedding", return_value=[0.1] * 768):
+        with patch(
+            "images.views.search.semantic._get_text_embedding",
+            return_value=[0.1] * 768,
+        ):
             resp = self.client.get("/api/v1/search/", {"q": self.TOKEN, **params})
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
@@ -2546,7 +2550,10 @@ class SearchRegionFilterTests(TestCase):
     # -- semantic search (CLIP embeddings; query encoding mocked) -----------
 
     def _semantic_search_ids(self, **params):
-        with patch("images.views.search._get_text_embedding", return_value=[0.1] * 768):
+        with patch(
+            "images.views.search.semantic._get_text_embedding",
+            return_value=[0.1] * 768,
+        ):
             resp = self.client.get("/api/v1/search/", {"q": self.TOKEN, **params})
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
@@ -2579,7 +2586,8 @@ class SearchRegionFilterTests(TestCase):
         PILImage.new("RGB", (2, 2)).save(buf, format="PNG")
         upload = SimpleUploadedFile("query.png", buf.getvalue(), content_type="image/png")
         with patch(
-            "images.views.search._get_image_embedding", return_value=[0.1] * 768
+            "images.views.search.reverse_image._get_image_embedding",
+            return_value=[0.1] * 768,
         ):
             resp = self.client.post("/api/v1/search/reverse/", {"image": upload})
         self.assertEqual(resp.status_code, 200)
@@ -3987,3 +3995,141 @@ class ImagePolicyTests(CommunityWriteFixtureMixin, TestCase):
             policies.get_images_or_404(
                 queryset, [self.public_image.id, self.private_source_image.id]
             )
+
+
+# ---------------------------------------------------------------------------
+# In-view search: the search page's HTML endpoint
+# ---------------------------------------------------------------------------
+
+
+class InViewSearchPageTests(TestCase):
+    """``/api/v1/search/in-view/``, the endpoint the search page itself calls.
+
+    The API tests in ``api/tests.py`` cover the query semantics through
+    ``/api/v2/``. What is only reachable here is the rendered response: the
+    distance badge on each card, and the geometry the page needs to draw those
+    same results on its picker map.
+
+    Both have already gone wrong once. ``{% include with %}`` binds a *missing*
+    dict key to the empty string rather than ``None``, so an omitted
+    ``similarity_score`` rendered an empty "% match" badge where the distance
+    should have been.
+    """
+
+    ORIGIN_LAT = 37.53
+    ORIGIN_LON = -77.44
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user(username="osm_9001", password="test")
+        cls.source = Source.objects.create(
+            name="Src",
+            slug="in-view-src",
+            url="https://example.com",
+            description="",
+            public=True,
+        )
+        cls.collection = Collection.objects.create(
+            source=cls.source,
+            name="Col",
+            slug="in-view-col",
+            url="https://example.com",
+            public=True,
+        )
+
+        # 111 m north of the origin, no direction recorded.
+        cls.img_close = cls._make_image("Close photo")
+        cls.georef_close = cls._georeference(cls.img_close, -77.44, 37.5310)
+
+        # 1.1 km north, looking due south — straight back at the origin.
+        cls.img_far = cls._make_image("Distant photo")
+        cls.georef_far = cls._georeference(cls.img_far, -77.44, 37.5400, direction=180)
+
+    @classmethod
+    def _make_image(cls, title):
+        img = Image.objects.create(
+            collection=cls.collection,
+            title=title,
+            permalink=f"https://img.example.com/{slugify(title)}.jpg",
+        )
+        img.refresh_from_db()
+        return img
+
+    @classmethod
+    def _georeference(cls, image, longitude, latitude, direction=None):
+        return Georeference.objects.create(
+            image=image,
+            point=Point(longitude, latitude, srid=4326),
+            direction=direction,
+            confidence="medium",
+            georeferenced_by=cls.user,
+        )
+
+    def _get(self, **params):
+        return self.client.get(
+            "/api/v1/search/in-view/",
+            {"lat": self.ORIGIN_LAT, "lon": self.ORIGIN_LON, **params},
+        )
+
+    def _html(self, **params):
+        resp = self._get(format="html", **params)
+        self.assertEqual(resp.status_code, 200)
+        return resp.content.decode()
+
+    def test_json_orders_nearest_first(self):
+        resp = self._get()
+        self.assertEqual(resp.status_code, 200)
+        ids = [r["id"] for r in resp.json()["results"]]
+        self.assertEqual(ids, [self.img_close.id, self.img_far.id])
+
+    def test_invalid_coordinates_rejected(self):
+        resp = self.client.get("/api/v1/search/in-view/", {"lat": "nan", "lon": "-77"})
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(resp.json()["success"])
+
+    def test_html_renders_distance_badge(self):
+        html = self._html()
+        self.assertIn("111 m", html)
+        self.assertIn("1.1 km", html)
+
+    def test_html_does_not_render_a_similarity_badge(self):
+        # The regression: an empty "% match" badge in the distance's place.
+        self.assertNotIn("% match", self._html())
+
+    def test_html_embeds_result_geometry_for_the_map(self):
+        html = self._html()
+        match = re.search(
+            r'<script id="search-result-points" type="application/json">(.*?)</script>',
+            html,
+            re.S,
+        )
+        self.assertIsNotNone(match, "result geometry missing from the response")
+
+        points = json.loads(match.group(1))
+        # One point per card, in the order the cards appear, so the map and
+        # the grid cannot disagree about what was found.
+        self.assertEqual(
+            points,
+            [
+                {
+                    "id": self.img_close.id,
+                    "lat": 37.5310,
+                    "lng": -77.44,
+                    "direction": None,
+                },
+                {
+                    "id": self.img_far.id,
+                    "lat": 37.5400,
+                    "lng": -77.44,
+                    "direction": 180,
+                },
+            ],
+        )
+
+    def test_text_search_html_embeds_no_geometry(self):
+        # The partial is shared; only modes that plot their results send points.
+        resp = self.client.get(
+            "/api/v1/search/text/", {"q": "photo", "format": "html"}
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn("search-result-points", resp.content.decode())

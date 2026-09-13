@@ -1531,6 +1531,12 @@ class Georeference(models.Model):
             models.Index(fields=["image", "georeferenced_by"]),
             models.Index(fields=["georeferenced_by"]),
             models.Index(fields=["georeferenced_at"]),
+            # Turns the latest-per-image NOT EXISTS check in images.in_view
+            # into a single index probe per candidate row. The
+            # (image, georeferenced_by) index above cannot serve it.
+            models.Index(
+                fields=["image", "-georeferenced_at"], name="images_geor_img_recent_idx"
+            ),
         ]
         constraints = [
             # There is deliberately no per-user constraint: a user may submit

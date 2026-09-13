@@ -13,9 +13,25 @@ import { DIRECTION_SPRITE_ID } from "./layer_ids";
 
 const SOURCE_LAYER = "image_points";
 
+// Layers normally read the image_points source-layer out of the vector tiles.
+// A caller with its own GeoJSON source (in-view search draws its results that
+// way) passes `sourceLayer: null`: MapLibre rejects a layer that names a
+// source-layer when the source is GeoJSON, so the key has to be absent, not
+// empty.
+function sourceLayerSpec(
+  sourceLayer: string | null | undefined,
+): { "source-layer"?: string } {
+  return sourceLayer === null ? {} : { "source-layer": sourceLayer ?? SOURCE_LAYER };
+}
+
 export interface ImagePointLayerOptions {
-  /** Vector source id holding the image_points source-layer. */
+  /** Source id the layer reads from. */
   source: string;
+  /**
+   * Source-layer within a vector source. Defaults to `image_points`; pass
+   * `null` when `source` is a GeoJSON source, which has no source-layers.
+   */
+  sourceLayer?: string | null;
   /** Marker color — the emphasis knob between normal and ghost styling. */
   color: string;
   /** Multiplier applied to every opacity ramp (ghost mode dims). */
@@ -68,6 +84,7 @@ export function heatmapCircleLayer(
 ): CircleLayerSpecification {
   const {
     source,
+    sourceLayer,
     color,
     opacity = 1,
     extraFilter = null,
@@ -77,7 +94,7 @@ export function heatmapCircleLayer(
     id,
     type: "circle",
     source,
-    "source-layer": SOURCE_LAYER,
+    ...sourceLayerSpec(sourceLayer),
     filter: circleFilter(extraFilter),
     maxzoom: 17,
     layout: { visibility },
@@ -107,6 +124,7 @@ export function detailCircleLayer(
 ): CircleLayerSpecification {
   const {
     source,
+    sourceLayer,
     color,
     opacity = 1,
     extraFilter = null,
@@ -117,7 +135,7 @@ export function detailCircleLayer(
     id,
     type: "circle",
     source,
-    "source-layer": SOURCE_LAYER,
+    ...sourceLayerSpec(sourceLayer),
     minzoom,
     filter: circleFilter(extraFilter),
     layout: { visibility },
@@ -172,6 +190,7 @@ export function directionSymbolLayer(
 ): SymbolLayerSpecification {
   const {
     source,
+    sourceLayer,
     opacity = 1,
     extraFilter = null,
     visibility = "visible",
@@ -181,7 +200,7 @@ export function directionSymbolLayer(
     id,
     type: "symbol",
     source,
-    "source-layer": SOURCE_LAYER,
+    ...sourceLayerSpec(sourceLayer),
     minzoom,
     filter: directionFilter(extraFilter),
     layout: {
@@ -212,6 +231,7 @@ export function simpleCircleLayer(
 ): CircleLayerSpecification {
   const {
     source,
+    sourceLayer,
     color,
     opacity = 1,
     extraFilter = null,
@@ -221,7 +241,7 @@ export function simpleCircleLayer(
     id,
     type: "circle",
     source,
-    "source-layer": SOURCE_LAYER,
+    ...sourceLayerSpec(sourceLayer),
     filter: circleFilter(extraFilter),
     layout: { visibility },
     paint: {
@@ -244,6 +264,7 @@ export function simpleDirectionSymbolLayer(
 ): SymbolLayerSpecification {
   const {
     source,
+    sourceLayer,
     opacity = 1,
     extraFilter = null,
     visibility = "visible",
@@ -252,7 +273,7 @@ export function simpleDirectionSymbolLayer(
     id,
     type: "symbol",
     source,
-    "source-layer": SOURCE_LAYER,
+    ...sourceLayerSpec(sourceLayer),
     filter: directionFilter(extraFilter),
     layout: {
       "icon-image": DIRECTION_SPRITE_ID,

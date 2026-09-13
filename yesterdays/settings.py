@@ -615,6 +615,31 @@ POLYGON_MAX_TOTAL_VERTICES = int(os.getenv("POLYGON_MAX_TOTAL_VERTICES", "4000")
 # latitude, which is far larger than any legitimate submission.
 POLYGON_MAX_AREA_SQ_DEGREES = float(os.getenv("POLYGON_MAX_AREA_SQ_DEGREES", "0.25"))
 
+# ---------------------------------------------------------------------------
+# In-view (coordinate) search
+# ---------------------------------------------------------------------------
+# Bounds for images.in_view, which walks the georeference GiST index outward
+# from a coordinate until it has enough results.
+
+# Ceiling on offset + page_size. This is the safety bound that stands in for a
+# mandatory radius: without it, a coordinate in the middle of the ocean plus a
+# deep page would walk a large slice of the index.
+IN_VIEW_SEARCH_MAX_RESULTS = int(os.getenv("IN_VIEW_SEARCH_MAX_RESULTS", "1000"))
+
+# Largest accepted radius, in metres. A larger one is clamped to this rather
+# than rejected, since the radius is only ever an extra bound.
+IN_VIEW_SEARCH_MAX_RADIUS_M = float(os.getenv("IN_VIEW_SEARCH_MAX_RADIUS_M", "50000"))
+
+# How wide a cone, in degrees, a photograph has to point through to count as a
+# photograph *of* the searched coordinate. Half of it falls either side of the
+# georeference's recorded direction. Proximity alone is not enough: a camera
+# 50 m away facing the other way is not a picture of the spot. Georeferences
+# with no recorded direction are always included. Setting this to 360 admits
+# every direction, which turns the filter off.
+IN_VIEW_SEARCH_DIRECTION_SWEEP_DEGREES = float(
+    os.getenv("IN_VIEW_SEARCH_DIRECTION_SWEEP_DEGREES", "40")
+)
+
 # Django REST Framework
 REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "api.pagination.DefaultPagination",

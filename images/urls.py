@@ -164,6 +164,7 @@ urlpatterns = [
     ),
     path("api/v1/search/", views.semantic_search, name="semantic_search"),
     path("api/v1/search/text/", views.text_search, name="text_search"),
+    path("api/v1/search/in-view/", views.in_view_search, name="in_view_search"),
     path(
         "api/v1/search/reverse/",
         views.reverse_image_search,

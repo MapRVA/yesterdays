@@ -67,6 +67,7 @@ from .georeference import (
 )
 from .search import (
     find_similar_images,
+    in_view_search,
     reverse_image_search,
     search_page,
     semantic_search,

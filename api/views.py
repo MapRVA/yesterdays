@@ -51,8 +51,10 @@ from images.models import (
     SubjectMapping,
     SubjectMappingActivity,
 )
+from images.in_view import in_view_count, in_view_rows, parse_radius
 from images.tasks import process_image
 from images.utils import R2Uploader, get_confidence_breakdown, get_overall_stats
+from images.validation import InvalidInput, validate_latitude, validate_longitude
 from images.views.search import HAS_POSTGRES_SEARCH, _get_text_embedding
 from subjects.models import OsmElement, Subject
 
@@ -1207,6 +1209,37 @@ def _parse_search_filters(params, table_ref="images_image"):
     return where_conditions, where_params, None
 
 
+def _format_in_view_result(request, image, row):
+    """Format one image + its nearest-georeference row into a result dict.
+
+    Deliberately not ``_format_search_result``: that one reports a
+    ``similarity`` of ``1.0 - distance``, which is meaningless for a distance
+    measured in metres.
+    """
+    return {
+        "id": image.id,
+        "title": image.title,
+        "permalink": image.display_permalink,
+        "thumbnail": image.thumbnail or image.display_permalink,
+        "original_date": image.original_date,
+        "date_display": image.date_display,
+        "distance_m": round(row["distance_m"], 1),
+        "georeference": {
+            "latitude": row["latitude"],
+            "longitude": row["longitude"],
+            "direction": row["direction"],
+            "confidence": row["confidence"],
+        },
+        "collection": {
+            "id": image.collection.id,
+            "name": image.collection.name,
+            "slug": image.collection.slug,
+            "source_name": image.collection.source.name,
+        },
+        "detail_url": request.build_absolute_uri(f"/api/v2/images/{image.id}/"),
+    }
+
+
 def _format_search_result(request, image, distance):
     """Format one image + distance into a search result dict."""
     similarity = 1.0 - float(distance)
@@ -1503,3 +1536,112 @@ def text_search_view(request):
     except DatabaseError:
         logger.error("Database error in text search", exc_info=True)
         return Response({"error": "Search failed. Please try again."}, status=500)
+
+
+@api_view(["GET"])
+def in_view_search_view(request):
+    """Find images georeferenced near a coordinate, nearest first.
+
+    The inverse of the other search endpoints: instead of describing an image
+    and asking where it might be, you give a location and ask what it used to
+    look like. Each image appears once, at its most recent georeference, so a
+    location that has since been corrected is not resurfaced. Aerial
+    photographs, whose coverage is a polygon rather than a point, are not
+    included.
+
+    Results are photographs *of* the coordinate, not merely near it: an image
+    whose georeference records a direction is only returned when the
+    coordinate falls inside the cone that camera was pointing through.
+    Georeferences without a recorded direction are returned on distance alone.
+
+    No radius is required. Results are read straight off the spatial index in
+    distance order, so the query stops as soon as the page is full.
+
+    Query parameters:
+        lat: latitude of the origin (required)
+        lon: longitude of the origin (required)
+        radius: optional bound in metres (clamped to the configured maximum)
+        page: page number (default 1)
+        page_size: results per page (default 20, max 100)
+        year_min: minimum year
+        year_max: maximum year
+        source: filter by source ID
+        collection: filter by collection ID
+        subject: filter by subject ID
+    """
+    params = request.query_params
+
+    try:
+        latitude = validate_latitude(params, "lat")
+        longitude = validate_longitude(params, "lon")
+        radius_m = parse_radius(params, "radius")
+    except InvalidInput as exc:
+        return Response({"error": str(exc)}, status=400)
+
+    try:
+        page = max(int(params.get("page", 1)), 1)
+        page_size = min(max(int(params.get("page_size", 20)), 1), 100)
+    except ValueError:
+        return Response({"error": "Invalid pagination parameters."}, status=400)
+    offset = (page - 1) * page_size
+
+    # The shared filter helper already emits image-table fragments under the
+    # alias `i`, which is exactly what images.in_view expects.
+    extra_conditions, extra_params, err = _parse_search_filters(params, table_ref="i")
+    if err:
+        return err
+
+    try:
+        rows, has_more = in_view_rows(
+            latitude=latitude,
+            longitude=longitude,
+            limit=page_size,
+            offset=offset,
+            radius_m=radius_m,
+            extra_conditions=extra_conditions,
+            extra_params=extra_params,
+        )
+
+        # Without a radius every georeferenced image is technically a result,
+        # so a total would be a misleading way of saying "all of them". With
+        # one, the count is a cheap bounded query over the same index.
+        total_count = None
+        if radius_m is not None:
+            total_count = in_view_count(
+                latitude=latitude,
+                longitude=longitude,
+                radius_m=radius_m,
+                extra_conditions=extra_conditions,
+                extra_params=extra_params,
+            )
+    except InvalidInput as exc:
+        return Response({"error": str(exc)}, status=400)
+    except DatabaseError:
+        logger.error("Database error in in-view search", exc_info=True)
+        return Response({"error": "Search failed. Please try again."}, status=500)
+
+    images_by_id = {
+        img.id: img
+        for img in Image.objects.filter(
+            id__in=[row["image_id"] for row in rows]
+        ).select_related("collection__source")
+    }
+
+    results = []
+    for row in rows:
+        image = images_by_id.get(row["image_id"])
+        if image:
+            results.append(_format_in_view_result(request, image, row))
+
+    return Response(
+        {
+            "latitude": latitude,
+            "longitude": longitude,
+            "radius": radius_m,
+            "page": page,
+            "page_size": page_size,
+            "count": total_count,
+            "has_more": has_more,
+            "results": results,
+        }
+    )

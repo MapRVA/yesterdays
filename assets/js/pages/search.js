@@ -3,6 +3,102 @@ import "../../styles/components/autocomplete.css";
 
 // Import image grid component (includes bulk selection and modal functionality)
 import { imageGrid } from "../components/image_grid.js";
+import {
+  createImagePointOverlay,
+  imagePointOverlayLayerIds,
+} from "../components/image_point_overlay";
+import { initPointPicker } from "../components/point_picker";
+
+/**
+ * The search modes, and the handful of things that differ between them: which
+ * description and input container to show, which endpoint to ask, and whether
+ * the results line can report a meaningful total.
+ *
+ * Looked up here rather than written out per mode at each of the six places
+ * that care. That also fixes a real bug: the "Load More" endpoint used to be
+ * chosen by a ternary that fell through to the *text* endpoint for any mode it
+ * didn't recognise, so paging quietly changed what was being searched.
+ */
+const SEARCH_MODES = {
+  semantic: {
+    description: "semanticDescription",
+    container: "textSearchContainer",
+    containerDisplay: "flex",
+    endpoint: "/api/v1/search/",
+    placeholder: "Describe what you're looking for...",
+    label: "semantic search",
+    // Semantic, reverse and in-view rank the whole corpus, so a total would
+    // only ever say "all of them". Only text search has a real count.
+    reportsCount: false,
+  },
+  text: {
+    description: "textDescription",
+    container: "textSearchContainer",
+    containerDisplay: "flex",
+    endpoint: "/api/v1/search/text/",
+    placeholder: "Search for keywords...",
+    label: "text search",
+    reportsCount: true,
+  },
+  reverse: {
+    description: "reverseDescription",
+    container: "reverseSearchContainer",
+    containerDisplay: "block",
+    endpoint: "/api/v1/search/reverse/",
+    placeholder: "Upload an image to search...",
+    label: "reverse image search",
+    reportsCount: false,
+  },
+  "in-view": {
+    description: "inViewDescription",
+    container: "inViewSearchContainer",
+    containerDisplay: "block",
+    endpoint: "/api/v1/search/in-view/",
+    placeholder: "Pick a point on the map...",
+    label: "in-view search",
+    reportsCount: false,
+  },
+};
+
+const DEFAULT_SEARCH_MODE = "semantic";
+
+// The one mode that searches by coordinate rather than by query.
+const IN_VIEW_MODE = "in-view";
+
+// Every distinct input container, so switching modes can hide the others
+// without needing to know which mode owns which.
+const SEARCH_CONTAINERS = [
+  ...new Set(Object.values(SEARCH_MODES).map((mode) => mode.container)),
+];
+
+function searchModeConfig(mode) {
+  return SEARCH_MODES[mode] || SEARCH_MODES[DEFAULT_SEARCH_MODE];
+}
+
+// The map overlay for modes that plot their results (in-view search). Set once
+// its picker exists; both the first page of results and "Load More" push at it.
+let resultPointOverlay = null;
+
+/**
+ * Read the result geometry the server embeds alongside the cards.
+ * Returns null for modes that don't send any, which is different from an
+ * empty array: null means "leave the map alone", [] means "nothing to show".
+ */
+function readResultPoints(doc) {
+  const el = doc.getElementById("search-result-points");
+  if (!el) return null;
+  try {
+    return JSON.parse(el.textContent);
+  } catch (error) {
+    console.error("Could not parse search result points:", error);
+    return null;
+  }
+}
+
+// The metadata elements are read from the parsed document, not inserted into
+// the page with the cards.
+const RESULT_METADATA_PATTERN =
+  /<template[^>]*data-has-more[^>]*>.*?<\/template>|<script[^>]*id="search-result-points"[^>]*>.*?<\/script>/gis;
 
 // Add x-cloak style to prevent flash of unstyled content
 const style = document.createElement("style");
@@ -12,7 +108,7 @@ document.head.appendChild(style);
 // Store for current search state (used by searchGrid for load more)
 window.searchState = {
   query: "",
-  mode: "semantic", // "semantic", "text", or "reverse"
+  mode: DEFAULT_SEARCH_MODE, // a key of SEARCH_MODES
   params: new URLSearchParams(),
   uploadedImageFile: null,
   hasMore: false,
@@ -91,11 +187,8 @@ window.searchGrid = function () {
           },
         });
       } else {
-        // Semantic and text search use GET
-        const apiEndpoint =
-          state.mode === "semantic"
-            ? "/api/v1/search/"
-            : "/api/v1/search/text/";
+        // Every other mode pages with GET
+        const apiEndpoint = searchModeConfig(state.mode).endpoint;
         const params = new URLSearchParams(state.params);
         params.set("page", nextPage);
         params.set("format", "html");
@@ -152,13 +245,15 @@ window.searchGrid = function () {
           const doc = parser.parseFromString(html, "text/html");
           const newItems = doc.querySelectorAll(".image-card-wrapper");
           const metaEl = doc.querySelector("template[data-has-more]");
+          const newPoints = readResultPoints(doc);
+
+          if (newPoints && resultPointOverlay) {
+            resultPointOverlay.addPoints(newPoints);
+          }
 
           if (newItems.length > 0) {
-            // Remove the template element from HTML before inserting
-            const cleanHtml = html.replace(
-              /<template[^>]*data-has-more[^>]*>.*?<\/template>/gi,
-              "",
-            );
+            // Remove the metadata elements from HTML before inserting
+            const cleanHtml = html.replace(RESULT_METADATA_PATTERN, "");
 
             // Append to the grid
             const gridEl = document.querySelector("#searchResults .row");
@@ -254,16 +349,10 @@ document.addEventListener("DOMContentLoaded", async function () {
   const startYear = document.getElementById("startYear");
   const endYear = document.getElementById("endYear");
   const searchResults = document.getElementById("searchResults");
-  const semanticMode = document.getElementById("semanticMode");
-  const textMode = document.getElementById("textMode");
-  const reverseMode = document.getElementById("reverseMode");
-  const semanticDescription = document.getElementById("semanticDescription");
-  const textDescription = document.getElementById("textDescription");
-  const reverseDescription = document.getElementById("reverseDescription");
-  const textSearchContainer = document.getElementById("textSearchContainer");
-  const reverseSearchContainer = document.getElementById(
-    "reverseSearchContainer",
-  );
+  const modeRadios = document.querySelectorAll('input[name="searchMode"]');
+  const inViewLat = document.getElementById("inViewLat");
+  const inViewLon = document.getElementById("inViewLon");
+  const inViewRadius = document.getElementById("inViewRadius");
   const imageDropZone = document.getElementById("imageDropZone");
   const imageFileInput = document.getElementById("imageFileInput");
   const selectFileBtn = document.getElementById("selectFileBtn");
@@ -300,16 +389,30 @@ document.addEventListener("DOMContentLoaded", async function () {
   function initializeFromURL() {
     const urlParams = new URLSearchParams(window.location.search);
 
-    if (urlParams.has("mode") && urlParams.get("mode") === "text") {
-      textMode.checked = true;
-      textMode.dispatchEvent(new Event("change"));
-    } else if (urlParams.has("mode") && urlParams.get("mode") === "reverse") {
-      reverseMode.checked = true;
-      reverseMode.dispatchEvent(new Event("change"));
-    } else {
-      semanticMode.checked = true;
-      semanticMode.dispatchEvent(new Event("change"));
+    // The in-view inputs are filled before the mode is applied, so the picker
+    // (built by applyMode) opens on the shared coordinate rather than the
+    // default city view.
+    if (inViewLat && urlParams.has("lat")) {
+      inViewLat.value = urlParams.get("lat");
     }
+    if (inViewLon && urlParams.has("lon")) {
+      inViewLon.value = urlParams.get("lon");
+    }
+    if (inViewRadius && urlParams.has("radius")) {
+      inViewRadius.value = urlParams.get("radius");
+    }
+
+    const requestedMode = urlParams.get("mode");
+    const mode = SEARCH_MODES[requestedMode]
+      ? requestedMode
+      : DEFAULT_SEARCH_MODE;
+    const modeRadio = document.querySelector(
+      `input[name="searchMode"][value="${mode}"]`,
+    );
+    if (modeRadio) {
+      modeRadio.checked = true;
+    }
+    applyMode(mode);
 
     if (urlParams.has("q")) {
       searchQuery.value = urlParams.get("q");
@@ -359,7 +462,10 @@ document.addEventListener("DOMContentLoaded", async function () {
     const hasSubjectFilter =
       subjectOption === "none" || selectedSubjects.length > 0;
 
-    if (urlParams.has("q") || hasSubjectFilter) {
+    const hasInViewPoint =
+      mode === IN_VIEW_MODE && urlParams.has("lat") && urlParams.has("lon");
+
+    if (urlParams.has("q") || hasSubjectFilter || hasInViewPoint) {
       const hasAdvanced =
         urlParams.has("start_year") ||
         urlParams.has("end_year") ||
@@ -399,38 +505,78 @@ document.addEventListener("DOMContentLoaded", async function () {
   });
 
   // Handle search mode toggle
-  semanticMode.addEventListener("change", function () {
-    if (this.checked) {
-      semanticDescription.style.display = "block";
-      textDescription.style.display = "none";
-      reverseDescription.style.display = "none";
-      textSearchContainer.style.display = "flex";
-      reverseSearchContainer.style.display = "none";
-      searchQuery.placeholder = "Describe what you're looking for...";
+  function currentMode() {
+    const checked = document.querySelector('input[name="searchMode"]:checked');
+    return checked && SEARCH_MODES[checked.value]
+      ? checked.value
+      : DEFAULT_SEARCH_MODE;
+  }
+
+  function applyMode(mode) {
+    const config = searchModeConfig(mode);
+
+    Object.entries(SEARCH_MODES).forEach(([name, modeConfig]) => {
+      const description = document.getElementById(modeConfig.description);
+      if (description) {
+        description.style.display = name === mode ? "block" : "none";
+      }
+    });
+
+    SEARCH_CONTAINERS.forEach((containerId) => {
+      const container = document.getElementById(containerId);
+      if (container) {
+        container.style.display =
+          containerId === config.container ? config.containerDisplay : "none";
+      }
+    });
+
+    searchQuery.placeholder = config.placeholder;
+
+    // The picker's map needs a visible container to size itself against, so
+    // it is built the first time in-view mode is actually shown.
+    if (mode === IN_VIEW_MODE) {
+      ensurePointPicker();
     }
+  }
+
+  modeRadios.forEach((radio) => {
+    radio.addEventListener("change", function () {
+      if (this.checked) {
+        applyMode(this.value);
+      }
+    });
   });
 
-  textMode.addEventListener("change", function () {
-    if (this.checked) {
-      semanticDescription.style.display = "none";
-      textDescription.style.display = "block";
-      reverseDescription.style.display = "none";
-      textSearchContainer.style.display = "flex";
-      reverseSearchContainer.style.display = "none";
-      searchQuery.placeholder = "Search for keywords...";
-    }
-  });
+  // In-view search: the map/coordinate picker, built lazily (see applyMode).
+  let pointPicker = null;
 
-  reverseMode.addEventListener("change", function () {
-    if (this.checked) {
-      semanticDescription.style.display = "none";
-      textDescription.style.display = "none";
-      reverseDescription.style.display = "block";
-      textSearchContainer.style.display = "none";
-      reverseSearchContainer.style.display = "block";
-      searchQuery.placeholder = "Upload an image to search...";
-    }
-  });
+  function ensurePointPicker() {
+    if (pointPicker || !inViewLat || !inViewLon) return pointPicker;
+
+    const lat = parseFloat(inViewLat.value);
+    const lon = parseFloat(inViewLon.value);
+    const mapEl = document.getElementById("inViewPickerMap");
+
+    pointPicker = initPointPicker({
+      mapId: "inViewPickerMap",
+      latInput: inViewLat,
+      lonInput: inViewLon,
+      initial:
+        Number.isFinite(lat) && Number.isFinite(lon) ? [lon, lat] : undefined,
+      // Placing a point is the search: no need to also press the button.
+      onChange: () => performSearch(),
+      // Keep the results above any tile overlay the layer switcher inserts,
+      // and put them back after a base-layer swap discards them.
+      overlayLayerIds: imagePointOverlayLayerIds(),
+      onStyleSwap: () => resultPointOverlay?.redraw(),
+    });
+
+    resultPointOverlay = createImagePointOverlay(pointPicker.map, {
+      spriteUrl: mapEl?.dataset.directionSprite,
+    });
+
+    return pointPicker;
+  }
 
   // Reverse image search functionality
   function handleImageFile(file) {
@@ -505,7 +651,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
   // Paste image
   document.addEventListener("paste", function (e) {
-    if (reverseMode && reverseMode.checked) {
+    if (currentMode() === "reverse") {
       const items = e.clipboardData.items;
       for (let i = 0; i < items.length; i++) {
         if (items[i].type.indexOf("image") !== -1) {
@@ -635,46 +781,8 @@ document.addEventListener("DOMContentLoaded", async function () {
     `;
   }
 
-  function performSearch() {
-    const query = searchQuery.value.trim();
-    const subjectOption = document.querySelector(
-      'input[name="subjectOptions"]:checked',
-    ).value;
-    const hasSubjectFilter =
-      subjectOption === "none" || selectedSubjects.length > 0;
-
-    // Handle reverse image search differently
-    if (reverseMode && reverseMode.checked) {
-      if (!uploadedImageFile) {
-        alert("Please upload an image first");
-        return;
-      }
-      performReverseImageSearch();
-      return;
-    }
-
-    if (!query && !hasSubjectFilter) {
-      return; // Do not search if there is no query and no subject filter
-    }
-
-    let searchMode = semanticMode.checked ? "semantic" : "text";
-    // If query is empty, we must use the text search endpoint, as semantic search requires a query.
-    if (!query) {
-      searchMode = "text";
-    }
-
-    const limit = parseInt(pagelimitSelect.value, 10) || 20;
-
-    const apiEndpoint =
-      searchMode === "semantic" ? "/api/v1/search/" : "/api/v1/search/text/";
-
-    const params = new URLSearchParams();
-    params.set("q", query);
-    params.set("mode", searchMode);
-    params.set("page", 1);
-    params.set("pagelimit", limit);
-    params.set("format", "html"); // Request HTML format
-
+  /** Add the shared Advanced Options filters to a query string. */
+  function appendFilterParams(params) {
     if (startYear.value) {
       params.set("start_year", startYear.value);
     }
@@ -691,7 +799,9 @@ document.addEventListener("DOMContentLoaded", async function () {
       params.set("non_georeferenced_only", "true");
     }
 
-    // Add subject params
+    const subjectOption = document.querySelector(
+      'input[name="subjectOptions"]:checked',
+    ).value;
     const subjectIds = selectedSubjects.map((s) => s.id).join(",");
 
     if (subjectOption === "none") {
@@ -704,6 +814,120 @@ document.addEventListener("DOMContentLoaded", async function () {
       }
     }
 
+    return params;
+  }
+
+  /** Share the current search as a URL, minus the parameters only the fetch needs. */
+  function pushSearchUrl(params) {
+    const urlParams = new URLSearchParams(params);
+    urlParams.delete("format");
+    urlParams.delete("page");
+    history.pushState(
+      null,
+      "",
+      `${window.location.pathname}?${urlParams.toString()}`,
+    );
+  }
+
+  function performInViewSearch() {
+    const latitude = parseFloat(inViewLat.value);
+    const longitude = parseFloat(inViewLon.value);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      displayError("Pick a point on the map, or type a latitude and longitude.");
+      return;
+    }
+
+    const limit = parseInt(pagelimitSelect.value, 10) || 20;
+
+    const params = new URLSearchParams();
+    params.set("mode", IN_VIEW_MODE);
+    params.set("lat", latitude);
+    params.set("lon", longitude);
+    if (inViewRadius && inViewRadius.value) {
+      params.set("radius", inViewRadius.value);
+    }
+    params.set("page", 1);
+    params.set("pagelimit", limit);
+    params.set("format", "html");
+    appendFilterParams(params);
+
+    window.searchState.mode = IN_VIEW_MODE;
+    window.searchState.query = "";
+    window.searchState.params = new URLSearchParams(params);
+    window.searchState.uploadedImageFile = null;
+    window.searchState.limit = limit;
+    window.searchState.offset = 0;
+    window.searchState.hasMore = false;
+
+    pushSearchUrl(params);
+
+    searchResults.innerHTML = renderLoadingPlaceholder();
+
+    fetch(`${SEARCH_MODES["in-view"].endpoint}?${params.toString()}`)
+      .then((response) => {
+        if (!response.ok) {
+          return response.json().then((data) => {
+            throw new Error(data.error || "Search failed");
+          });
+        }
+        return response.text();
+      })
+      .then((html) => {
+        displayHtmlResults(
+          html,
+          `${latitude}, ${longitude}`,
+          SEARCH_MODES["in-view"].label,
+        );
+      })
+      .catch((error) => {
+        displayError("Search failed: " + error.message);
+      });
+  }
+
+  function performSearch() {
+    const mode = currentMode();
+    const query = searchQuery.value.trim();
+    const subjectOption = document.querySelector(
+      'input[name="subjectOptions"]:checked',
+    ).value;
+    const hasSubjectFilter =
+      subjectOption === "none" || selectedSubjects.length > 0;
+
+    // Handle reverse image search differently
+    if (mode === "reverse") {
+      if (!uploadedImageFile) {
+        alert("Please upload an image first");
+        return;
+      }
+      performReverseImageSearch();
+      return;
+    }
+
+    // In-view search asks with a coordinate rather than a query
+    if (mode === IN_VIEW_MODE) {
+      performInViewSearch();
+      return;
+    }
+
+    if (!query && !hasSubjectFilter) {
+      return; // Do not search if there is no query and no subject filter
+    }
+
+    // If query is empty, we must use the text search endpoint, as semantic search requires a query.
+    const searchMode = mode === "semantic" && query ? "semantic" : "text";
+
+    const limit = parseInt(pagelimitSelect.value, 10) || 20;
+
+    const apiEndpoint = SEARCH_MODES[searchMode].endpoint;
+
+    const params = new URLSearchParams();
+    params.set("q", query);
+    params.set("mode", searchMode);
+    params.set("page", 1);
+    params.set("pagelimit", limit);
+    params.set("format", "html"); // Request HTML format
+    appendFilterParams(params);
+
     // Update search state for load more
     window.searchState.mode = searchMode;
     window.searchState.query = query;
@@ -714,19 +938,11 @@ document.addEventListener("DOMContentLoaded", async function () {
     window.searchState.hasMore = false;
 
     // Update URL without the format param (for cleaner URLs)
-    const urlParams = new URLSearchParams(params);
-    urlParams.delete("format");
-    urlParams.delete("page");
-    history.pushState(
-      null,
-      "",
-      `${window.location.pathname}?${urlParams.toString()}`,
-    );
+    pushSearchUrl(params);
 
     searchResults.innerHTML = renderLoadingPlaceholder();
 
-    const searchModeLabel =
-      searchMode === "semantic" ? "semantic search" : "text search";
+    const searchModeLabel = SEARCH_MODES[searchMode].label;
 
     fetch(`${apiEndpoint}?${params.toString()}`)
       .then((response) => {
@@ -746,9 +962,14 @@ document.addEventListener("DOMContentLoaded", async function () {
   }
 
   function displayHtmlResults(html, query, searchModeLabel) {
+    const mode = window.searchState.mode;
+
     // Set when a region is selected in the navbar; the search endpoints scope
-    // results to it server-side via the region cookie.
-    const regionName = window.filterConfig?.regionName;
+    // results to it server-side via the region cookie. In-view search is the
+    // exception: a coordinate is its own scope, so it deliberately searches
+    // globally and must not claim to be showing one region's images.
+    const regionName =
+      mode === IN_VIEW_MODE ? null : window.filterConfig?.regionName;
 
     // Parse the HTML to extract metadata from the template element
     const parser = new DOMParser();
@@ -756,11 +977,27 @@ document.addEventListener("DOMContentLoaded", async function () {
     const metaEl = doc.querySelector("template[data-has-more]");
     const imageCards = doc.querySelectorAll(".image-card-wrapper");
 
+    // A fresh search replaces whatever the map was showing, including when it
+    // found nothing: stale pins under a "no results" message would be a lie.
+    const resultPoints = readResultPoints(doc);
+    if (resultPointOverlay) {
+      resultPointOverlay.setPoints(resultPoints ?? []);
+    }
+
     // Check if there are no results
     if (imageCards.length === 0) {
-      let message = query
-        ? `No results found for "<strong>${escapeHtml(query)}</strong>".`
-        : "No results found for the selected filters.";
+      let message;
+      if (mode === IN_VIEW_MODE) {
+        message = `No photographs look at <strong>${escapeHtml(query)}</strong>.`;
+      } else if (query) {
+        message = `No results found for "<strong>${escapeHtml(query)}</strong>".`;
+      } else {
+        message = "No results found for the selected filters.";
+      }
+      const advice =
+        mode === IN_VIEW_MODE
+          ? "Try another spot, or allow a greater distance."
+          : "Try a different search term or filter.";
       const regionHint = regionName
         ? ` You're searching within <strong>${escapeHtml(regionName)}</strong> \u2014 switch to Global in the region selector to search everywhere.`
         : "";
@@ -768,7 +1005,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         <div class="alert alert-info">
           <i class="fas fa-info-circle me-2"></i>
           ${message}
-          Try a different search term or filter.${regionHint}
+          ${advice}${regionHint}
         </div>
       `;
       // Hide bulk actions when no results
@@ -820,8 +1057,21 @@ document.addEventListener("DOMContentLoaded", async function () {
       'input[name="georeferencedOptions"]:checked',
     ).value;
 
-    if (startYearVal || endYearVal || georeferencedOption !== "all") {
+    const radiusVal =
+      mode === IN_VIEW_MODE && inViewRadius ? inViewRadius.value : "";
+
+    if (
+      startYearVal ||
+      endYearVal ||
+      georeferencedOption !== "all" ||
+      radiusVal
+    ) {
       let filters = [];
+      if (radiusVal) {
+        filters.push(
+          `within ${inViewRadius.options[inViewRadius.selectedIndex].text}`,
+        );
+      }
       if (startYearVal && endYearVal) {
         filters.push(`${startYearVal}-${endYearVal}`);
       } else if (startYearVal) {
@@ -837,29 +1087,32 @@ document.addEventListener("DOMContentLoaded", async function () {
       filterSummary = ` (filtered: ${filters.join(", ")})`;
     }
 
-    const forQuery = query
-      ? ` for "<strong>${escapeHtml(query)}</strong>"`
-      : "";
-
-    // For semantic/reverse image search, don't show count (all images are returned ranked by similarity)
-    const isSemanticOrReverse =
-      searchModeLabel === "semantic search" ||
-      searchModeLabel === "reverse image search";
+    const forQuery = query ? ` for "<strong>${escapeHtml(query)}</strong>"` : "";
     const inRegion = regionName ? ` in ${escapeHtml(regionName)}` : "";
-    const statsMessage = isSemanticOrReverse
-      ? `Showing results${forQuery}${inRegion} using ${searchModeLabel}${filterSummary}`
-      : `Found ${totalCount} results${forQuery}${inRegion} using ${searchModeLabel}${filterSummary}`;
+
+    // In-view search gets its own sentence rather than the shared one: naming
+    // the mode reads as noise next to a coordinate ("using in-view search"),
+    // where what it does says itself.
+    let statsMessage;
+    if (mode === IN_VIEW_MODE) {
+      statsMessage =
+        `Showing photographs looking at ` +
+        `<strong>${escapeHtml(query)}</strong>${filterSummary}`;
+    } else if (searchModeConfig(mode).reportsCount) {
+      // Only text search has a meaningful total; the ranked modes return the
+      // whole corpus in order, so counting it says nothing.
+      statsMessage = `Found ${totalCount} results${forQuery}${inRegion} using ${searchModeLabel}${filterSummary}`;
+    } else {
+      statsMessage = `Showing results${forQuery}${inRegion} using ${searchModeLabel}${filterSummary}`;
+    }
 
     // Clear previously registered IDs since we're loading new results
     if (window.imageGridInstance) {
       window.imageGridInstance.clearRegisteredIds();
     }
 
-    // Remove the template element from the HTML before inserting
-    const cleanHtml = html.replace(
-      /<template[^>]*data-has-more[^>]*>.*?<\/template>/gi,
-      "",
-    );
+    // Remove the metadata elements from the HTML before inserting
+    const cleanHtml = html.replace(RESULT_METADATA_PATTERN, "");
 
     // Build the full results HTML with Load More button instead of pagination
     let resultsHtml = `
