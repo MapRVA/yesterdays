@@ -5,7 +5,6 @@ description = "A Django web application for georeferencing historical images."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "beautifulsoup4~=4.15.0",
     "boto3~=1.43.93",
     "celery~=5.6.3",
     "django~=6.0.7",
@@ -20,7 +19,6 @@ dependencies = [
     "djangorestframework-gis~=1.2.1",
     "drf-spectacular~=0.30.0",
     "edtf~=5.0.1",
-    "flickrapi~=2.4.0",
     "geopy~=2.5.0",
     "iiif-prezi3==3.1.1",
     "markdown~=3.10.3",
