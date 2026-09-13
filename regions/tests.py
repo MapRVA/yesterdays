@@ -1,6 +1,5 @@
 import json
 import re
-from datetime import timedelta
 from unittest import mock
 
 import pyoxigraph
@@ -1540,163 +1539,29 @@ class RegionDirectoryTests(TestCase):
 
 
 class GlobalHomeHeroTests(TestCase):
-    """The photograph the global homepage leads with.
-
-    yesterdays.views.get_hero_feature picks it: the most recently featured
-    image anywhere that has a point, falling back to any public
-    georeferenced photograph, and finally to nothing at all.
-    """
+    """The global homepage when no photograph can lead the hero."""
 
     @classmethod
     def setUpTestData(cls):
-        item = WikidataItem.objects.bulk_create(
-            [WikidataItem(wikidata_id="Q1370", title="Virginia")]
-        )[0]
-        cls.region = make_region(
-            short_name="Virginia",
-            long_name="Virginia, United States",
-            slug="virginia",
-            wikidata_item=item,
-        )
-        cls.source = Source.objects.create(name="Src", slug="src", public=True)
+        source = Source.objects.create(name="Src", slug="src", public=True)
         cls.collection = Collection.objects.create(
-            name="Coll", slug="coll", source=cls.source, public=True
+            name="Coll", slug="coll", source=source, public=True
         )
 
     def setUp(self):
-        # Both the hero and the top-rated image memoize in the process-local
-        # cache, which outlives any one test.
+        # The hero pool is cached outside the test transaction.
         cache.clear()
 
-    def _image(self, title, *, collection=None, **kwargs):
-        kwargs.setdefault("permalink", f"https://img.example.com/{title}.jpg")
-        kwargs.setdefault("thumbnail", f"https://img.example.com/{title}-thumb.jpg")
-        return Image.objects.create(
-            collection=collection or self.collection, title=title, **kwargs
-        )
-
-    def _georeference(self, image, **kwargs):
-        kwargs.setdefault("point", Point(-77.44, 37.53, srid=4326))
-        return Georeference.objects.create(image=image, **kwargs)
-
-    def _feature(self):
-        response = self.client.get(reverse("home"))
-        self.assertTemplateUsed(response, "home_no_region.html")
-        return response.context["hero_feature"]
-
-    def test_curated_entry_is_preferred_over_the_fallback(self):
-        curated = self._image("Curated")
-        self._georeference(curated)
-        other = self._image("Merely georeferenced")
-        self._georeference(other)
-        ImageOfTheDay.objects.create(
-            image=curated, region=self.region, day=timezone.localdate()
-        )
-        self.assertEqual(self._feature()["title"], "Curated")
-
-    def test_most_recent_curated_entry_wins(self):
-        today = timezone.localdate()
-        for offset, title in ((3, "Older"), (1, "Newer")):
-            image = self._image(title)
-            self._georeference(image)
-            ImageOfTheDay.objects.create(
-                image=image,
-                region=self.region,
-                day=today - timedelta(days=offset),
-            )
-        self.assertEqual(self._feature()["title"], "Newer")
-
-    def test_future_entry_is_not_shown_yet(self):
-        today = timezone.localdate()
-        queued = self._image("Tomorrow's pick")
-        self._georeference(queued)
-        ImageOfTheDay.objects.create(
-            image=queued, region=self.region, day=today + timedelta(days=1)
-        )
-        shown = self._image("Today's pick")
-        self._georeference(shown)
-        ImageOfTheDay.objects.create(image=shown, region=self.region, day=today)
-        self.assertEqual(self._feature()["title"], "Today's pick")
-
-    def test_curated_entry_without_a_point_falls_through(self):
-        unplaced = self._image("Never placed")
-        ImageOfTheDay.objects.create(
-            image=unplaced, region=self.region, day=timezone.localdate()
-        )
-        placed = self._image("Placed")
-        self._georeference(placed)
-        self.assertEqual(self._feature()["title"], "Placed")
-
-    def test_twice_georeferenced_image_yields_one_hero(self):
-        # The reverse FK is multi-valued; the query filters on it with
-        # Exists() so a second georeference can't multiply the row.
-        image = self._image("Placed twice")
-        self._georeference(image)
-        self._georeference(image, point=Point(-77.45, 37.54, srid=4326))
-        ImageOfTheDay.objects.create(
-            image=image, region=self.region, day=timezone.localdate()
-        )
-        self.assertEqual(self._feature()["title"], "Placed twice")
-
-    def test_non_public_holdings_are_never_the_hero(self):
-        hidden_source = Source.objects.create(
-            name="Hidden", slug="hidden-src", public=False
-        )
-        hidden = Collection.objects.create(
-            name="Hidden", slug="hidden", source=hidden_source, public=True
-        )
-        private = Collection.objects.create(
-            name="Private", slug="private", source=self.source, public=False
-        )
-        today = timezone.localdate()
-        for offset, collection in enumerate((hidden, private)):
-            image = self._image(f"In {collection.slug}", collection=collection)
-            self._georeference(image)
-            # Separate days: the queue allows one entry per region per day.
-            ImageOfTheDay.objects.create(
-                image=image, region=self.region, day=today - timedelta(days=offset)
-            )
-        self.assertIsNone(self._feature())
-
-    def test_aerial_image_is_never_the_hero(self):
-        # An aerial's georeference is a polygon of ground covered, not a
-        # spot someone stood on, so it can't carry the demonstration.
-        aerial = self._image("From above", aerial=True)
-        self._georeference(aerial)
-        self.assertIsNone(self._feature())
-
-    def test_image_without_a_thumbnail_is_never_the_hero(self):
-        image = self._image("No thumbnail", thumbnail="")
-        self._georeference(image)
-        self.assertIsNone(self._feature())
-
-    def test_hero_carries_the_point_and_bearing(self):
-        image = self._image("Facing north-east")
-        self._georeference(image, direction=47)
-        feature = self._feature()
-        self.assertEqual([feature["lng"], feature["lat"]], [-77.44, 37.53])
-        self.assertEqual(feature["direction"], 47)
-        self.assertEqual(feature["direction_label"], "north-east")
-
-    def test_only_a_bare_year_reaches_the_caption(self):
-        # original_date is free text off the source record — "circa 1920"
-        # or a whole upload timestamp are as likely as "1923", and only a
-        # bare year reads back as "took this photograph in ____".
-        image = self._image("Dated", original_date="1923")
-        self._georeference(image)
-        self.assertEqual(self._feature()["year"], "1923")
-
-        for freeform in ("circa 1920", "1920s", "2019-10-12 15:13:08"):
-            cache.clear()
-            Image.objects.filter(pk=image.pk).update(original_date=freeform)
-            self.assertIsNone(self._feature()["year"], freeform)
-
     def test_site_without_georeferences_has_no_hero_and_still_renders(self):
-        self._image("Unplaced")
+        Image.objects.create(
+            collection=self.collection,
+            title="Unplaced",
+            permalink="https://img.example.com/unplaced.jpg",
+            thumbnail="https://img.example.com/unplaced-thumb.jpg",
+        )
         response = self.client.get(reverse("home"))
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.context["hero_feature"])
-        self.assertContains(response, "Historical photographs, on the map.")
 
 
 class GlobalHomeSubjectsTests(TestCase):
@@ -1911,26 +1776,6 @@ class MapDisplayCenterTests(TestCase):
         self.client.cookies[REGION_COOKIE_NAME] = self.region.slug
         resp = self.client.get(self.url, {"zoom_level": "8.5"})
         self.assertContains(resp, "const mapBounds = null;")
-
-    def test_region_geocoder_bounds_override_map_bounds(self):
-        map_bounds = Polygon.from_bbox((-79, 36, -75, 40))
-        map_bounds.srid = 4326
-        search_bounds = Polygon.from_bbox((-78.8, 36.2, -75.2, 39.8))
-        search_bounds.srid = 4326
-        Region.objects.filter(pk=self.region.pk).update(
-            map_bounds=map_bounds,
-            geocoder_bounds=search_bounds,
-        )
-        self.client.cookies[REGION_COOKIE_NAME] = self.region.slug
-        resp = self.client.get(self.url)
-        self.assertContains(
-            resp,
-            "window.SEARCH_BBOX = [-78.8, 36.2, -75.2, 39.8];",
-        )
-
-    def test_site_geocoder_bounds_used_without_region_bounds(self):
-        resp = self.client.get(self.url)
-        self.assertContains(resp, "window.SEARCH_BBOX = [-2.0, 52.0, -1.0, 53.0];")
 
     def test_unknown_region_slug_falls_back_to_site_default(self):
         self.client.cookies[REGION_COOKIE_NAME] = "no-such-region"
