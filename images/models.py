@@ -1531,10 +1531,28 @@ class Georeference(models.Model):
             models.Index(fields=["image", "georeferenced_by"]),
             models.Index(fields=["georeferenced_by"]),
             models.Index(fields=["georeferenced_at"]),
+            # Turns the latest-per-image NOT EXISTS check in images.in_view
+            # into a single index probe per candidate row. The
+            # (image, georeferenced_by) index above cannot serve it.
+            models.Index(
+                fields=["image", "-georeferenced_at"], name="images_geor_img_recent_idx"
+            ),
         ]
         constraints = [
-            # Removed unique constraint to allow multiple georeferences per user per image
-            # This enables correction submissions and maintains full georeferencing history
+            # There is deliberately no per-user constraint: a user may submit
+            # several georeferences for one image so corrections keep the full
+            # history.
+            #
+            # Anonymous submissions are different. Only the *first*
+            # georeference on an image may be anonymous, and the submission
+            # view enforces that under a row lock. This partial index is the
+            # second line of defence, so a bug or a future code path cannot
+            # reintroduce the race.
+            models.UniqueConstraint(
+                fields=["image"],
+                condition=Q(georeferenced_by__isnull=True),
+                name="unique_anonymous_georeference_per_image",
+            ),
         ]
 
 

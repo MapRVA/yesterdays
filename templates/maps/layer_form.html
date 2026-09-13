@@ -1,0 +1,150 @@
+{% extends 'base.html' %}
+{% load django_vite %}
+
+{% block title %}{% if layer %}Edit {{ layer.name }}{% else %}New Map Layer{% endif %} – Yesterdays{% endblock %}
+
+{% block content %}
+<script>
+    window.layerEditConfig = {
+        protomapsApiKey: "{{ protomaps_api_key|escapejs }}",
+        name: "{{ form.name.value|default:''|escapejs }}",
+        type: "{{ form.type.value|default:'pmtiles'|escapejs }}",
+        url: "{{ form.url.value|default:''|escapejs }}",
+        attribution: "{{ form.attribution.value|default:''|escapejs }}"
+    };
+</script>
+
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb" class="mb-4">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'home' %}">Home</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'maps:browse_maps' %}">Map Layers</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'maps:layer_manage' %}">Manage</a></li>
+                <li class="breadcrumb-item active" aria-current="page">{% if layer %}{{ layer.name }}{% else %}New Layer{% endif %}</li>
+            </ol>
+        </nav>
+
+        <h1 class="h3 mb-4">{% if layer %}Edit {{ layer.name }}{% else %}New Map Layer{% endif %}</h1>
+    </div>
+</div>
+
+<form method="post"
+      action="{% if layer %}{% url 'maps:layer_edit' layer.pk %}{% else %}{% url 'maps:layer_create' %}{% endif %}"
+      x-data="layerEditor">
+    {% csrf_token %}
+    <div class="row g-4">
+        <div class="col-lg-7">
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+            {% endif %}
+
+            {% for title, fields in form.field_groups %}
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header"><h2 class="h6 mb-0">{{ title }}</h2></div>
+                    <div class="card-body">
+                        {% for field in fields %}
+                            <div class="mb-3">
+                                {% if field.field.widget.input_type == 'checkbox' %}
+                                    <div class="form-check">
+                                        {{ field }}
+                                        <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                                    </div>
+                                {% else %}
+                                    <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
+                                    {% if field.name == 'type' %}
+                                        <select name="{{ field.html_name }}" id="{{ field.id_for_label }}" class="form-select" x-model="type" @change="render()">
+                                            {% for value, label in field.field.choices %}
+                                                <option value="{{ value }}">{{ label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    {% elif field.name == 'url' %}
+                                        <input type="url" name="{{ field.html_name }}" id="{{ field.id_for_label }}" class="form-control" maxlength="{{ field.field.max_length }}" required x-model="url" @input.debounce.400ms="render()">
+                                    {% elif field.name == 'attribution' %}
+                                        <textarea name="{{ field.html_name }}" id="{{ field.id_for_label }}" class="form-control" rows="3" x-model="attribution" @input.debounce.400ms="render()"></textarea>
+                                    {% else %}
+                                        {{ field }}
+                                    {% endif %}
+                                {% endif %}
+                                {% if field.help_text %}
+                                    <div class="form-text">{{ field.help_text }}</div>
+                                {% endif %}
+                                {% for err in field.errors %}
+                                    <div class="invalid-feedback d-block">{{ err }}</div>
+                                {% endfor %}
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endfor %}
+
+            <div class="d-flex flex-column flex-sm-row justify-content-sm-between align-items-stretch align-items-sm-center gap-2 mb-4">
+                <div class="order-2 order-sm-1">
+                    {% if layer %}
+                        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteLayerModal">
+                            <i class="fas fa-trash me-1"></i>Delete Layer
+                        </button>
+                    {% endif %}
+                </div>
+                <div class="d-flex flex-column flex-sm-row gap-2 order-1 order-sm-2">
+                    <a href="{% url 'maps:layer_manage' %}" class="btn btn-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-1"></i>Save
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="layer-preview-sticky">
+                <div class="card shadow-sm">
+                    <div class="card-header">
+                        <h2 class="h6 mb-0"><i class="fas fa-map me-2"></i>Preview</h2>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="layer-preview-map"></div>
+                    </div>
+                    <div class="card-footer small"
+                         :class="{ 'text-danger': status === 'error', 'text-muted': status !== 'error' }">
+                        <span x-show="status === 'ok'"><i class="fas fa-check me-1"></i>Previewing the current source.</span>
+                        <span x-show="status !== 'ok'" x-text="statusText"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+{% if layer %}
+<!-- Delete confirmation modal -->
+<div class="modal fade" id="deleteLayerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Delete layer?</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0">
+                    Delete <strong>{{ layer.name }}</strong>{% if layer.collection %} from {{ layer.collection.name }}{% endif %}?
+                    This cannot be undone.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form method="post" action="{% url 'maps:layer_delete' layer.pk %}" class="m-0">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash me-1"></i>Delete Layer
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% vite_asset 'assets/js/pages/layer_edit.ts' %}
+{% endblock %}

@@ -95,6 +95,7 @@ export default defineConfig({
           "./assets/js/pages/user_georeferences.js",
         ),
         map_detail: path.resolve(__dirname, "./assets/js/pages/map_detail.ts"),
+        layer_edit: path.resolve(__dirname, "./assets/js/pages/layer_edit.ts"),
         activity_feed: path.resolve(
           __dirname,
           "./assets/js/pages/activity_feed.js",

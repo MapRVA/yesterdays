@@ -38,7 +38,7 @@ function initRegionDirectory(): void {
   );
 
   // The map, once it's nearly scrolled to. Its pins cover the regions a
-  // visitor lands in, so the grid's grouping-region cards simply go
+  // visitor lands in, so the grid's unadvertised cards simply go
   // unlinked — readRegionCards keys by slug and the map looks each up.
   const mapContainer = document.getElementById("global-home-map");
   if (mapContainer instanceof HTMLElement) {
@@ -65,9 +65,10 @@ function initRegionDirectory(): void {
     let visible = 0;
 
     cards.forEach((card) => {
-      // Grouping regions (Virginia above Richmond) stay hidden while the
-      // search box is empty, so the resting grid mirrors the map's pins.
-      const surfaced = query !== "" || card.dataset.regionGrouping === undefined;
+      // Unadvertised regions stay hidden while the search box is empty, so
+      // the resting grid mirrors the map's pins.
+      const surfaced =
+        query !== "" || card.dataset.regionUnadvertised === undefined;
       const matches =
         surfaced &&
         (card.dataset.regionSearch ?? "").toLocaleLowerCase().includes(query);

@@ -31,6 +31,14 @@ class Region(models.Model):
             "the sitewide subtitle when blank"
         ),
     )
+    advertise = models.BooleanField(
+        default=False,
+        help_text=(
+            "Show this region on selector maps, homepage region cards, the "
+            "default region directory, and the navbar's Popular list. "
+            "Regions remain available through search when this is off."
+        ),
+    )
     slug = models.SlugField(unique=True)
     wikidata_item = models.OneToOneField(
         "subjects.WikidataItem",

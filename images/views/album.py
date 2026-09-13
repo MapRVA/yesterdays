@@ -1,19 +1,31 @@
-import json
-
+from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
-from django.contrib.auth.models import User
 from django.core.paginator import Paginator
-from django.db import models
+from django.db import models, transaction
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from ..models import (
     Album,
     AlbumImage,
-    Image,
+)
+from ..policies import (
+    album_contains_private_images,
+    album_for_owner_or_404,
+    any_image_is_private,
+    editable_images_for,
+    get_image_or_404,
+    get_images_or_404,
+    parse_image_ids,
+)
+from ..validation import InvalidInput, parse_json_body, validate_text
+
+# An album is a public surface. Adding a non-public image to one, or flipping a
+# private album that holds one to public, would republish staged material, so
+# both paths refuse rather than silently disclosing.
+PRIVATE_IMAGE_IN_PUBLIC_ALBUM = (
+    "A public album cannot contain images from a private source or collection."
 )
 
 
@@ -168,38 +180,36 @@ def add_image_to_album(request):
         )
 
     try:
-        data = json.loads(request.body)
-        image_id = data.get("image_id")
-        album_id = data.get("album_id")
+        data = parse_json_body(request)
+    except InvalidInput as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
 
-        if not image_id or not album_id:
-            return JsonResponse(
-                {"success": False, "error": "Missing image_id or album_id"}, status=400
-            )
-
-        image = get_object_or_404(Image, id=image_id)
-        album = get_object_or_404(Album, id=album_id, owner=request.user)
-
-        # Get the next order value
-        max_order = album.album_images.aggregate(models.Max("order"))["order__max"] or 0
-        next_order = max_order + 1
-
-        # Add image to album
-        album_image, created = AlbumImage.objects.get_or_create(
-            album=album, image=image, defaults={"order": next_order}
+    image_id = data.get("image_id")
+    album_id = data.get("album_id")
+    if not image_id or not album_id:
+        return JsonResponse(
+            {"success": False, "error": "Missing image_id or album_id"}, status=400
         )
 
-        if created:
-            return JsonResponse(
-                {"success": True, "message": f"Image added to album '{album.title}'"}
-            )
-        else:
-            return JsonResponse(
-                {"success": True, "message": f"Image already in album '{album.title}'"}
-            )
+    album = album_for_owner_or_404(request.user, album_id)
+    image = get_image_or_404(editable_images_for(request.user), image_id)
 
-    except Exception as e:
-        return JsonResponse({"success": False, "error": str(e)}, status=400)
+    if album.public and album_contains_private_images(album, extra_images=[image]):
+        return JsonResponse(
+            {"success": False, "error": PRIVATE_IMAGE_IN_PUBLIC_ALBUM}, status=400
+        )
+
+    max_order = album.album_images.aggregate(models.Max("order"))["order__max"] or 0
+    _, created = AlbumImage.objects.get_or_create(
+        album=album, image=image, defaults={"order": max_order + 1}
+    )
+
+    message = (
+        f"Image added to album '{album.title}'"
+        if created
+        else f"Image already in album '{album.title}'"
+    )
+    return JsonResponse({"success": True, "message": message})
 
 
 @require_http_methods(["POST"])
@@ -211,45 +221,49 @@ def create_and_add_to_album(request):
         )
 
     try:
-        data = json.loads(request.body)
-        image_id = data.get("image_id")
-        album_title = data.get("album_title", "").strip()
-        album_description = data.get("album_description", "").strip()
-        album_public = data.get("album_public", False)
+        data = parse_json_body(request)
+        album_title = validate_text(
+            data,
+            "album_title",
+            max_length=settings.ALBUM_TITLE_MAX_LENGTH,
+            required=True,
+        )
+        album_description = validate_text(
+            data,
+            "album_description",
+            max_length=settings.ALBUM_DESCRIPTION_MAX_LENGTH,
+        )
+    except InvalidInput as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
 
-        if not image_id:
-            return JsonResponse(
-                {"success": False, "error": "Missing image_id"}, status=400
-            )
+    image_id = data.get("image_id")
+    if not image_id:
+        return JsonResponse({"success": False, "error": "Missing image_id"}, status=400)
 
-        if not album_title:
-            return JsonResponse(
-                {"success": False, "error": "Album title is required"}, status=400
-            )
+    album_public = bool(data.get("album_public", False))
+    image = get_image_or_404(editable_images_for(request.user), image_id)
 
-        image = get_object_or_404(Image, id=image_id)
+    if album_public and any_image_is_private([image]):
+        return JsonResponse(
+            {"success": False, "error": PRIVATE_IMAGE_IN_PUBLIC_ALBUM}, status=400
+        )
 
-        # Create the album
+    with transaction.atomic():
         album = Album.objects.create(
             owner=request.user,
             title=album_title,
             description=album_description,
             public=album_public,
         )
-
-        # Add image to album
         AlbumImage.objects.create(album=album, image=image, order=1)
 
-        return JsonResponse(
-            {
-                "success": True,
-                "message": f"Album '{album.title}' created and image added",
-                "album_id": album.id,
-            }
-        )
-
-    except Exception as e:
-        return JsonResponse({"success": False, "error": str(e)}, status=400)
+    return JsonResponse(
+        {
+            "success": True,
+            "message": f"Album '{album.title}' created and image added",
+            "album_id": str(album.id),
+        }
+    )
 
 
 @require_http_methods(["POST"])
@@ -261,35 +275,39 @@ def remove_image_from_album(request):
         )
 
     try:
-        data = json.loads(request.body)
-        image_id = data.get("image_id")
-        album_id = data.get("album_id")
+        data = parse_json_body(request)
+    except InvalidInput as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
 
-        if not image_id or not album_id:
-            return JsonResponse(
-                {"success": False, "error": "Missing image_id or album_id"}, status=400
-            )
+    image_id = data.get("image_id")
+    album_id = data.get("album_id")
+    if not image_id or not album_id:
+        return JsonResponse(
+            {"success": False, "error": "Missing image_id or album_id"}, status=400
+        )
 
-        image = get_object_or_404(Image, id=image_id)
-        album = get_object_or_404(Album, id=album_id, owner=request.user)
+    album = album_for_owner_or_404(request.user, album_id)
 
-        # Remove image from album
-        deleted_count, _ = AlbumImage.objects.filter(album=album, image=image).delete()
+    # Deleted by ID through the owned album, so no separate image lookup is
+    # needed: removing something from your own album discloses nothing, and a
+    # membership row is the only thing this can touch.
+    try:
+        deleted_count, _ = AlbumImage.objects.filter(
+            album=album, image_id=int(image_id)
+        ).delete()
+    except (TypeError, ValueError):
+        return JsonResponse(
+            {"success": False, "error": "Invalid image_id"}, status=400
+        )
 
-        if deleted_count > 0:
-            return JsonResponse(
-                {
-                    "success": True,
-                    "message": f"Image removed from album '{album.title}'",
-                }
-            )
-        else:
-            return JsonResponse(
-                {"success": False, "error": "Image was not in this album"}, status=400
-            )
+    if not deleted_count:
+        return JsonResponse(
+            {"success": False, "error": "Image was not in this album"}, status=400
+        )
 
-    except Exception as e:
-        return JsonResponse({"success": False, "error": str(e)}, status=400)
+    return JsonResponse(
+        {"success": True, "message": f"Image removed from album '{album.title}'"}
+    )
 
 
 def album_detail(request, album_id):
@@ -343,184 +361,156 @@ def album_detail(request, album_id):
 @require_http_methods(["POST"])
 def toggle_album_public(request, album_id):
     """Toggle album public/private status (owner only)"""
-
     if not request.user.is_authenticated:
         return JsonResponse(
             {"success": False, "error": "Authentication required"}, status=401
         )
 
     try:
-        data = json.loads(request.body)
-        new_public_status = data.get("public", True)
-    except json.JSONDecodeError:
-        return JsonResponse({"success": False, "error": "Invalid JSON"}, status=400)
+        data = parse_json_body(request)
+    except InvalidInput as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
 
-    try:
-        album = get_object_or_404(Album, id=album_id)
-    except:
-        return JsonResponse({"success": False, "error": "Album not found"}, status=404)
+    new_public_status = bool(data.get("public", True))
+    album = album_for_owner_or_404(request.user, album_id)
 
-    # Check that the user is the owner
-    if album.owner != request.user:
+    # Publishing an album publishes everything in it. Staff may legitimately
+    # stage private images in a private album, so the check happens here, at
+    # the moment the album would become a public surface.
+    if new_public_status and album_contains_private_images(album):
         return JsonResponse(
-            {
-                "success": False,
-                "error": "You don't have permission to modify this album",
-            },
-            status=403,
+            {"success": False, "error": PRIVATE_IMAGE_IN_PUBLIC_ALBUM}, status=400
         )
 
-    # Update the public status
     album.public = new_public_status
-    album.save()
+    album.save(update_fields=["public", "updated_at"])
 
     return JsonResponse({"success": True, "public": album.public})
 
 
-@login_required
 @require_http_methods(["POST"])
-@csrf_exempt
 def bulk_add_to_album(request):
-    """
-    Add multiple images to an album in a single request
-    """
+    """Add multiple images to an album in a single request"""
+    if not request.user.is_authenticated:
+        return JsonResponse(
+            {"success": False, "error": "Not authenticated"}, status=401
+        )
+
     try:
-        # Parse JSON data
-        data = json.loads(request.body)
-        album_id = data.get("album_id")
-        image_ids = data.get("image_ids", [])
+        data = parse_json_body(request)
+        image_ids = parse_image_ids(data.get("image_ids"))
+    except (InvalidInput, ValueError) as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
 
-        if not album_id or not image_ids:
-            return JsonResponse(
-                {"success": False, "error": "Missing album_id or image_ids"}, status=400
-            )
+    album_id = data.get("album_id")
+    if not album_id:
+        return JsonResponse(
+            {"success": False, "error": "Missing album_id"}, status=400
+        )
 
-        # Get the album (ensure user owns it)
-        album = get_object_or_404(Album, id=album_id, owner=request.user)
+    album = album_for_owner_or_404(request.user, album_id)
 
-        # Get the images
-        images = Image.objects.filter(id__in=image_ids)
+    # All or nothing: every requested ID must resolve through the policy before
+    # anything is written, so a request mixing authorized and unauthorized IDs
+    # leaves no partial membership behind and reveals nothing about which IDs
+    # exist.
+    images = get_images_or_404(editable_images_for(request.user), image_ids)
 
-        if not images.exists():
-            return JsonResponse(
-                {"success": False, "error": "No valid images found"}, status=400
-            )
+    if album.public and album_contains_private_images(album, extra_images=images):
+        return JsonResponse(
+            {"success": False, "error": PRIVATE_IMAGE_IN_PUBLIC_ALBUM}, status=400
+        )
 
-        # Add images to album (avoiding duplicates)
-        added_count = 0
+    added_count = 0
+    with transaction.atomic():
+        next_order = (
+            album.album_images.aggregate(models.Max("order"))["order__max"] or 0
+        ) + 1
         for image in images:
-            # Use get_or_create to avoid duplicates
-            album_image, created = AlbumImage.objects.get_or_create(
-                album=album,
-                image=image,
-                defaults={"order": AlbumImage.objects.filter(album=album).count() + 1},
+            _, created = AlbumImage.objects.get_or_create(
+                album=album, image=image, defaults={"order": next_order}
             )
             if created:
                 added_count += 1
+                next_order += 1
 
-        # Update album's updated timestamp
-        album.save()
+        album.save(update_fields=["updated_at"])
 
-        return JsonResponse(
-            {
-                "success": True,
-                "message": f'Successfully added {added_count} images to album "{album.title}"',
-                "added_count": added_count,
-                "total_requested": len(image_ids),
-                "album_title": album.title,
-                "album_id": album.id,
-            }
-        )
-
-    except json.JSONDecodeError:
-        return JsonResponse(
-            {"success": False, "error": "Invalid JSON data"}, status=400
-        )
-    except Album.DoesNotExist:
-        return JsonResponse(
-            {
-                "success": False,
-                "error": "Album not found or you do not have permission",
-            },
-            status=404,
-        )
-    except Exception as e:
-        return JsonResponse(
-            {"success": False, "error": f"Server error: {str(e)}"}, status=500
-        )
+    return JsonResponse(
+        {
+            "success": True,
+            "message": (
+                f'Successfully added {added_count} images to album "{album.title}"'
+            ),
+            "added_count": added_count,
+            "total_requested": len(image_ids),
+            "album_title": album.title,
+            "album_id": str(album.id),
+        }
+    )
 
 
-@login_required
 @require_http_methods(["POST"])
-@csrf_exempt
 def bulk_create_and_add_to_album(request):
-    """
-    Create a new album and add multiple images to it in a single request
-    """
+    """Create a new album and add multiple images to it in a single request"""
+    if not request.user.is_authenticated:
+        return JsonResponse(
+            {"success": False, "error": "Not authenticated"}, status=401
+        )
+
     try:
-        # Parse JSON data
-        data = json.loads(request.body)
-        title = data.get("title", "").strip()
-        description = data.get("description", "").strip()
-        is_public = data.get("is_public", False)
-        image_ids = data.get("image_ids", [])
+        data = parse_json_body(request)
+        title = validate_text(
+            data, "title", max_length=settings.ALBUM_TITLE_MAX_LENGTH, required=True
+        )
+        description = validate_text(
+            data, "description", max_length=settings.ALBUM_DESCRIPTION_MAX_LENGTH
+        )
+        image_ids = parse_image_ids(data.get("image_ids"))
+    except (InvalidInput, ValueError) as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
 
-        if not title:
-            return JsonResponse(
-                {"success": False, "error": "Album title is required"}, status=400
-            )
+    is_public = bool(data.get("is_public", False))
 
-        if not image_ids:
-            return JsonResponse(
-                {"success": False, "error": "No images specified"}, status=400
-            )
+    # Authorize the whole set before creating anything, so a rejected request
+    # does not leave an orphan album behind the way the old clean-up path did.
+    images = get_images_or_404(editable_images_for(request.user), image_ids)
 
-        # Create the album
+    if is_public and any_image_is_private(images):
+        return JsonResponse(
+            {"success": False, "error": PRIVATE_IMAGE_IN_PUBLIC_ALBUM}, status=400
+        )
+
+    with transaction.atomic():
         album = Album.objects.create(
             owner=request.user,
             title=title,
             description=description,
             public=is_public,
         )
-
-        # Get the images
-        images = Image.objects.filter(id__in=image_ids)
-
-        if not images.exists():
-            # Clean up the created album if no valid images
-            album.delete()
-            return JsonResponse(
-                {"success": False, "error": "No valid images found"}, status=400
-            )
-
-        # Add images to album
-        album_images = []
-        for i, image in enumerate(images, 1):
-            album_image = AlbumImage.objects.create(album=album, image=image, order=i)
-            album_images.append(album_image)
-
-        return JsonResponse(
-            {
-                "success": True,
-                "message": f'Successfully created album "{album.title}" and added {len(album_images)} images',
-                "album": {
-                    "id": album.id,
-                    "title": album.title,
-                    "description": album.description,
-                    "public": album.public,
-                    "created_at": album.created_at.isoformat(),
-                    "image_count": len(album_images),
-                },
-                "added_count": len(album_images),
-                "total_requested": len(image_ids),
-            }
+        AlbumImage.objects.bulk_create(
+            [
+                AlbumImage(album=album, image=image, order=order)
+                for order, image in enumerate(images, 1)
+            ]
         )
 
-    except json.JSONDecodeError:
-        return JsonResponse(
-            {"success": False, "error": "Invalid JSON data"}, status=400
-        )
-    except Exception as e:
-        return JsonResponse(
-            {"success": False, "error": f"Server error: {str(e)}"}, status=500
-        )
+    return JsonResponse(
+        {
+            "success": True,
+            "message": (
+                f'Successfully created album "{album.title}" '
+                f"and added {len(images)} images"
+            ),
+            "album": {
+                "id": str(album.id),
+                "title": album.title,
+                "description": album.description,
+                "public": album.public,
+                "created_at": album.created_at.isoformat(),
+                "image_count": len(images),
+            },
+            "added_count": len(images),
+            "total_requested": len(image_ids),
+        }
+    )

@@ -46,6 +46,16 @@ declare global {
     attribution: string;
   }
 
+  // Initial state for the staff map layer edit page, serialized by
+  // templates/maps/layer_form.html.
+  interface LayerEditConfig {
+    protomapsApiKey: string;
+    name: string;
+    type: MapLayerType;
+    url: string;
+    attribution: string;
+  }
+
   interface Window {
     // Django-provided configuration, set by inline scripts in templates/base.html
     DEFAULT_MAP_CENTER?: [number, number];
@@ -62,6 +72,7 @@ declare global {
 
     MAP_LAYERS_DATA?: MapLayersData;
     MAP_LAYER?: PreviewMapLayer;
+    layerEditConfig?: LayerEditConfig;
 
     // Django-serialized configuration for the point georeference interface,
     // set inline by templates/images/georeference_interface.html

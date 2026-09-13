@@ -68,6 +68,9 @@
                     <a href="/admin/maps/layercollection/add/" class="btn btn-primary">
                         <i class="fas fa-plus me-2"></i>Add Collection
                     </a>
+                    <a href="{% url 'maps:layer_manage' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-layer-group me-2"></i>Manage Layers
+                    </a>
                 {% endif %}
             </div>
         {% endfor %}

@@ -1,3 +1,4 @@
+import json
 import re
 from datetime import date, timedelta
 from pathlib import Path
@@ -7,8 +8,10 @@ import numpy as np
 import pyoxigraph
 from django.contrib.admin.sites import AdminSite
 from django.contrib.admin.utils import flatten_fieldsets
+from django.contrib.auth.models import User
 from django.core.exceptions import ImproperlyConfigured
 from django.test import (
+    Client,
     RequestFactory,
     SimpleTestCase,
     TestCase,
@@ -1304,3 +1307,299 @@ class SubjectAdminWikidataLinkTests(TestCase):
         form = self.admin.get_form(self.request, self.subject)
 
         self.assertNotIn("wikidata_item", form.base_fields)
+
+
+# ---------------------------------------------------------------------------
+# SA-01: subject tagging mutations resolve their image through a policy.
+# ---------------------------------------------------------------------------
+
+
+class SubjectMutationAuthorizationTests(TestCase):
+    """Subject add, remove, reorder and representative-image writes."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user("sa01_subject_user", password="pw")
+        cls.staff = User.objects.create_user(
+            "sa01_subject_staff", password="pw", is_staff=True
+        )
+
+        public_source = Source.objects.create(
+            name="Subjects public source",
+            slug="sa01-subj-public",
+            url="https://example.com/subj-public",
+            description="",
+        )
+        private_source = Source.objects.create(
+            name="Subjects private source",
+            slug="sa01-subj-private",
+            url="https://example.com/subj-private",
+            description="",
+            public=False,
+        )
+        public_collection = Collection.objects.create(
+            source=public_source, name="Public", slug="sa01-subj-public"
+        )
+        private_collection = Collection.objects.create(
+            source=public_source,
+            name="Private",
+            slug="sa01-subj-private-collection",
+            public=False,
+        )
+        private_source_collection = Collection.objects.create(
+            source=private_source, name="Staged", slug="sa01-subj-staged"
+        )
+
+        def make_image(collection, title, **kwargs):
+            return Image.objects.create(
+                collection=collection,
+                title=title,
+                permalink=f"https://img.example.com/{title.replace(' ', '-')}.jpg",
+                **kwargs,
+            )
+
+        cls.public_image = make_image(public_collection, "subj public")
+        cls.second_public_image = make_image(public_collection, "subj public two")
+        cls.private_image = make_image(private_collection, "subj private")
+        cls.staged_image = make_image(private_source_collection, "subj staged")
+        cls.duplicate_image = make_image(
+            public_collection, "subj duplicate", duplicate_of=cls.public_image
+        )
+
+        # bulk_create skips WikidataItem.save(), which would otherwise try to
+        # fetch the entity from Wikidata.
+        cls.wikidata_item = WikidataItem.objects.bulk_create(
+            [WikidataItem(wikidata_id="Q4200001", title="Existing subject")]
+        )[0]
+        cls.subject = Subject.objects.create(
+            title="Existing subject",
+            slug="sa01-existing-subject",
+            wikidata_item=cls.wikidata_item,
+        )
+
+        cls.inaccessible_images = [
+            cls.private_image,
+            cls.staged_image,
+            cls.duplicate_image,
+        ]
+
+    def post_json(self, url, payload=None):
+        return self.client.post(
+            url,
+            data=json.dumps({} if payload is None else payload),
+            content_type="application/json",
+        )
+
+    def map_subject(self, image):
+        return SubjectMapping.objects.create(
+            image=image, subject=self.subject, order=1
+        )
+
+    def test_add_subject_rejects_inaccessible_images(self):
+        self.client.force_login(self.user)
+        for image in self.inaccessible_images:
+            with self.subTest(image=image.title):
+                response = self.post_json(
+                    reverse("subjects:add_subject_to_image", args=[image.id]),
+                    {"wikidata_id": self.wikidata_item.wikidata_id},
+                )
+                self.assertEqual(response.status_code, 404)
+        self.assertFalse(SubjectMapping.objects.exists())
+
+    def test_add_subject_rejects_get(self):
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse("subjects:add_subject_to_image", args=[self.public_image.id])
+        )
+        self.assertEqual(response.status_code, 405)
+
+    def test_add_subject_requires_authentication(self):
+        response = self.post_json(
+            reverse("subjects:add_subject_to_image", args=[self.public_image.id]),
+            {"wikidata_id": self.wikidata_item.wikidata_id},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_malformed_wikidata_ids_are_rejected(self):
+        self.client.force_login(self.user)
+        url = reverse("subjects:add_subject_to_image", args=[self.public_image.id])
+        for value in ("", "Qfoo", "P31", "Q", "42", None, 42):
+            with self.subTest(value=value):
+                response = self.post_json(url, {"wikidata_id": value})
+                self.assertEqual(response.status_code, 400)
+        self.assertFalse(SubjectMapping.objects.exists())
+
+    def test_add_subject_to_a_public_image_succeeds(self):
+        self.client.force_login(self.user)
+        response = self.post_json(
+            reverse("subjects:add_subject_to_image", args=[self.public_image.id]),
+            {"wikidata_id": self.wikidata_item.wikidata_id},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            SubjectMapping.objects.filter(
+                image=self.public_image, subject=self.subject
+            ).exists()
+        )
+
+    def test_remove_resolves_the_mapping_through_its_image(self):
+        hidden_mapping = self.map_subject(self.private_image)
+        self.client.force_login(self.user)
+
+        response = self.post_json(
+            reverse(
+                "subjects:remove_subject_from_image", args=[hidden_mapping.id]
+            )
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(SubjectMapping.objects.filter(id=hidden_mapping.id).exists())
+
+    def test_remove_of_a_visible_mapping_succeeds(self):
+        mapping = self.map_subject(self.public_image)
+        self.client.force_login(self.user)
+
+        response = self.post_json(
+            reverse("subjects:remove_subject_from_image", args=[mapping.id])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(SubjectMapping.objects.filter(id=mapping.id).exists())
+
+    def test_reorder_rejects_inaccessible_images(self):
+        self.client.force_login(self.user)
+        for image in self.inaccessible_images:
+            with self.subTest(image=image.title):
+                response = self.post_json(
+                    reverse("subjects:reorder_subjects", args=[image.id]),
+                    {"order": []},
+                )
+                self.assertEqual(response.status_code, 404)
+
+    def test_reorder_rejects_mappings_from_another_image(self):
+        mine = self.map_subject(self.public_image)
+        theirs = SubjectMapping.objects.create(
+            image=self.second_public_image, subject=self.subject, order=1
+        )
+        self.client.force_login(self.user)
+
+        response = self.post_json(
+            reverse("subjects:reorder_subjects", args=[self.public_image.id]),
+            {"order": [str(theirs.id)]},
+        )
+        self.assertEqual(response.status_code, 400)
+        mine.refresh_from_db()
+        self.assertEqual(mine.order, 1)
+
+    def test_bulk_add_is_all_or_nothing(self):
+        self.client.force_login(self.user)
+        response = self.post_json(
+            reverse("bulk_add_subject_to_images"),
+            {
+                "image_ids": [self.public_image.id, self.private_image.id],
+                "wikidata_id": self.wikidata_item.wikidata_id,
+            },
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(SubjectMapping.objects.exists())
+
+    def test_bulk_add_of_authorized_images_succeeds(self):
+        self.client.force_login(self.user)
+        response = self.post_json(
+            reverse("bulk_add_subject_to_images"),
+            {
+                "image_ids": [self.public_image.id, self.second_public_image.id],
+                "wikidata_id": self.wikidata_item.wikidata_id,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["added_count"], 2)
+
+    @override_settings(BULK_MAX_IMAGE_IDS=1)
+    def test_bulk_add_enforces_the_id_cap(self):
+        self.client.force_login(self.user)
+        response = self.post_json(
+            reverse("bulk_add_subject_to_images"),
+            {
+                "image_ids": [self.public_image.id, self.second_public_image.id],
+                "wikidata_id": self.wikidata_item.wikidata_id,
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(SubjectMapping.objects.exists())
+
+    def test_representative_image_must_be_public_even_for_staff(self):
+        self.map_subject(self.private_image)
+        self.client.force_login(self.staff)
+
+        response = self.post_json(
+            reverse(
+                "subjects:set_representative_image",
+                args=[self.subject.id, self.private_image.id],
+            )
+        )
+        self.assertEqual(response.status_code, 404)
+        self.subject.refresh_from_db()
+        self.assertIsNone(self.subject.representative_image)
+
+    def test_representative_image_rejects_duplicates(self):
+        self.map_subject(self.duplicate_image)
+        self.client.force_login(self.staff)
+
+        response = self.post_json(
+            reverse(
+                "subjects:set_representative_image",
+                args=[self.subject.id, self.duplicate_image.id],
+            )
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_representative_image_accepts_a_public_mapped_image(self):
+        self.map_subject(self.public_image)
+        self.client.force_login(self.user)
+
+        response = self.post_json(
+            reverse(
+                "subjects:set_representative_image",
+                args=[self.subject.id, self.public_image.id],
+            )
+        )
+        self.assertEqual(response.status_code, 200)
+        self.subject.refresh_from_db()
+        self.assertEqual(self.subject.representative_image, self.public_image)
+
+    def test_representative_image_requires_the_image_to_be_mapped(self):
+        self.client.force_login(self.user)
+        response = self.post_json(
+            reverse(
+                "subjects:set_representative_image",
+                args=[self.subject.id, self.public_image.id],
+            )
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_subject_mutation_endpoints_reject_get(self):
+        self.client.force_login(self.user)
+        mapping = self.map_subject(self.public_image)
+        urls = [
+            reverse("subjects:add_subject_to_image", args=[self.public_image.id]),
+            reverse("subjects:remove_subject_from_image", args=[mapping.id]),
+            reverse("subjects:reorder_subjects", args=[self.public_image.id]),
+            reverse(
+                "subjects:set_representative_image",
+                args=[self.subject.id, self.public_image.id],
+            ),
+            reverse("bulk_add_subject_to_images"),
+        ]
+        for url in urls:
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url).status_code, 405)
+
+    def test_subject_mutations_require_a_csrf_token(self):
+        csrf_client = Client(enforce_csrf_checks=True)
+        csrf_client.force_login(self.user)
+
+        response = csrf_client.post(
+            reverse("subjects:add_subject_to_image", args=[self.public_image.id]),
+            data=json.dumps({"wikidata_id": self.wikidata_item.wikidata_id}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)

@@ -40,4 +40,5 @@ urlpatterns = [
     path("activity/", views.activity_view, name="api-activity"),
     path("search/semantic/", views.semantic_search_view, name="api-semantic-search"),
     path("search/text/", views.text_search_view, name="api-text-search"),
+    path("search/in-view/", views.in_view_search_view, name="api-in-view-search"),
 ] + router.urls

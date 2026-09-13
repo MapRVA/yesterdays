@@ -28,6 +28,11 @@
                         <span class="badge position-absolute top-0 end-0 m-2 {% if similarity_score > 80 %}bg-success{% elif similarity_score > 60 %}bg-warning text-dark{% else %}bg-secondary{% endif %}" style="z-index: 10;">
                             {{ similarity_score }}% match
                         </span>
+                    {% elif distance_label %}
+                        <!-- Distance Badge (for in-view search results) -->
+                        <span class="badge bg-primary position-absolute top-0 end-0 m-2" style="z-index: 10;">
+                            {{ distance_label }}
+                        </span>
                     {% else %}
                         {% if image.will_not_georef %}
                             <span class="badge bg-secondary position-absolute top-0 end-0 m-2">
@@ -52,8 +57,8 @@
                         {% endif %}
                     {% endif %}
 
-                    <!-- Georeferenced indicator (top-left when similarity shown, otherwise part of aerial/difficulty badges) -->
-                    {% if similarity_score is not None %}
+                    <!-- Georeferenced indicator (top-left when a similarity or distance badge takes the top-right slot, otherwise part of aerial/difficulty badges) -->
+                    {% if similarity_score is not None or distance_label %}
                         <div class="position-absolute top-0 start-0 m-2 d-flex gap-1" style="z-index: 10;">
                             {% if image.is_georeferenced %}
                                 <span class="badge bg-success" title="Georeferenced">

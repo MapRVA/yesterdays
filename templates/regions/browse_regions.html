@@ -51,13 +51,13 @@
     <p id="region-directory-count" class="text-body-secondary small mb-3" aria-live="polite">{{ region_summaries|length }} region{{ region_summaries|length|pluralize }}</p>
     {# Busiest region first (regions.summaries.get_region_summaries orders #}
     {# them); each card leads with the region's representative photo.      #}
-    {# Grouping regions (Virginia above Richmond) render hidden so the     #}
-    {# resting grid mirrors the map's pins; searching surfaces them.       #}
+    {# Unadvertised regions render hidden so the resting grid mirrors the  #}
+    {# map's pins; searching surfaces them.                                #}
     <div id="region-directory-grid" class="region-directory-grid" data-cookie-name="{{ region_cookie_name }}">
         {% for region in regions %}
-        <article class="card region-directory-card{% if current_region.slug == region.slug %} is-current{% endif %}{% if region.is_grouping %} d-none{% endif %}"
+        <article class="card region-directory-card{% if current_region.slug == region.slug %} is-current{% endif %}{% if not region.advertise %} d-none{% endif %}"
                  data-region-card
-                 {% if region.is_grouping %}data-region-grouping{% endif %}
+                 {% if not region.advertise %}data-region-unadvertised{% endif %}
                  data-region-slug="{{ region.slug }}"
                  data-region-search="{{ region.short_name }} {{ region.long_name }} {{ region.subtitle }}">
             {% if region.thumbnail %}
