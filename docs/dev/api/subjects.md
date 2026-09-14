@@ -194,7 +194,7 @@ Some subjects span multiple OSM elements (e.g., a street made up of several ways
 
 | Parameter | Description |
 |-----------|-------------|
-| `slug`    | Filter by exact slug (e.g., `?slug=hollywood-cemetery`) |
+| `slug`    | Filter by one or more exact, comma-separated slugs, matching any listed subject (e.g., `?slug=hollywood-cemetery,main-street-station`) |
 
 ## Ordering
 

@@ -210,8 +210,8 @@ See [Authentication](authentication.md).
 
 | Parameter | Description |
 |---|---|
-| `source` | Filter by source ID (e.g., `?source=2`) |
-| `slug` | Filter by exact slug |
+| `source` | Filter by one or more comma-separated source IDs, matching any listed source (e.g., `?source=1,2`) |
+| `slug` | Filter by one or more exact, comma-separated slugs, matching any listed collection |
 
 ## Ordering
 

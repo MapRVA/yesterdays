@@ -58,7 +58,14 @@ from images.validation import InvalidInput, validate_latitude, validate_longitud
 from images.views.search import HAS_POSTGRES_SEARCH, _get_text_embedding
 from subjects.models import OsmElement, Subject
 
-from .filters import FromAboveGeoreferenceFilter, GeoreferenceFilter, ImageFilter
+from .filters import (
+    CollectionFilter,
+    FromAboveGeoreferenceFilter,
+    GeoreferenceFilter,
+    ImageFilter,
+    SourceFilter,
+    SubjectFilter,
+)
 from .pagination import GeoJsonDefaultPagination
 from .permissions import IsImporter, is_importer
 from .serializers import (
@@ -146,7 +153,7 @@ class SourceViewSet(
     """Archive sources containing collections of historical images."""
 
     serializer_class = SourceSerializer
-    filterset_fields = ["slug"]
+    filterset_class = SourceFilter
     ordering_fields = ["name"]
     ordering = ["name"]
 
@@ -194,7 +201,7 @@ class CollectionViewSet(
     """Collections of historical images within an archive source."""
 
     serializer_class = CollectionSerializer
-    filterset_fields = ["source", "slug"]
+    filterset_class = CollectionFilter
     ordering_fields = ["name", "source__name"]
     ordering = ["source__name", "name"]
 
@@ -298,7 +305,7 @@ class SubjectViewSet(viewsets.ReadOnlyModelViewSet):
     """Subjects (buildings, people, monuments, etc.) that appear in images."""
 
     serializer_class = SubjectSerializer
-    filterset_fields = ["slug"]
+    filterset_class = SubjectFilter
     ordering_fields = ["title", "image_count"]
     ordering = ["title"]
 
@@ -396,6 +403,7 @@ class FromAboveGeoreferenceViewSet(viewsets.ReadOnlyModelViewSet):
     filterset_class = FromAboveGeoreferenceFilter
     filter_backends = [DjangoFilterBackend, RemappingOrderingFilter, InBBoxFilter]
     bbox_filter_field = "polygon"
+    bbox_filter_include_overlapping = True
     ordering_fields = ["georeferenced_at", "confidence", "validation_count"]
     ordering = ["-georeferenced_at"]
     ordering_field_map = {
@@ -1158,52 +1166,72 @@ def _parse_search_filters(params, table_ref="images_image"):
                 Response({"error": "year_max must be an integer."}, status=400),
             )
 
-    # Subject filtering
+    # Subject filtering (supports integer PKs and Wikidata IDs like Q4321)
     subject = params.get("subject")
     if subject is not None:
-        try:
-            where_params["subject_id"] = int(subject)
+        raw_subjects = [s.strip() for s in subject.split(",") if s.strip()]
+        pk_ids = []
+        wikidata_ids = []
+
+        for item in raw_subjects:
+            if item.isdigit():
+                pk_ids.append(int(item))
+            else:
+                wikidata_ids.append(item)
+
+        sub_conditions = []
+        if pk_ids:
+            where_params["subject_pk_ids"] = pk_ids
+            sub_conditions.append("sm.subject_id = ANY(%(subject_pk_ids)s)")
+        if wikidata_ids:
+            where_params["wikidata_ids"] = wikidata_ids
+            sub_conditions.append(
+                "sm.subject_id IN ("
+                "  SELECT s.id FROM subjects_subject s"
+                "  JOIN subjects_wikidataitem w ON s.wikidata_item_id = w.id"
+                "  WHERE w.wikidata_id = ANY(%(wikidata_ids)s)"
+                ")"
+            )
+
+        if sub_conditions:
+            combined_sub = " OR ".join(sub_conditions)
             where_conditions.append(
                 sql.SQL(
                     "EXISTS (SELECT 1 FROM images_subjectmapping sm"
                     " WHERE sm.image_id = {t}.id"
-                    " AND sm.subject_id = %(subject_id)s)"
+                    f" AND ({combined_sub}))"
                 ).format(t=t)
             )
-        except ValueError:
-            return (
-                [],
-                {},
-                Response({"error": "subject must be an integer."}, status=400),
-            )
 
-    # Source filtering
+    # Source filtering (supports comma-separated IDs)
     source = params.get("source")
     if source is not None:
         try:
-            where_params["source_id"] = int(source)
+            source_ids = [int(s.strip()) for s in source.split(",") if s.strip()]
+            where_params["source_ids"] = source_ids
             where_conditions.append(
                 sql.SQL(
                     "{t}.collection_id IN (SELECT id FROM images_collection"
-                    " WHERE source_id = %(source_id)s)"
+                    " WHERE source_id = ANY(%(source_ids)s))"
                 ).format(t=t)
             )
         except ValueError:
-            return [], {}, Response({"error": "source must be an integer."}, status=400)
+            return [], {}, Response({"error": "source must be integers separated by commas."}, status=400)
 
-    # Collection filtering
+    # Collection filtering (supports comma-separated IDs)
     collection = params.get("collection")
     if collection is not None:
         try:
-            where_params["collection_id"] = int(collection)
+            collection_ids = [int(c.strip()) for c in collection.split(",") if c.strip()]
+            where_params["collection_ids"] = collection_ids
             where_conditions.append(
-                sql.SQL("{t}.collection_id = %(collection_id)s").format(t=t)
+                sql.SQL("{t}.collection_id = ANY(%(collection_ids)s)").format(t=t)
             )
         except ValueError:
             return (
                 [],
                 {},
-                Response({"error": "collection must be an integer."}, status=400),
+                Response({"error": "collection must be integers separated by commas."}, status=400),
             )
 
     return where_conditions, where_params, None

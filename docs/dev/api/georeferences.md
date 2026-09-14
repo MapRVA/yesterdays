@@ -186,6 +186,7 @@ Each feature's geometry is a polygon outlining the area covered by the image.
 
 Both georeference endpoints support spatial filtering with the `in_bbox` parameter.
 This lets you fetch only the georeferences within a geographic area — perfect for map-based applications.
+Point georeferences are included when their point falls inside the box. From-above georeferences are included when any part of their coverage polygon intersects the box, even if the polygon extends beyond it.
 
 The format is `in_bbox=west,south,east,north` (minimum longitude, minimum latitude, maximum longitude, maximum latitude):
 
@@ -226,12 +227,12 @@ Both endpoints support these filters:
 
 | Parameter          | Type    | Description |
 |--------------------|---------|-------------|
-| `image`            | integer | Filter by image ID |
-| `source`           | integer | Filter by source ID |
-| `collection`       | integer | Filter by collection ID |
-| `subject`          | integer | Filter by subject ID |
+| `image`            | string  | Filter by one or more comma-separated image IDs, matching any listed image |
+| `source`           | string  | Filter by one or more comma-separated source IDs, matching any listed source |
+| `collection`       | string  | Filter by one or more comma-separated collection IDs, matching any listed collection |
+| `subject`          | string  | Filter by one or more comma-separated subject database IDs or Wikidata Q-IDs, matching any listed subject (e.g., `22,Q5882648`) |
 | `confidence`       | string  | Filter by confidence level: `low`, `medium`, or `high` |
-| `georeferenced_by` | integer | Filter by the contributor's OpenStreetMap user ID. You can use the [users endpoint](users.md) to look this up. |
+| `georeferenced_by` | string  | Filter by one or more comma-separated OpenStreetMap user IDs, matching any listed contributor (e.g., `100,200`). You can use the [users endpoint](users.md) to look these up. |
 | `year_min`         | number  | Include georeferences whose image's date range overlaps with or follows this year |
 | `year_max`         | number  | Include georeferences whose image's date range overlaps with or precedes this year |
 
