@@ -1198,7 +1198,7 @@ def _parse_search_filters(params, table_ref="images_image"):
             where_conditions.append(
                 sql.SQL(
                     "EXISTS (SELECT 1 FROM images_subjectmapping sm"
-                    " WHERE sm.image_id = {{t}}.id"
+                    " WHERE sm.image_id = {t}.id"
                     f" AND ({combined_sub}))"
                 ).format(t=t)
             )
