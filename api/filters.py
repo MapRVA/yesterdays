@@ -102,7 +102,7 @@ class ImageFilter(filters.FilterSet):
     source = NumberInFilter(field_name="collection__source_id", lookup_expr="in")
     collection = NumberInFilter(field_name="collection_id", lookup_expr="in")
     subject = filters.CharFilter(method="filter_by_subject")
-    creator = CharInFilter(field_name="creator", lookup_expr="in")
+    creator = filters.CharFilter(lookup_expr="icontains")
 
     # Temporal filters: year-based ranges against the decimal date fields
     year_min = filters.NumberFilter(
