@@ -1,11 +1,12 @@
 # Search
 
-Yesterdays offers two search endpoints:
+The Yesterdays API offers three search endpoints:
 
 - **Semantic search** interprets textual input even if the exact words don't appear in the image's title or description. For example, searching "church steeple at sunset" will find visually similar images.
 - **Text search** searches across titles, descriptions, comments, and georeference notes for text that closely resembles your query.
+- **In-view search** finds images that depict a coordinate, ordered by distance.
 
-Both endpoints return the same result format.
+Semantic and text search use the same response format. In-view search reports a distance instead of a similarity score.
 
 ## Semantic search
 
@@ -157,15 +158,145 @@ Results are ranked by how closely the query matches, with the best matches first
 |-------------|--------|---------|-------------|
 | `threshold` | number | 0.7     | Distance threshold (0 to 1). Lower values return fewer, more precise matches; higher values return more results with looser matching. |
 
+## In-view search
+
+```
+GET /api/v2/search/in-view/?lat={latitude}&lon={longitude}
+```
+
+Returns images that depict the specified coordinate, ordered by proximity.
+
+### Directional filtering
+
+For georeferences with a recorded camera direction, the coordinate must fall within the camera's viewing cone. The default cone is **40°** wide, or 20° to either side of the recorded direction. Its width is controlled by a server setting and may change in the future.
+
+Georeferences without a recorded direction are included based on distance alone.
+
+Examples:
+
+| | distance | camera direction | bearing to your point | returned |
+|---|---|---|---|---|
+| Facing the point | 35 m | 53° | 55.4° | Yes (2.4° difference) |
+| Facing away | 50 m | 340° | 73.3° | No (93.3° difference) |
+| Facing the point from a distance | 470 m | 180° | 183.7° | Yes (3.7° difference) |
+
+!!! info
+    This endpoint considers point georeferences only. For aerial photographs with polygon coverage, use [`/api/v2/from-above-georeferences/`](georeferences.md#from-above-georeferences).
+
+`radius` is optional. Without it, the endpoint reads results in distance order until it has filled the requested page.
+
+### Example request
+
+=== "curl"
+
+    ```bash
+    curl "https://yesterdays.maprva.org/api/v2/search/in-view/?lat=37.5407&lon=-77.4360&radius=500"
+    ```
+
+=== "Python"
+
+    ```python
+    import requests
+
+    response = requests.get("https://yesterdays.maprva.org/api/v2/search/in-view/", params={
+        "lat": 37.5407,
+        "lon": -77.4360,
+        "radius": 500,
+    })
+    data = response.json()
+    ```
+
+=== "R"
+
+    ```r
+    library(httr2)
+
+    resp <- request("https://yesterdays.maprva.org/api/v2/search/in-view/") |>
+      req_url_query(lat = 37.5407, lon = -77.4360, radius = 500) |>
+      req_perform()
+    data <- resp_body_json(resp)
+    ```
+
+### Example response
+
+```json
+{
+    "latitude": 37.5407,
+    "longitude": -77.436,
+    "radius": 500.0,
+    "page": 1,
+    "page_size": 20,
+    "count": 63,
+    "has_more": true,
+    "results": [
+        {
+            "id": 10470,
+            "title": "Capitol Square",
+            "permalink": "https://cdn.maprva.org/71086e03d2fefa626a0e",
+            "thumbnail": "https://cdn.maprva.org/71086e03d2fefa626a0e_thumb",
+            "original_date": "1908",
+            "date_display": "1908",
+            "distance_m": 42.7,
+            "georeference": {
+                "latitude": 37.540422,
+                "longitude": -77.435884,
+                "direction": 270,
+                "confidence": "high"
+            },
+            "collection": {
+                "id": 37,
+                "name": "Mary Wingfield Scott Photograph Collection",
+                "slug": "mary-wingfield-scott-photograph-collection",
+                "source_name": "The Valentine"
+            },
+            "detail_url": "https://yesterdays.maprva.org/api/v2/images/10470/"
+        }
+    ]
+}
+```
+
+### In-view search parameters
+
+| Parameter | Type   | Description |
+|-----------|--------|-------------|
+| `lat`     | number | Latitude of the point to search around (required, -90 to 90) |
+| `lon`     | number | Longitude of the point to search around (required, -180 to 180) |
+| `radius`  | number | Optional bound in **metres**. Values above 50,000 are clamped to 50,000. |
+
+In-view search also accepts the `page`, `page_size`, and filter parameters described below. It does not use `q`.
+
+### In-view search response
+
+The envelope differs from the other two endpoints:
+
+| Field | Type | Description |
+|---|---|---|
+| `latitude`, `longitude` | number | The point that was searched around |
+| `radius` | number or null | The radius actually applied, after clamping; `null` if none was given |
+| `count` | integer or null | Total matching images after all filters. `null` unless you supply a `radius`. |
+| `has_more` | boolean | Whether another page of results follows |
+
+!!! warning "`count` is null without a radius"
+    An unbounded search can include every otherwise eligible point-georeferenced image. Supply a `radius` to receive a total; otherwise, use `has_more` to continue paging.
+
+Each result replaces `similarity` with:
+
+| Field | Type | Description |
+|---|---|---|
+| `distance_m` | number | Distance in metres from your point to the image's georeference |
+| `georeference` | object | The image's most recent georeference (`latitude`, `longitude`, `direction`, `confidence`). `direction` is the compass bearing the camera faced, or `null` if unrecorded. |
+
+The endpoint returns at most 1,000 results: `page` × `page_size` must not exceed 1,000.
+
 ## Shared parameters
 
-Both search endpoints accept these parameters:
+The following parameters are available across the search endpoints, subject to the notes below:
 
 ### Query
 
 | Parameter | Type   | Description |
 |-----------|--------|-------------|
-| `q`       | string | Search query (required, max 500 characters) |
+| `q`       | string | Search query (required for semantic and text search, max 500 characters; not used by in-view search) |
 
 ### Pagination
 
@@ -181,9 +312,9 @@ Both search endpoints accept these parameters:
 | `georeferenced` | boolean | `true` for georeferenced images only, `false` for un-georeferenced |
 | `year_min`      | integer | Include images whose date range overlaps with or follows this year |
 | `year_max`      | integer | Include images whose date range overlaps with or precedes this year |
-| `source`        | integer | Filter by source ID |
-| `collection`    | integer | Filter by collection ID |
-| `subject`       | integer | Filter by subject ID |
+| `source`        | string  | Filter by one or more comma-separated source IDs, matching any listed source |
+| `collection`    | string  | Filter by one or more comma-separated collection IDs, matching any listed collection |
+| `subject`       | string  | Filter by one or more comma-separated subject database IDs or Wikidata Q-IDs, matching any listed subject (e.g., `22,Q5882648`) |
 
 ### Example: combining search with filters
 
@@ -223,7 +354,7 @@ Find images matching "hotel" from the Library of Virginia, taken before 1920:
 
 Search endpoints use a different pagination format than other list endpoints, returning `page` and `page_size` instead of `next` and `previous` links.
 
-Both endpoints return a response with the following structure:
+Semantic and text search return a response with the following structure (see [In-view search](#in-view-search) for that endpoint's envelope):
 
 | Field | Type | Description |
 |---|---|---|

@@ -864,6 +864,76 @@ class TestFromAboveGeoreferencesEndpoint(ApiFixturesMixin, TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Contributor filtering (both georeference endpoints)
+# ---------------------------------------------------------------------------
+
+
+class TestGeoreferenceContributorFilters(ApiFixturesMixin, TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        Georeference.objects.filter(pk=cls.georef2_new.pk).update(
+            georeferenced_by=cls.user_bob,
+        )
+        aerial_image = Image.objects.create(
+            collection=cls.collection,
+            title="Another aerial image",
+            permalink="https://img.example.com/another-aerial.jpg",
+            aerial=True,
+        )
+        alice_aerial = AerialGeoreference.objects.create(
+            image=aerial_image,
+            polygon=Polygon(POLYGON_COORDS, srid=4326),
+            confidence="high",
+            georeferenced_by=cls.user_alice,
+        )
+        cls.endpoints = [
+            ("/api/v2/georeferences/", cls.georef1.pk, cls.georef2_new.pk),
+            ("/api/v2/from-above-georeferences/", alice_aerial.pk, cls.aerial_georef.pk),
+        ]
+
+    def test_single_and_multiple_contributors(self):
+        for endpoint, alice_id, bob_id in self.endpoints:
+            for value, expected in [
+                ("100", {alice_id}),
+                ("200", {bob_id}),
+                ("100,200", {alice_id, bob_id}),
+                (" 100, 200 ", {alice_id, bob_id}),
+                ("100,100", {alice_id}),
+                ("999999", set()),
+                ("100,999999", {alice_id}),
+            ]:
+                with self.subTest(endpoint=endpoint, value=value):
+                    response = self.client.get(endpoint, {"georeferenced_by": value})
+                    self.assertEqual(response.status_code, 200)
+                    data = response.json()
+                    self.assertEqual(data["count"], len(expected))
+                    self.assertEqual({f["id"] for f in data["features"]}, expected)
+
+    def test_admin_contributor_id(self):
+        User.objects.filter(pk=self.user_bob.pk).update(username="hardcoded_admin")
+        for endpoint, alice_id, admin_id in self.endpoints:
+            for value, expected in [
+                ("0", {admin_id}),
+                ("0,100", {admin_id, alice_id}),
+            ]:
+                with self.subTest(endpoint=endpoint, value=value):
+                    response = self.client.get(endpoint, {"georeferenced_by": value})
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(
+                        {f["id"] for f in response.json()["features"]}, expected,
+                    )
+
+    def test_invalid_contributor_ids(self):
+        for endpoint, _, _ in self.endpoints:
+            for value in ["abc", "100,abc", "100,", ",100", "100,,200", "100.5"]:
+                with self.subTest(endpoint=endpoint, value=value):
+                    response = self.client.get(endpoint, {"georeferenced_by": value})
+                    self.assertEqual(response.status_code, 400)
+                    self.assertIn("georeferenced_by", response.json())
+
+
+# ---------------------------------------------------------------------------
 # Stats
 # ---------------------------------------------------------------------------
 

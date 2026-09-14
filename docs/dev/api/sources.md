@@ -240,7 +240,7 @@ Creates a new archive source on this instance. Import tools should call this whe
 
 | Parameter | Description |
 |---|---|
-| `slug` | Filter by exact slug (e.g., `?slug=library-of-virginia`) |
+| `slug` | Filter by one or more exact, comma-separated slugs, matching any listed source (e.g., `?slug=library-of-virginia,the-valentine`) |
 
 ## Ordering
 

@@ -146,7 +146,10 @@ class GeoreferenceFilter(filters.FilterSet):
         choices=Georeference.CONFIDENCE_CHOICES,
     )
     from_above = filters.BooleanFilter(field_name="image__aerial")
-    georeferenced_by = filters.NumberFilter(method=_filter_georeferenced_by)
+    georeferenced_by = filters.CharFilter(
+        method=_filter_georeferenced_by,
+        help_text="Comma-separated OSM user IDs.",
+    )
     year_min = filters.NumberFilter(
         field_name="image__fuzzy_end_decdate",
         lookup_expr="gte",
@@ -172,7 +175,10 @@ class FromAboveGeoreferenceFilter(filters.FilterSet):
     confidence = filters.ChoiceFilter(
         choices=AerialGeoreference.CONFIDENCE_CHOICES,
     )
-    georeferenced_by = filters.NumberFilter(method=_filter_georeferenced_by)
+    georeferenced_by = filters.CharFilter(
+        method=_filter_georeferenced_by,
+        help_text="Comma-separated OSM user IDs.",
+    )
     year_min = filters.NumberFilter(
         field_name="image__fuzzy_end_decdate",
         lookup_expr="gte",

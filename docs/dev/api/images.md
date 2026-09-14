@@ -93,9 +93,9 @@ Use the `detail_url` field to fetch the full details for any image.
 
 | Parameter | Type | Description |
 |---|---|---|
-| `source` | integer | Filter by source ID |
-| `collection` | integer | Filter by collection ID |
-| `subject` | integer | Filter by subject ID |
+| `source` | string | Filter by one or more comma-separated source IDs, matching any listed source |
+| `collection` | string | Filter by one or more comma-separated collection IDs, matching any listed collection |
+| `subject` | string | Filter by one or more comma-separated subject database IDs or Wikidata Q-IDs, matching any listed subject (e.g., `22,Q5882648`) |
 | `creator` | string | Search creator name (case-insensitive, partial match) |
 | `year_min` | number | Include images whose date range overlaps with or follows this year |
 | `year_max` | number | Include images whose date range overlaps with or precedes this year |
