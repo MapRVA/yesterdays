@@ -102,7 +102,7 @@ function selectRegion(cookieName: string, slug: string): void {
 // "current image" ones, which is what this is — the one photograph the
 // page is about. Keeping the map non-interactive also keeps the connector
 // in the surrounding composition aimed at the correct spot.
-function initHeroMap(container: HTMLElement): void {
+function initHeroMap(container: HTMLElement): maplibregl.Map | undefined {
   const lng = Number.parseFloat(container.dataset.lng ?? "");
   const lat = Number.parseFloat(container.dataset.lat ?? "");
   if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
@@ -177,6 +177,7 @@ function initHeroMap(container: HTMLElement): void {
   });
 
   onColorSchemeChange(() => map.setStyle(protomapsStyleUrl()));
+  return map;
 }
 
 interface Point {
@@ -244,11 +245,9 @@ function solveArrow(
   };
 }
 
-// Lay the two panels out and draw the connector between them. Everything
-// here is a share of the composition rather than a measurement — the SVG's
-// viewBox is 100 units across and 100 / ratio down, so x and y are on one
-// scale — which is what lets the figure hold its shape at every column
-// width from a single solve.
+// Lay the two panels out and draw the connector between them. The SVG's
+// viewBox is 100 units across, with its height following the composition
+// so x and y stay on one scale in both the diagonal and horizontal layouts.
 function positionHeroFeature(): void {
   const visual = document.querySelector<HTMLElement>(".hero-visual");
   const photoFrame = visual?.querySelector<HTMLElement>(".hero-photo-frame");
@@ -287,11 +286,19 @@ function positionHeroFeature(): void {
         : HERO_VISUAL_FALLBACK_RATIO,
     ),
   );
-  const viewBoxHeight = 100 / ratio;
+  // CSS owns the layout breakpoint, height, and panel widths. Read its mode
+  // so changing the breakpoint cannot leave the arrow in the other layout.
+  const visualStyle = getComputedStyle(visual);
+  const horizontal =
+    visualStyle.getPropertyValue("--hero-layout").trim() === "horizontal";
+  visual.style.setProperty("--hero-ratio", `${ratio}`);
+  const viewBoxHeight = horizontal
+    ? (visual.getBoundingClientRect().height / visualWidth) * 100
+    : 100 / ratio;
 
   // Keep the arrowhead visually separate from the point. Convert ems into
   // viewBox units so the gap follows type scale at every viewport width.
-  const fontSize = Number.parseFloat(getComputedStyle(visual).fontSize);
+  const fontSize = Number.parseFloat(visualStyle.fontSize);
   const pointGap = ((fontSize * HERO_ARROW_POINT_GAP_EM) / visualWidth) * 100;
   const headReach = pointGap + HERO_ARROWHEAD_LENGTH;
 
@@ -311,23 +318,33 @@ function positionHeroFeature(): void {
 
   // The CSS reads both panels off --hero-panel, and the viewBox has to
   // follow the composition so the arrow's units stay square.
-  visual.style.aspectRatio = `${ratio}`;
   visual.style.setProperty("--hero-panel", `${(panel * 100).toFixed(3)}%`);
   svg.setAttribute("viewBox", `0 0 100 ${viewBoxHeight.toFixed(3)}`);
 
-  const corner = { x: panel * 100, y: panel * viewBoxHeight };
-  const target = {
-    x: (1 - panel / 2) * 100,
-    y: (1 - panel / 2) * viewBoxHeight,
-  };
+  const corner = horizontal
+    ? {
+        x: (photoFrame.getBoundingClientRect().width / visualWidth) * 100,
+        y: viewBoxHeight / 2,
+      }
+    : { x: panel * 100, y: panel * viewBoxHeight };
+  const target = horizontal
+    ? {
+        x: 100 - (map.getBoundingClientRect().width / visualWidth) * 50,
+        y: viewBoxHeight / 2,
+      }
+    : {
+        x: (1 - panel / 2) * 100,
+        y: (1 - panel / 2) * viewBoxHeight,
+      };
 
   // Which edge the arc leaves through depends on how steeply it departs,
   // which depends (weakly) on where on the edge it starts: solve once from
   // the corner to choose the edge, then for real from the chosen start.
   const provisional = solveArrow(corner, target, headReach, pointGap);
   if (!provisional) return;
-  const start =
-    provisional.departureAngle > Math.PI / 4
+  const start = horizontal
+    ? corner
+    : provisional.departureAngle > Math.PI / 4
       ? { x: corner.x - HERO_ARROW_EDGE_OFFSET, y: corner.y }
       : { x: corner.x, y: corner.y - HERO_ARROW_EDGE_OFFSET };
   const arrow = solveArrow(start, target, headReach, pointGap);
@@ -396,10 +413,21 @@ function whenHeroPhotoSettled(callback: () => void): void {
 
 document.addEventListener("DOMContentLoaded", () => {
   const heroMap = document.getElementById("hero-map");
-  if (heroMap) {
+  const heroVisual = document.querySelector<HTMLElement>(".hero-visual");
+  if (heroMap && heroVisual) {
     whenHeroPhotoSettled(() => {
       positionHeroFeature();
-      initHeroMap(heroMap);
+      const map = initHeroMap(heroMap);
+      const refresh = (): void => {
+        positionHeroFeature();
+        map?.resize();
+      };
+      new ResizeObserver(refresh).observe(heroVisual);
+      // The map may have started after the timeout, before the photograph
+      // loaded. Its eventual dimensions must still update the composition.
+      heroVisual.querySelector("img")?.addEventListener("load", refresh, {
+        once: true,
+      });
     });
   }
 

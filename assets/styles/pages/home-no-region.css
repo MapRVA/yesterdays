@@ -69,8 +69,9 @@
    along with --hero-panel, the share of the composition a panel spans on
    both axes; the values below are what stands until it has. */
 .hero-visual {
+    --hero-layout: diagonal;
     position: relative;
-    aspect-ratio: 5 / 4;
+    aspect-ratio: var(--hero-ratio, 5 / 4);
 }
 
 .hero-photo-frame {
@@ -150,6 +151,38 @@
    settings, which also centre a wrapped link under the two). */
 .hero-attribution {
     padding-top: 0.9rem;
+}
+
+/* Until Bootstrap's lg breakpoint puts the hero in two columns, keep the
+   photo and map level with a short connector between them. The script reads
+   --hero-layout so the arrow follows this breakpoint too. The bounded height
+   keeps portraits from extending the hero; contain preserves the whole photo. */
+@media (max-width: 991.98px) {
+    .home-band-hero {
+        padding-block: 1.5rem;
+    }
+
+    .hero-visual {
+        --hero-layout: horizontal;
+        aspect-ratio: auto;
+        height: clamp(180px, 48vw, 220px);
+    }
+
+    .hero-photo-frame,
+    #hero-map {
+        top: 0;
+        bottom: auto;
+        width: 46%;
+        height: 100%;
+    }
+
+    .hero-photo-frame img {
+        object-fit: contain;
+    }
+
+    .hero-attribution {
+        padding-top: 0.5rem;
+    }
 }
 
 /* --- Stat band ---------------------------------------------------------- */
