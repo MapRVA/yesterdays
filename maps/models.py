@@ -1,7 +1,28 @@
+from math import isfinite
+
+from django.contrib.gis.db import models as gis_models
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.urls import reverse
 from django.utils.text import slugify
+
+
+def validate_layer_polygon(polygon):
+    if polygon is None:
+        return
+    if polygon.geom_type != "Polygon" or polygon.empty or not polygon.valid:
+        raise ValidationError(
+            "Draw a valid, non-empty polygon without self-intersections."
+        )
+    if any(
+        not isfinite(value) or not -limit <= value <= limit
+        for ring in polygon.coords
+        for coordinate in ring
+        for value, limit in zip(coordinate, (180, 90))
+    ):
+        raise ValidationError(
+            "Polygon coordinates must be valid WGS84 longitude and latitude."
+        )
 
 
 class LayerCollection(models.Model):
@@ -74,11 +95,18 @@ class MapLayer(models.Model):
         related_name="layers",
         null=True,
         blank=True,
-        help_text="Collection this layer belongs to (leave empty for primary/base layers)",
+        help_text="Collection this layer belongs to (leave empty for Global layers)",
     )
     is_default = models.BooleanField(
         default=False,
-        help_text="Whether this is the default base layer (only applies to primary layers)",
+        help_text="Whether this is the default base layer (only applies to Global layers)",
+    )
+    polygon = gis_models.PolygonField(
+        srid=4326,
+        null=True,
+        blank=True,
+        validators=[validate_layer_polygon],
+        help_text="Geographic extent of this collection layer. Global layers have no extent.",
     )
     order = models.PositiveIntegerField(
         default=0, help_text="Display order (lower numbers first)"
@@ -99,7 +127,7 @@ class MapLayer(models.Model):
     def __str__(self):
         if self.collection:
             return f"{self.name} ({self.collection.name})"
-        return f"{self.name} (primary)"
+        return f"{self.name} (Global)"
 
     def get_absolute_url(self):
         if self.collection:
@@ -112,8 +140,33 @@ class MapLayer(models.Model):
             )
         return reverse("maps:browse_maps")
 
+    def _normalize_polygon(self):
+        if self.collection_id is None:
+            self.polygon = None
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        if update_fields is None or {
+            "collection",
+            "collection_id",
+            "polygon",
+        }.intersection(update_fields):
+            self._normalize_polygon()
+            if update_fields is not None:
+                kwargs["update_fields"] = set(update_fields) | {"polygon"}
+        super().save(*args, **kwargs)
+
     def clean(self):
         super().clean()
+        self._normalize_polygon()
+        if self.collection_id is not None and self.polygon is None:
+            raise ValidationError(
+                {"polygon": "Draw a polygon for this collection layer."}
+            )
+        try:
+            validate_layer_polygon(self.polygon)
+        except ValidationError as error:
+            raise ValidationError({"polygon": error.messages}) from error
         if self.is_primary:
             if self.is_default:
                 # Only one primary layer may be the default basemap. Moving
@@ -135,12 +188,12 @@ class MapLayer(models.Model):
         else:
             if self.type == "style":
                 raise ValidationError(
-                    {"type": "MapLibre Style type is only valid for primary layers."}
+                    {"type": "MapLibre Style type is only valid for Global layers."}
                 )
             if self.is_default:
                 raise ValidationError(
                     {
-                        "is_default": "Only primary layers (without a collection) can be the default."
+                        "is_default": "Only Global layers (without a collection) can be the default."
                     }
                 )
 
@@ -181,6 +234,13 @@ class MapLayer(models.Model):
     class Meta:
         ordering = ["order", "name"]
         constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(collection__isnull=True, polygon__isnull=True)
+                    | models.Q(collection__isnull=False, polygon__isnull=False)
+                ),
+                name="maplayer_polygon_matches_collection",
+            ),
             models.UniqueConstraint(
                 fields=["collection", "slug"],
                 name="unique_layer_slug_per_collection",

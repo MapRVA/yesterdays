@@ -1,6 +1,11 @@
+import json
+
 from django.contrib.auth.models import User
+from django.contrib.gis.geos import Polygon
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.db import IntegrityError, connection, transaction
+from django.db.migrations.executor import MigrationExecutor
+from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 
 from .forms import MapLayerForm
@@ -9,6 +14,49 @@ from .models import LayerCollection, MapLayer
 PMTILES_URL = "https://example.com/tiles/richmond-1876.pmtiles"
 XYZ_URL = "https://example.com/tiles/{z}/{x}/{y}.png"
 STYLE_URL = "https://example.com/styles/basemap.json"
+
+
+def example_polygon():
+    polygon = Polygon.from_bbox((-77.48, 37.50, -77.40, 37.58))
+    polygon.srid = 4326
+    return polygon
+
+
+class MapLayerExtentMigrationTests(TransactionTestCase):
+    def test_backfill_only_collection_layers(self):
+        before = [("maps", "0006_seed_primary_layers")]
+        after = [("maps", "0007_maplayer_polygon")]
+        executor = MigrationExecutor(connection)
+        executor.migrate(before)
+        try:
+            old_apps = executor.loader.project_state(before).apps
+            collection = old_apps.get_model("maps", "LayerCollection").objects.create(
+                name="Migration collection", slug="migration-collection"
+            )
+            layer_model = old_apps.get_model("maps", "MapLayer")
+            local = layer_model.objects.create(
+                name="Local",
+                slug="migration-local",
+                url=PMTILES_URL,
+                collection=collection,
+            )
+            global_layer = layer_model.objects.create(
+                name="Global",
+                slug="migration-global",
+                url=PMTILES_URL,
+            )
+            executor = MigrationExecutor(connection)
+            executor.migrate(after)
+            new_model = executor.loader.project_state(after).apps.get_model(
+                "maps", "MapLayer"
+            )
+            self.assertEqual(
+                new_model.objects.get(pk=local.pk).polygon.extent,
+                (-77.60, 37.40, -77.30, 37.65),
+            )
+            self.assertIsNone(new_model.objects.get(pk=global_layer.pk).polygon)
+        finally:
+            MigrationExecutor(connection).migrate(after)
 
 
 class MapLayerCleanTests(TestCase):
@@ -41,7 +89,10 @@ class MapLayerCleanTests(TestCase):
 
     def test_xyz_url_requires_placeholders(self):
         layer = MapLayer(
-            name="Streets", slug="streets", type="xyz", url="https://example.com/{z}/{x}"
+            name="Streets",
+            slug="streets",
+            type="xyz",
+            url="https://example.com/{z}/{x}",
         )
         with self.assertRaises(ValidationError) as ctx:
             layer.full_clean()
@@ -54,6 +105,7 @@ class MapLayerCleanTests(TestCase):
             type="pmtiles",
             url=f"{PMTILES_URL}/{{z}}/{{x}}/{{y}}",
             collection=self.collection,
+            polygon=example_polygon(),
         )
         with self.assertRaises(ValidationError) as ctx:
             layer.full_clean()
@@ -69,12 +121,22 @@ class MapLayerCleanTests(TestCase):
         MapLayer(name="A", slug="a", type="xyz", url=XYZ_URL).full_clean()
         MapLayer(name="B", slug="b", type="style", url=STYLE_URL).full_clean()
         MapLayer(
-            name="C", slug="c", type="pmtiles", url=PMTILES_URL, collection=self.collection
+            name="C",
+            slug="c",
+            type="pmtiles",
+            url=PMTILES_URL,
+            collection=self.collection,
+            polygon=example_polygon(),
         ).full_clean()
 
     def test_style_in_collection_is_rejected(self):
         layer = MapLayer(
-            name="Base", slug="base", type="style", url=STYLE_URL, collection=self.collection
+            name="Base",
+            slug="base",
+            type="style",
+            url=STYLE_URL,
+            collection=self.collection,
+            polygon=example_polygon(),
         )
         with self.assertRaises(ValidationError) as ctx:
             layer.full_clean()
@@ -87,11 +149,87 @@ class MapLayerCleanTests(TestCase):
             type="pmtiles",
             url=PMTILES_URL,
             collection=self.collection,
+            polygon=example_polygon(),
             is_default=True,
         )
         with self.assertRaises(ValidationError) as ctx:
             layer.full_clean()
         self.assertIn("is_default", ctx.exception.message_dict)
+
+    def test_collection_polygon_and_global_conversion(self):
+        layer = MapLayer.objects.create(
+            name="Map",
+            slug="map",
+            url=PMTILES_URL,
+            collection=self.collection,
+            polygon=example_polygon(),
+        )
+        layer.refresh_from_db()
+        self.assertEqual(layer.polygon.extent, example_polygon().extent)
+        self.assertEqual(layer.polygon.srid, 4326)
+        layer.collection = None
+        layer.save(update_fields=["collection"])
+        layer.refresh_from_db()
+        self.assertIsNone(layer.polygon)
+        layer.collection = self.collection
+        with self.assertRaises(ValidationError) as ctx:
+            layer.full_clean()
+        self.assertIn("polygon", ctx.exception.message_dict)
+        layer.polygon = example_polygon()
+        layer.save(update_fields=["collection"])
+        layer.refresh_from_db()
+        self.assertEqual(layer.polygon, example_polygon())
+
+    def test_global_discards_polygon_on_validation_and_save(self):
+        layer = MapLayer(
+            name="Base", slug="base", url=PMTILES_URL, polygon=example_polygon()
+        )
+        layer.full_clean()
+        self.assertIsNone(layer.polygon)
+        layer.polygon = example_polygon()
+        layer.save()
+        layer.refresh_from_db()
+        self.assertIsNone(layer.polygon)
+
+    def test_new_collection_layer_requires_user_polygon(self):
+        layer = MapLayer(
+            name="New", slug="new", url=PMTILES_URL, collection=self.collection
+        )
+        self.assertIsNone(layer.polygon)
+        with self.assertRaises(ValidationError) as ctx:
+            layer.full_clean()
+        self.assertIn("polygon", ctx.exception.message_dict)
+        self.assertIsNone(layer.polygon)
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            layer.save()
+
+    def test_database_enforces_extent_role(self):
+        layer = MapLayer.objects.create(
+            name="Map",
+            slug="map",
+            url=PMTILES_URL,
+            collection=self.collection,
+            polygon=example_polygon(),
+        )
+        for update in ({"polygon": None}, {"collection": None}):
+            with (
+                self.subTest(update=update),
+                self.assertRaises(IntegrityError),
+                transaction.atomic(),
+            ):
+                MapLayer.objects.filter(pk=layer.pk).update(**update)
+
+    def test_invalid_polygon_is_field_error(self):
+        layer = MapLayer(
+            name="Map",
+            slug="map",
+            url=PMTILES_URL,
+            collection=self.collection,
+            polygon=Polygon(((0, 0), (1, 1), (0, 1), (1, 0), (0, 0))),
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            layer.full_clean()
+        self.assertIn("polygon", ctx.exception.message_dict)
 
 
 class MapLayerFormTests(TestCase):
@@ -104,6 +242,7 @@ class MapLayerFormTests(TestCase):
             type="pmtiles",
             url=PMTILES_URL,
             collection=self.collection,
+            polygon=example_polygon(),
         )
 
     def _data(self, **overrides):
@@ -114,6 +253,7 @@ class MapLayerFormTests(TestCase):
             "order": 0,
             "type": "pmtiles",
             "url": PMTILES_URL,
+            "polygon": example_polygon().geojson,
         }
         data.update(overrides)
         return data
@@ -129,7 +269,9 @@ class MapLayerFormTests(TestCase):
 
     def test_duplicate_primary_slug_is_a_field_error(self):
         MapLayer.objects.create(name="Base", slug="base", type="xyz", url=XYZ_URL)
-        form = MapLayerForm(self._data(slug="base", collection="", type="xyz", url=XYZ_URL))
+        form = MapLayerForm(
+            self._data(slug="base", collection="", type="xyz", url=XYZ_URL)
+        )
         self.assertFalse(form.is_valid())
         self.assertIn("slug", form.errors)
 
@@ -137,6 +279,57 @@ class MapLayerFormTests(TestCase):
         layer = MapLayer.objects.get(slug="1886")
         form = MapLayerForm(self._data(name="Renamed"), instance=layer)
         self.assertTrue(form.is_valid(), form.errors)
+
+    def test_custom_polygon_round_trip(self):
+        polygon = Polygon.from_bbox((-77.48, 37.50, -77.40, 37.58))
+        form = MapLayerForm(self._data(slug="custom", polygon=polygon.geojson))
+        self.assertTrue(form.is_valid(), form.errors)
+        layer = form.save()
+        layer.refresh_from_db()
+        self.assertEqual(layer.polygon.coords, polygon.coords)
+
+    def test_new_collection_editor_has_no_default_polygon(self):
+        form = MapLayerForm(instance=MapLayer(collection=self.collection))
+        self.assertEqual(form.polygon_editor_data(), {"polygon": None})
+        self.assertEqual(form["polygon"].value(), "")
+
+    def test_collection_rejects_missing_or_invalid_polygon(self):
+        for polygon in (
+            "",
+            "not JSON",
+            '{"type":"Point","coordinates":[0,0]}',
+            '{"type":"Polygon","coordinates":[]}',
+            '{"type":"Polygon","coordinates":[null]}',
+            Polygon.from_bbox((-181, 37, -77, 38)).geojson,
+            Polygon(((0, 0), (1, 1), (0, 1), (1, 0), (0, 0))).geojson,
+        ):
+            with self.subTest(polygon=polygon):
+                form = MapLayerForm(self._data(slug="new", polygon=polygon))
+                self.assertFalse(form.is_valid())
+                self.assertIn("polygon", form.errors)
+
+    def test_global_ignores_submitted_polygon(self):
+        form = MapLayerForm(self._data(slug="global", collection="", polygon="invalid"))
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNone(form.save().polygon)
+
+    def test_bound_polygon_survives_other_errors(self):
+        polygon = Polygon.from_bbox((-77.48, 37.50, -77.40, 37.58))
+        form = MapLayerForm(self._data(name="", polygon=polygon.geojson))
+        self.assertFalse(form.is_valid())
+        self.assertEqual(
+            form.polygon_editor_data()["polygon"], json.loads(polygon.geojson)
+        )
+        deleted = MapLayerForm(self._data(name="", polygon=""))
+        self.assertFalse(deleted.is_valid())
+        self.assertIsNone(deleted.polygon_editor_data()["polygon"])
+
+    def test_edit_form_contains_saved_geometry(self):
+        layer = MapLayer.objects.get(slug="1886")
+        form = MapLayerForm(instance=layer)
+        self.assertEqual(
+            form.polygon_editor_data()["polygon"], json.loads(layer.polygon.geojson)
+        )
 
 
 class LayerManageViewTests(TestCase):
@@ -150,6 +343,7 @@ class LayerManageViewTests(TestCase):
             type="pmtiles",
             url=PMTILES_URL,
             collection=self.collection,
+            polygon=example_polygon(),
         )
 
     def _urls(self):
@@ -241,3 +435,33 @@ class LayerManageViewTests(TestCase):
         self.assertNotContains(
             response, reverse("maps:layer_edit", args=[self.layer.pk])
         )
+
+    def test_extent_edit_and_validation_round_trip(self):
+        self.client.force_login(self.staff)
+        url = reverse("maps:layer_edit", args=[self.layer.pk])
+        polygon = Polygon.from_bbox((-77.48, 37.50, -77.40, 37.58))
+        data = {
+            "name": self.layer.name,
+            "slug": self.layer.slug,
+            "collection": self.collection.pk,
+            "order": 0,
+            "type": "pmtiles",
+            "url": PMTILES_URL,
+            "polygon": polygon.geojson,
+        }
+        self.assertRedirects(self.client.post(url, data), url)
+        self.layer.refresh_from_db()
+        self.assertEqual(self.layer.polygon.coords, polygon.coords)
+        response = self.client.post(url, {**data, "name": ""})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.context["form"].polygon_editor_data()["polygon"],
+            json.loads(polygon.geojson),
+        )
+        response = self.client.post(url, {**data, "polygon": ""})
+        self.assertIn("polygon", response.context["form"].errors)
+        self.layer.refresh_from_db()
+        self.assertEqual(self.layer.polygon.coords, polygon.coords)
+        self.assertRedirects(self.client.post(url, {**data, "collection": ""}), url)
+        self.layer.refresh_from_db()
+        self.assertIsNone(self.layer.polygon)

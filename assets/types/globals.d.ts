@@ -54,6 +54,7 @@ declare global {
     type: MapLayerType;
     url: string;
     attribution: string;
+    collection: string;
   }
 
   interface Window {

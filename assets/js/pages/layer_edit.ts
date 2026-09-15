@@ -8,6 +8,8 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 import maplibregl from "maplibre-gl";
 import type { Map as MapLibreMap } from "maplibre-gl";
+import type { Polygon } from "geojson";
+import { LayerExtentEditor } from "../components/layer_extent_editor";
 import type { MapLayerType } from "../components/layer_control/types";
 import {
   onColorSchemeChange,
@@ -29,12 +31,15 @@ interface LayerEditor {
   type: MapLayerType;
   url: string;
   attribution: string;
+  collection: string;
+  polygonError: string;
   status: PreviewStatus;
   statusText: string;
   init(): void;
   render(): void;
-  _map: MapLibreMap | null;
-  _mode: MapLayerType | null;
+  collectionChanged(): void;
+  prepareSubmit(event: SubmitEvent): void;
+  destroy(): void;
   _buildMap(style: string): MapLibreMap;
   _setStatus(status: PreviewStatus, text?: string): void;
 }
@@ -65,15 +70,42 @@ document.addEventListener("alpine:init", () => {
   window.Alpine.data("layerEditor", function (): LayerEditor {
     const config = window.layerEditConfig;
     window.PROTOMAPS_API_KEY = config?.protomapsApiKey ?? "";
+    const polygonData = JSON.parse(
+      document.getElementById("layer-polygon-data")?.textContent ?? "{}",
+    ) as { polygon: Polygon | null };
+    // Keep library instances outside Alpine's reactive proxies.
+    let map: MapLibreMap | null = null;
+    let editor: LayerExtentEditor | null = null;
+    let styleUrl: string | null = null;
+    let polygon = polygonData.polygon;
+    let hasCollection = Boolean(config?.collection);
+    let revision = 0;
+    let renderQueue = Promise.resolve();
+    let disposed = false;
+    let fitted = false;
+
+    const writePolygon = () => {
+      const input = document.querySelector<HTMLInputElement>('input[name="polygon"]');
+      if (input) input.value = hasCollection && polygon ? JSON.stringify(polygon) : "";
+    };
+
+    const stopEditor = async () => {
+      const previous = editor;
+      editor = null;
+      if (previous) {
+        previous.sync();
+        await previous.destroy();
+      }
+    };
 
     return {
       type: config?.type ?? "pmtiles",
       url: config?.url ?? "",
       attribution: config?.attribution ?? "",
+      collection: config?.collection ?? "",
+      polygonError: "",
       status: "waiting",
       statusText: "",
-      _map: null,
-      _mode: null,
 
       init() {
         window.setupPMTilesProtocol();
@@ -81,7 +113,7 @@ document.addEventListener("alpine:init", () => {
         // A "style" layer replaces the Protomaps basemap outright, so there
         // is nothing to retint in that mode.
         onColorSchemeChange(() => {
-          if (this._map && this._mode !== "style") retintBaseMap(this._map);
+          if (map && styleUrl === null) void retintBaseMap(map);
         });
       },
 
@@ -108,51 +140,103 @@ document.addEventListener("alpine:init", () => {
       },
 
       render() {
-        const url = this.url.trim();
-        const shapeError = urlShapeError(this.type, url);
-        const wantStyleMode = this.type === "style" && !shapeError;
+        const currentRevision = ++revision;
+        renderQueue = renderQueue.then(async () => {
+          if (disposed || currentRevision !== revision) return;
+          const url = this.url.trim();
+          const shapeError = urlShapeError(this.type, url);
+          const wantStyleMode = this.type === "style" && !shapeError;
+          const nextStyleUrl = wantStyleMode ? url : null;
 
-        // Switching into or out of style mode swaps the whole style, so the
-        // map has to be rebuilt; a plain URL edit never does.
-        const currentlyStyleMode = this._mode === "style";
-        if (this._map && wantStyleMode !== currentlyStyleMode) {
-          this._map.remove();
-          this._map = null;
-        }
-
-        if (wantStyleMode) {
-          if (!this._map) {
-            this._map = this._buildMap(url);
-          } else {
-            this._map.setStyle(url);
+          // Tear down Geoman before replacing its map. The form owns geometry
+          // throughout, including when a style URL fails to load.
+          if (map && nextStyleUrl !== styleUrl) {
+            const camera = { center: map.getCenter(), zoom: map.getZoom() };
+            await stopEditor();
+            map.remove();
+            map = this._buildMap(nextStyleUrl ?? protomapsStyleUrl());
+            map.jumpTo(camera);
           }
-          this._mode = "style";
-          this._setStatus("ok");
-          return;
-        }
+          if (!map) map = this._buildMap(nextStyleUrl ?? protomapsStyleUrl());
+          styleUrl = nextStyleUrl;
+          const currentMap = map;
 
-        if (!this._map) {
-          this._map = this._buildMap(protomapsStyleUrl());
-        }
-        this._mode = this.type === "style" ? null : this.type;
+          if (!hasCollection && editor) await stopEditor();
+          if (disposed || currentRevision !== revision) return;
+          if (hasCollection && !editor) {
+            editor = new LayerExtentEditor(currentMap, polygon, (geometry) => {
+              polygon = geometry;
+              this.polygonError = geometry ? "" : "Draw a polygon for this collection layer.";
+              writePolygon();
+            }, (message) => { this.polygonError = message; });
+            if (polygon && !fitted) {
+              const bounds = new maplibregl.LngLatBounds();
+              for (const coordinate of polygon.coordinates[0] ?? []) {
+                bounds.extend([coordinate[0]!, coordinate[1]!]);
+              }
+              if (!bounds.isEmpty()) currentMap.fitBounds(bounds, { padding: 40, duration: 0 });
+              fitted = true;
+            }
+          }
 
-        const map = this._map;
-        const draw = () => {
-          removeOverlayLayer(map);
-          if (shapeError) {
-            this._setStatus("waiting", shapeError);
+          if (wantStyleMode) {
+            this._setStatus("ok");
             return;
           }
-          addOverlayLayer(map, {
-            name: config?.name ?? "",
-            type: this.type,
-            url,
-            attribution: this.attribution,
-          });
-          this._setStatus("ok");
-        };
-        if (map.isStyleLoaded()) draw();
-        else map.once("load", draw);
+
+          const draw = () => {
+            if (disposed || currentRevision !== revision || currentMap !== map) return;
+            removeOverlayLayer(currentMap);
+            if (shapeError) {
+              this._setStatus("waiting", shapeError);
+              return;
+            }
+            addOverlayLayer(currentMap, {
+              name: config?.name ?? "",
+              type: this.type,
+              url,
+              attribution: this.attribution,
+            });
+            editor?.raiseLayers();
+            this._setStatus("ok");
+          };
+          if (currentMap.isStyleLoaded()) draw();
+          else currentMap.once("load", draw);
+        }).catch((error: unknown) => {
+          console.error("Could not update layer preview:", error);
+          this._setStatus("error", "The preview could not load");
+          this.polygonError = "The extent tools could not load. Reload before saving.";
+        });
+      },
+
+      collectionChanged() {
+        editor?.sync();
+        const wasGlobal = !hasCollection;
+        hasCollection = Boolean(this.collection);
+        if (wasGlobal && hasCollection) fitted = false;
+        this.polygonError = "";
+        writePolygon();
+        this.render();
+      },
+
+      prepareSubmit(event) {
+        editor?.sync();
+        writePolygon();
+        if (hasCollection && (!polygon || !editor?.canSubmit())) {
+          event.preventDefault();
+          this.polygonError = !polygon
+            ? "Draw a polygon for this collection layer."
+            : "Wait for the extent tools to finish loading before saving.";
+        }
+      },
+
+      destroy() {
+        disposed = true;
+        ++revision;
+        void renderQueue.then(stopEditor).finally(() => {
+          map?.remove();
+          map = null;
+        });
       },
 
       _setStatus(status: PreviewStatus, text = "") {

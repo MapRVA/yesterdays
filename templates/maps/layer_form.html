@@ -10,9 +10,11 @@
         name: "{{ form.name.value|default:''|escapejs }}",
         type: "{{ form.type.value|default:'pmtiles'|escapejs }}",
         url: "{{ form.url.value|default:''|escapejs }}",
+        collection: "{{ form.collection.value|default:''|escapejs }}",
         attribution: "{{ form.attribution.value|default:''|escapejs }}"
     };
 </script>
+{{ form.polygon_editor_data|json_script:"layer-polygon-data" }}
 
 <div class="row">
     <div class="col-12">
@@ -31,8 +33,9 @@
 
 <form method="post"
       action="{% if layer %}{% url 'maps:layer_edit' layer.pk %}{% else %}{% url 'maps:layer_create' %}{% endif %}"
-      x-data="layerEditor">
+      x-data="layerEditor" @submit="prepareSubmit($event)">
     {% csrf_token %}
+    {{ form.polygon }}
     <div class="row g-4">
         <div class="col-lg-7">
             {% if form.non_field_errors %}
@@ -52,7 +55,13 @@
                                     </div>
                                 {% else %}
                                     <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
-                                    {% if field.name == 'type' %}
+                                    {% if field.name == 'collection' %}
+                                        <select name="{{ field.html_name }}" id="{{ field.id_for_label }}" class="form-select" x-model="collection" @change="collectionChanged()">
+                                            {% for value, label in field.field.choices %}
+                                                <option value="{{ value }}">{{ label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    {% elif field.name == 'type' %}
                                         <select name="{{ field.html_name }}" id="{{ field.id_for_label }}" class="form-select" x-model="type" @change="render()">
                                             {% for value, label in field.field.choices %}
                                                 <option value="{{ value }}">{{ label }}</option>
@@ -103,6 +112,13 @@
                     </div>
                     <div class="card-body p-0">
                         <div id="layer-preview-map"></div>
+                    </div>
+                    <div class="card-body border-top" x-show="collection">
+                        <p class="small mb-2">Draw a polygon tracing the layer’s extent before saving. You can edit or drag an existing outline, or draw a replacement.</p>
+                        <p class="small text-danger mb-0" x-show="polygonError" x-text="polygonError" role="alert"></p>
+                        {% for err in form.polygon.errors %}
+                            <div class="invalid-feedback d-block">{{ err }}</div>
+                        {% endfor %}
                     </div>
                     <div class="card-footer small"
                          :class="{ 'text-danger': status === 'error', 'text-muted': status !== 'error' }">
