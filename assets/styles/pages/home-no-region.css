@@ -271,14 +271,20 @@
    own text — shrink-to-fit gives up at the available width — so its lines
    have to fill that width or the pill reads as mostly empty. `pretty`
    fills each line and only reworks the last, where `balance` would even
-   every line out and leave slack down both sides. The wider inline padding
-   keeps those lines clear of the pill's curve, which is at its widest
-   exactly when the label is more than one line tall. */
+   every line out and leave slack down both sides.
+
+   The radius is half of a one-line chip rather than an arbitrarily large
+   one: at a single line that is exactly a pill, and a label that wraps
+   keeps those same corners and reads as a rounded rectangle. A 50rem
+   radius instead gets clamped to half of whatever the box turns out to
+   be, curving a two-line label into a lozenge and pushing its lines into
+   the curve. */
 .home-subject-chip {
     display: inline-block;
     padding: 0.35rem 1.1rem;
     border: 1px solid var(--bs-border-color);
-    border-radius: 50rem;
+    /* One line, plus the block padding, plus the two borders. */
+    border-radius: calc((1lh + 0.7rem + 2px) / 2);
     background-color: var(--bs-body-bg);
     color: var(--bs-body-color);
     line-height: 1.35;
