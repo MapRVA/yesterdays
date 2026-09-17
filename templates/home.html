@@ -25,7 +25,7 @@
 	<meta property="og:title" content="Yesterdays of {{ current_region.long_name }}">
 	<meta property="og:type" content="website">
 	<meta property="og:url" content="{{ request.build_absolute_uri }}">
-	<meta property="og:description" content="{{ current_region.subtitle|default:site_subtitle }}">
+	<meta property="og:description" content="{{ current_region.display_subtitle }}">
 	{% if top_rated_image %}
 	<meta property="og:image" content="{{ top_rated_image.thumbnail }}">
 	<meta property="og:image:alt" content="{{ top_rated_image.title }}">
@@ -36,7 +36,7 @@
 <div class="row">
     <div class="col-12">
         <h1>Yesterdays of {{ current_region.long_name }}</h1>
-        <p class="lead">{{ current_region.subtitle|default:site_subtitle }}</p>
+        <p class="lead">{{ current_region.display_subtitle }}</p>
         <div class="mb-4 d-flex gap-2">
             <a href="/georeference/?difficulty=easy%2Bmedium" class="btn btn-primary btn-med">
                 <i class="fas fa-map-marker-alt me-2"></i>Contribute

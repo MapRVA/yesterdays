@@ -28,7 +28,7 @@ class Region(models.Model):
         blank=True,
         help_text=(
             "Tagline shown under the region homepage title; falls back to "
-            "the sitewide subtitle when blank"
+            "a generic line naming the region when blank"
         ),
     )
     advertise = models.BooleanField(
@@ -119,6 +119,19 @@ class Region(models.Model):
 
     def __str__(self):
         return self.short_name
+
+    @property
+    def display_subtitle(self):
+        """The homepage tagline: the admin's, else a generic line.
+
+        Regions without a hand-written subtitle used to borrow the
+        sitewide one, which reads as a non-sequitur once the page is
+        clearly about a single place. A named fallback always says
+        something true about the region in view.
+        """
+        if self.subtitle:
+            return self.subtitle
+        return f"Place historical images of {self.short_name} on the map!"
 
     @property
     def coordinate_location(self):

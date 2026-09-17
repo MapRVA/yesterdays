@@ -1282,13 +1282,16 @@ class HomeRegionBranchTests(TestCase):
         response = self.client.get(reverse("home"))
         self.assertContains(response, "Old Richmond, mapped")
 
-    def test_blank_region_subtitle_falls_back_to_site_subtitle(self):
+    def test_blank_region_subtitle_falls_back_to_region_tagline(self):
         site_settings = SiteSettings.load()
         site_settings.site_subtitle = "Sitewide tagline"
         site_settings.save()
         self.client.cookies[REGION_COOKIE_NAME] = "richmond"
         response = self.client.get(reverse("home"))
-        self.assertContains(response, "Sitewide tagline")
+        self.assertContains(
+            response, "Place historical images of Richmond on the map!"
+        )
+        self.assertNotContains(response, "Sitewide tagline")
 
 
 class HomeFeaturedImageRegionTests(TestCase):
