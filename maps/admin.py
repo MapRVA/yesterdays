@@ -37,13 +37,21 @@ class MapLayerAdmin(admin.ModelAdmin):
         "name",
         "layer_role",
         "collection",
+        "region",
         "order",
         "type",
         "is_default",
         "created_at",
     )
-    list_filter = ("type", "is_default", "collection", "created_at")
-    search_fields = ("name", "description", "collection__name")
+    list_filter = ("type", "is_default", "collection", "region", "created_at")
+    search_fields = (
+        "name",
+        "description",
+        "collection__name",
+        "region__short_name",
+        "region__long_name",
+    )
+    list_select_related = ("collection", "region")
     readonly_fields = ("created_at", "updated_at", "extent")
     ordering = ("order", "name")
 
@@ -55,6 +63,7 @@ class MapLayerAdmin(admin.ModelAdmin):
                     "name",
                     "slug",
                     "collection",
+                    "region",
                     "is_default",
                     "order",
                     "description",

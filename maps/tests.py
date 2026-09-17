@@ -1,14 +1,18 @@
 import json
 
 from django.contrib.auth.models import User
-from django.contrib.gis.geos import Polygon
+from django.contrib.gis.geos import Point, Polygon
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection, transaction
+from django.db.models import ProtectedError
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 
 from images.context_processors import _build_map_layers_data
+from regions.context_processors import REGION_COOKIE_NAME
+from regions.models import Region, RegionAncestor
+from subjects.models import WikidataItem
 
 from .forms import MapLayerForm
 from .models import LayerCollection, MapLayer
@@ -17,12 +21,26 @@ PMTILES_URL = "https://example.com/tiles/richmond-1876.pmtiles"
 XYZ_URL = "https://example.com/tiles/{z}/{x}/{y}.png"
 STYLE_URL = "https://example.com/styles/basemap.json"
 MIN_ZOOM = 10
+TEST_POINT = Point(-77.4366667, 37.5408333, srid=4326)
 
 
 def example_polygon():
     polygon = Polygon.from_bbox((-77.48, 37.50, -77.40, 37.58))
     polygon.srid = 4326
     return polygon
+
+
+def make_region(wikidata_id, short_name, slug, long_name=None):
+    item = WikidataItem.objects.bulk_create(
+        [WikidataItem(wikidata_id=wikidata_id, title=short_name)]
+    )[0]
+    return Region.objects.create(
+        short_name=short_name,
+        long_name=long_name or f"{short_name}, Virginia",
+        slug=slug,
+        wikidata_item=item,
+        wikidata_coordinate_location=TEST_POINT,
+    )
 
 
 class LayerExtentTileTests(TestCase):
@@ -137,7 +155,7 @@ class MapLayerExtentMigrationTests(TransactionTestCase):
             self.assertIsNone(new_model.objects.get(pk=global_layer.pk).polygon)
         finally:
             MigrationExecutor(connection).migrate(
-                [("maps", "0008_maplayer_min_zoom")]
+                [("maps", "0009_maplayer_region")]
             )
 
 
@@ -173,7 +191,185 @@ class MapLayerMinZoomMigrationTests(TransactionTestCase):
             self.assertEqual(new_model.objects.get(pk=local.pk).min_zoom, MIN_ZOOM)
             self.assertIsNone(new_model.objects.get(pk=global_layer.pk).min_zoom)
         finally:
-            MigrationExecutor(connection).migrate(after)
+            MigrationExecutor(connection).migrate(
+                [("maps", "0009_maplayer_region")]
+            )
+
+
+class MapLayerRegionMigrationTests(TransactionTestCase):
+    before = [
+        ("maps", "0008_maplayer_min_zoom"),
+        ("regions", "0002_region_advertise"),
+    ]
+    after = [("maps", "0009_maplayer_region")]
+
+    def migrate_from_before(self):
+        executor = MigrationExecutor(connection)
+        executor.migrate(self.before)
+        return executor.loader.project_state(self.before).apps
+
+    def migrate_to_after(self):
+        executor = MigrationExecutor(connection)
+        executor.migrate(self.after)
+        return executor.loader.project_state(self.after).apps
+
+    def test_assigns_existing_collection_layers_to_richmond(self):
+        try:
+            old_apps = self.migrate_from_before()
+            wikidata_item = old_apps.get_model(
+                "subjects", "WikidataItem"
+            ).objects.create(wikidata_id="Q43421", title="Richmond")
+            old_apps.get_model("regions", "Region").objects.create(
+                short_name="Richmond",
+                long_name="Richmond, Virginia",
+                slug="richmond",
+                wikidata_item=wikidata_item,
+                wikidata_coordinate_location=TEST_POINT,
+            )
+            collection = old_apps.get_model(
+                "maps", "LayerCollection"
+            ).objects.create(name="Sanborn", slug="sanborn")
+            layer_model = old_apps.get_model("maps", "MapLayer")
+            collection_layer = layer_model.objects.create(
+                name="1886",
+                slug="1886",
+                url=PMTILES_URL,
+                collection=collection,
+                polygon=example_polygon(),
+                min_zoom=MIN_ZOOM,
+            )
+            global_layer = layer_model.objects.create(
+                name="Global",
+                slug="migration-global-region",
+                url=PMTILES_URL,
+            )
+
+            new_apps = self.migrate_to_after()
+            new_layer_model = new_apps.get_model("maps", "MapLayer")
+            self.assertEqual(
+                new_layer_model.objects.get(pk=collection_layer.pk).region.slug,
+                "richmond",
+            )
+            self.assertIsNone(
+                new_layer_model.objects.get(pk=global_layer.pk).region_id
+            )
+        finally:
+            MigrationExecutor(connection).migrate(self.after)
+
+    def test_succeeds_without_a_richmond_region(self):
+        try:
+            old_apps = self.migrate_from_before()
+            collection = old_apps.get_model(
+                "maps", "LayerCollection"
+            ).objects.create(name="Local", slug="local-without-richmond")
+            layer = old_apps.get_model("maps", "MapLayer").objects.create(
+                name="Local",
+                slug="local-without-richmond",
+                url=PMTILES_URL,
+                collection=collection,
+                polygon=example_polygon(),
+                min_zoom=MIN_ZOOM,
+            )
+
+            new_apps = self.migrate_to_after()
+            self.assertIsNone(
+                new_apps.get_model("maps", "MapLayer")
+                .objects.get(pk=layer.pk)
+                .region_id
+            )
+        finally:
+            MigrationExecutor(connection).migrate(self.after)
+
+
+class BrowseMapsRegionTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.virginia = make_region(
+            "Q1370", "Virginia", "virginia", long_name="Virginia"
+        )
+        cls.richmond = make_region("Q43421", "Richmond", "richmond")
+        cls.other_region = make_region("Q49231", "Roanoke", "roanoke")
+        cls.empty_region = make_region("Q100000", "Empty", "empty")
+        RegionAncestor.objects.create(
+            region=cls.richmond,
+            ancestor=cls.virginia.wikidata_item,
+        )
+
+        def create_layer(collection_name, collection_slug, layer_name, region):
+            collection = LayerCollection.objects.create(
+                name=collection_name,
+                slug=collection_slug,
+            )
+            return MapLayer.objects.create(
+                name=layer_name,
+                slug=collection_slug,
+                url=PMTILES_URL,
+                collection=collection,
+                region=region,
+                polygon=example_polygon(),
+                min_zoom=MIN_ZOOM,
+            )
+
+        cls.virginia_layer = create_layer(
+            "Virginia maps", "virginia-maps", "Virginia overview", cls.virginia
+        )
+        cls.richmond_layer = create_layer(
+            "Richmond maps", "richmond-maps", "Richmond sheet", cls.richmond
+        )
+        cls.other_layer = create_layer(
+            "Roanoke maps", "roanoke-maps", "Roanoke sheet", cls.other_region
+        )
+        cls.unassigned_layer = create_layer(
+            "Unassigned maps", "unassigned-maps", "Unassigned sheet", None
+        )
+
+    def browse(self, region_slug=None):
+        if region_slug is not None:
+            self.client.cookies[REGION_COOKIE_NAME] = region_slug
+        return self.client.get(reverse("maps:browse_maps"))
+
+    def test_no_selection_shows_all_layers(self):
+        response = self.browse()
+        for layer in (
+            self.virginia_layer,
+            self.richmond_layer,
+            self.other_layer,
+            self.unassigned_layer,
+        ):
+            self.assertContains(response, layer.name)
+
+    def test_unknown_selection_behaves_like_no_selection(self):
+        response = self.browse("missing-region")
+        self.assertContains(response, self.virginia_layer.name)
+        self.assertContains(response, self.unassigned_layer.name)
+
+    def test_selection_includes_exact_region_and_descendants(self):
+        response = self.browse(self.virginia.slug)
+        self.assertContains(response, self.virginia_layer.name)
+        self.assertContains(response, self.richmond_layer.name)
+        self.assertNotContains(response, self.other_layer.name)
+        self.assertNotContains(response, self.unassigned_layer.name)
+        self.assertNotContains(response, self.other_layer.collection.name)
+        self.assertContains(response, "Map Layers for Virginia")
+
+    def test_child_selection_does_not_include_ancestor_layer(self):
+        response = self.browse(self.richmond.slug)
+        self.assertContains(response, self.richmond_layer.name)
+        self.assertNotContains(response, self.virginia_layer.name)
+
+    def test_region_without_layers_has_region_specific_empty_state(self):
+        response = self.browse(self.empty_region.slug)
+        self.assertContains(
+            response,
+            "No map layers have been associated with Empty, Virginia.",
+        )
+        self.assertNotContains(response, self.unassigned_layer.name)
+
+    def test_detail_url_remains_accessible_for_another_selection(self):
+        self.client.cookies[REGION_COOKIE_NAME] = self.other_region.slug
+        response = self.client.get(self.richmond_layer.get_absolute_url())
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.richmond_layer.name)
 
 
 class MapLayerCleanTests(TestCase):
@@ -203,6 +399,20 @@ class MapLayerCleanTests(TestCase):
 
     def test_zero_defaults_is_legal(self):
         MapLayer(name="Streets", slug="streets", type="xyz", url=XYZ_URL).full_clean()
+
+    def test_assigned_region_is_protected_from_deletion(self):
+        region = make_region("Q200001", "Protected", "protected")
+        MapLayer.objects.create(
+            name="Regional map",
+            slug="regional-map",
+            url=PMTILES_URL,
+            collection=self.collection,
+            region=region,
+            polygon=example_polygon(),
+            min_zoom=MIN_ZOOM,
+        )
+        with self.assertRaises(ProtectedError):
+            region.delete()
 
     def test_xyz_url_requires_placeholders(self):
         layer = MapLayer(
@@ -458,6 +668,14 @@ class MapLayerFormTests(TestCase):
         self.assertEqual(layer.polygon.coords, polygon.coords)
         self.assertEqual(layer.min_zoom, MIN_ZOOM)
 
+    def test_region_round_trip(self):
+        region = make_region("Q200002", "Form Region", "form-region")
+        form = MapLayerForm(self._data(slug="regional", region=region.pk))
+        self.assertTrue(form.is_valid(), form.errors)
+        layer = form.save()
+        self.assertEqual(layer.region, region)
+        self.assertEqual(MapLayerForm(instance=layer)["region"].value(), region.pk)
+
     def test_new_collection_editor_has_no_default_polygon(self):
         form = MapLayerForm(instance=MapLayer(collection=self.collection))
         self.assertEqual(form.polygon_editor_data(), {"polygon": None})
@@ -526,6 +744,7 @@ class LayerManageViewTests(TestCase):
     def setUp(self):
         self.staff = User.objects.create_user("staff", password="pw", is_staff=True)
         self.member = User.objects.create_user("member", password="pw")
+        self.region = make_region("Q200003", "Layer Region", "layer-region")
         self.collection = LayerCollection.objects.create(name="Sanborn", slug="sanborn")
         self.layer = MapLayer.objects.create(
             name="1886",
@@ -533,6 +752,7 @@ class LayerManageViewTests(TestCase):
             type="pmtiles",
             url=PMTILES_URL,
             collection=self.collection,
+            region=self.region,
             polygon=example_polygon(),
             min_zoom=MIN_ZOOM,
         )
@@ -573,6 +793,9 @@ class LayerManageViewTests(TestCase):
             self.assertEqual(response.status_code, 200, url)
         self.assertContains(
             self.client.get(reverse("maps:layer_manage")), self.layer.name
+        )
+        self.assertContains(
+            self.client.get(reverse("maps:layer_manage")), self.region.short_name
         )
 
     def test_delete_requires_post(self):
@@ -635,6 +858,7 @@ class LayerManageViewTests(TestCase):
             "name": self.layer.name,
             "slug": self.layer.slug,
             "collection": self.collection.pk,
+            "region": self.region.pk,
             "order": 0,
             "type": "pmtiles",
             "url": PMTILES_URL,

@@ -27,6 +27,7 @@
                         <tr>
                             <th scope="col">Name</th>
                             <th scope="col">Group</th>
+                            <th scope="col">Region</th>
                             <th scope="col">Type</th>
                             <th scope="col" class="text-end">Order</th>
                             <th scope="col"></th>
@@ -48,6 +49,7 @@
                                         {{ layer.collection.name }}
                                     {% endif %}
                                 </td>
+                                <td>{{ layer.region|default:"—" }}</td>
                                 <td>{{ layer.get_type_display }}</td>
                                 <td class="text-end">{{ layer.order }}</td>
                                 <td class="text-end">
@@ -60,7 +62,7 @@
                             </tr>
                         {% empty %}
                             <tr>
-                                <td colspan="5" class="text-center text-muted py-4">No map layers yet.</td>
+                                <td colspan="6" class="text-center text-muted py-4">No map layers yet.</td>
                             </tr>
                         {% endfor %}
                     </tbody>

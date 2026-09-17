@@ -41,7 +41,10 @@ class MapLayerForm(forms.ModelForm):
     )
 
     FIELD_GROUPS = (
-        ("Basic Information", ("name", "slug", "collection", "order")),
+        (
+            "Basic Information",
+            ("name", "slug", "collection", "region", "order"),
+        ),
         ("Map Data", ("type", "url")),
         ("Minimum Zoom", ("min_zoom",)),
         (
@@ -56,6 +59,7 @@ class MapLayerForm(forms.ModelForm):
             "name",
             "slug",
             "collection",
+            "region",
             "order",
             "type",
             "url",

@@ -11,6 +11,7 @@ from django.utils.cache import get_conditional_response, patch_cache_control
 from django.views.decorators.http import require_http_methods
 
 from images.utils import render_markdown_safe
+from regions.context_processors import get_current_region
 
 from .forms import MapLayerForm
 from .models import LayerCollection, MapLayer
@@ -73,10 +74,15 @@ def layer_extent_tile(request, z, x, y):
 
 
 def browse_maps(request):
-    """Display all map layers organized by collections."""
-    collections = LayerCollection.objects.prefetch_related(
-        Prefetch("layers", queryset=MapLayer.objects.order_by("order"))
-    ).order_by("order")
+    """Display collection layers, scoped to the navbar region when selected."""
+    region = get_current_region(request)
+    layers = MapLayer.objects.order_by("order")
+    collections = LayerCollection.objects.order_by("order")
+    if region is not None:
+        region_ids = region.self_and_descendant_ids()
+        layers = layers.filter(region_id__in=region_ids)
+        collections = collections.filter(layers__region_id__in=region_ids).distinct()
+    collections = collections.prefetch_related(Prefetch("layers", queryset=layers))
     # Render markdown for collection descriptions and layer descriptions
     collections_with_rendered = []
     for collection in collections:
@@ -102,7 +108,9 @@ def browse_maps(request):
             }
         )
     return render(
-        request, "maps/browse_maps.html", {"collections": collections_with_rendered}
+        request,
+        "maps/browse_maps.html",
+        {"collections": collections_with_rendered, "current_region": region},
     )
 
 
@@ -128,7 +136,7 @@ def layer_detail(request, collection_slug, layer_slug):
 @staff_member_required
 def layer_manage(request):
     """Staff list of every map layer, primaries first."""
-    layers = MapLayer.objects.select_related("collection").order_by(
+    layers = MapLayer.objects.select_related("collection", "region").order_by(
         F("collection__order").asc(nulls_first=True),
         "collection__name",
         "order",

@@ -1,12 +1,12 @@
 {% extends 'base.html' %}
 
-{% block title %}Map Layers – Yesterdays{% endblock %}
+{% block title %}{% if current_region %}Map Layers for {{ current_region.long_name }}{% else %}Map Layers{% endif %} – Yesterdays{% endblock %}
 
 {% block opengraph %}
-	<meta property="og:title" content="Map Layers – Yesterdays">
+	<meta property="og:title" content="{% if current_region %}Map Layers for {{ current_region.long_name }}{% else %}Map Layers{% endif %} – Yesterdays">
 	<meta property="og:type" content="website">
 	<meta property="og:url" content="{{ request.build_absolute_uri }}">
-	<meta property="og:description" content="Browse historical map layers organized by collection.">
+	<meta property="og:description" content="Browse historical map layers{% if current_region %} for {{ current_region.long_name }}{% endif %}, organized by collection.">
 {% endblock %}
 
 {% block content %}
@@ -21,7 +21,7 @@
         </nav>
 
         <!-- Page Header -->
-        <h1 class="mb-4">Map Layers</h1>
+        <h1 class="mb-4">Map Layers{% if current_region %} for {{ current_region.long_name }}{% endif %}</h1>
 
         {% for item in collections %}
             <!-- Collection Section -->
@@ -63,7 +63,13 @@
             <div class="text-center py-5">
                 <i class="fas fa-layer-group fa-3x text-muted mb-3"></i>
                 <h3 class="text-muted">No Map Layers</h3>
-                <p class="text-muted">No map layer collections have been added yet.</p>
+                <p class="text-muted">
+                    {% if current_region %}
+                        No map layers have been associated with {{ current_region.long_name }}.
+                    {% else %}
+                        No map layer collections have been added yet.
+                    {% endif %}
+                </p>
                 {% if user.is_staff %}
                     <a href="/admin/maps/layercollection/add/" class="btn btn-primary">
                         <i class="fas fa-plus me-2"></i>Add Collection

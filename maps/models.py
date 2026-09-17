@@ -98,6 +98,14 @@ class MapLayer(models.Model):
         blank=True,
         help_text="Collection this layer belongs to (leave empty for Global layers)",
     )
+    region = models.ForeignKey(
+        "regions.Region",
+        on_delete=models.PROTECT,
+        related_name="map_layers",
+        null=True,
+        blank=True,
+        help_text="Region this map layer depicts",
+    )
     is_default = models.BooleanField(
         default=False,
         help_text="Whether this is the default base layer (only applies to Global layers)",
