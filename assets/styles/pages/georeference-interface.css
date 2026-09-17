@@ -1,11 +1,6 @@
 /* This stylesheet is for both georeference interfaces, "point" and "from above" */
 
 /* Card layout */
-#primary-georeference-cards {
-    padding-left: calc(var(--bs-gutter-x) * 0.5);
-    padding-right: calc(var(--bs-gutter-x) * 0.5);
-}
-
 #image-preview-card {
     flex: 0 1 auto;
     max-width: 50em;
