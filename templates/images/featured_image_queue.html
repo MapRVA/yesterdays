@@ -13,7 +13,7 @@
                 {% endif %}
             </div>
             {% if region %}
-            <span class="badge bg-secondary fs-6">{{ entries|length }} queued</span>
+            <span class="badge {% if days_queued <= 3 %}bg-danger{% elif days_queued <= 5 %}text-bg-warning{% else %}bg-secondary{% endif %} fs-6">{{ days_queued }} next day{{ days_queued|pluralize }} queued</span>
             {% endif %}
         </div>
 
