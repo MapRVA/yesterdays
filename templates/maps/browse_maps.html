@@ -21,14 +21,14 @@
         </nav>
 
         <!-- Page Header -->
-        <h1 class="mb-4">Map Layers{% if current_region %} for {{ current_region.long_name }}{% endif %}</h1>
-        {% if request.user.is_staff %}
-            <div class="d-flex justify-content-end mb-3">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+            <h1 class="mb-0">Map Layers{% if current_region %} for {{ current_region.long_name }}{% endif %}</h1>
+            {% if request.user.is_staff %}
                 <a href="{% url 'maps:layer_manage' %}" class="btn btn-outline-secondary">
                     <i class="fas fa-layer-group me-1"></i>Manage Layers
                 </a>
-            </div>
-        {% endif %}
+            {% endif %}
+        </div>
 
         {% for item in collections %}
             <!-- Collection Section -->

@@ -18,22 +18,22 @@
             <h1 id="region-directory-title">Explore regions</h1>
             <p class="lead mb-0">Choose a region to see its photographs, map, and community activity.</p>
         </div>
-        {% if current_region %}
-        <div class="region-directory-current card">
-            <div class="card-body py-3">
-                <span class="small text-body-secondary d-block mb-1">Currently selected:</span>
-                <strong><i class="fas fa-map-marker-alt text-primary me-1" aria-hidden="true"></i>{{ current_region.long_name }}</strong>
+        <div class="d-flex align-items-center flex-wrap gap-3">
+            {% if current_region %}
+            <div class="region-directory-current card">
+                <div class="card-body py-3">
+                    <span class="small text-body-secondary d-block mb-1">Currently selected:</span>
+                    <strong><i class="fas fa-map-marker-alt text-primary me-1" aria-hidden="true"></i>{{ current_region.long_name }}</strong>
+                </div>
             </div>
+            {% endif %}
+            {% if request.user.is_staff %}
+            <a href="{% url 'regions:region_manage' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-cog me-1"></i>Manage Regions
+            </a>
+            {% endif %}
         </div>
-        {% endif %}
     </div>
-    {% if request.user.is_staff %}
-    <div class="d-flex justify-content-end mb-3">
-        <a href="{% url 'regions:region_manage' %}" class="btn btn-outline-secondary">
-            <i class="fas fa-cog me-1"></i>Manage Regions
-        </a>
-    </div>
-    {% endif %}
 
     {% if region_summaries %}
     <div class="region-directory-map">
