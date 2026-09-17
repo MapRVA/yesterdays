@@ -10,6 +10,7 @@ import maplibregl from "maplibre-gl";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { Polygon } from "geojson";
 import { LayerExtentEditor } from "../components/layer_extent_editor";
+import { LayerMinZoomPicker } from "../components/layer_min_zoom_picker";
 import type { MapLayerType } from "../components/layer_control/types";
 import {
   onColorSchemeChange,
@@ -32,7 +33,10 @@ interface LayerEditor {
   url: string;
   attribution: string;
   collection: string;
+  minZoom: number | null;
+  hasPolygon: boolean;
   polygonError: string;
+  zoomError: string;
   status: PreviewStatus;
   statusText: string;
   init(): void;
@@ -40,6 +44,7 @@ interface LayerEditor {
   collectionChanged(): void;
   prepareSubmit(event: SubmitEvent): void;
   destroy(): void;
+  _syncZoomPicker(): void;
   _buildMap(style: string): MapLibreMap;
   _setStatus(status: PreviewStatus, text?: string): void;
 }
@@ -76,9 +81,21 @@ document.addEventListener("alpine:init", () => {
     // Keep library instances outside Alpine's reactive proxies.
     let map: MapLibreMap | null = null;
     let editor: LayerExtentEditor | null = null;
+    let zoomPicker: LayerMinZoomPicker | null = null;
     let styleUrl: string | null = null;
     let polygon = polygonData.polygon;
     let hasCollection = Boolean(config?.collection);
+    const minZoomInput = document.querySelector<HTMLInputElement>(
+      'input[name="min_zoom"]',
+    );
+    const submittedMinZoom = Number(minZoomInput?.value);
+    const initialMinZoom =
+      minZoomInput?.value !== "" &&
+      Number.isInteger(submittedMinZoom) &&
+      submittedMinZoom >= 0 &&
+      submittedMinZoom <= 24
+        ? submittedMinZoom
+        : null;
     let revision = 0;
     let renderQueue = Promise.resolve();
     let disposed = false;
@@ -87,6 +104,13 @@ document.addEventListener("alpine:init", () => {
     const writePolygon = () => {
       const input = document.querySelector<HTMLInputElement>('input[name="polygon"]');
       if (input) input.value = hasCollection && polygon ? JSON.stringify(polygon) : "";
+    };
+
+    const writeMinZoom = (value: number | null) => {
+      if (minZoomInput) {
+        minZoomInput.value =
+          hasCollection && polygon && value !== null ? String(value) : "";
+      }
     };
 
     const stopEditor = async () => {
@@ -103,7 +127,10 @@ document.addEventListener("alpine:init", () => {
       url: config?.url ?? "",
       attribution: config?.attribution ?? "",
       collection: config?.collection ?? "",
+      minZoom: initialMinZoom,
+      hasPolygon: polygon !== null,
       polygonError: "",
+      zoomError: "",
       status: "waiting",
       statusText: "",
 
@@ -114,6 +141,7 @@ document.addEventListener("alpine:init", () => {
         // is nothing to retint in that mode.
         onColorSchemeChange(() => {
           if (map && styleUrl === null) void retintBaseMap(map);
+          zoomPicker?.retint();
         });
       },
 
@@ -166,8 +194,10 @@ document.addEventListener("alpine:init", () => {
           if (hasCollection && !editor) {
             editor = new LayerExtentEditor(currentMap, polygon, (geometry) => {
               polygon = geometry;
+              this.hasPolygon = geometry !== null;
               this.polygonError = geometry ? "" : "Draw a polygon for this collection layer.";
               writePolygon();
+              this._syncZoomPicker();
             }, (message) => { this.polygonError = message; });
             if (polygon && !fitted) {
               const bounds = new maplibregl.LngLatBounds();
@@ -178,6 +208,8 @@ document.addEventListener("alpine:init", () => {
               fitted = true;
             }
           }
+
+          this._syncZoomPicker();
 
           if (wantStyleMode) {
             this._setStatus("ok");
@@ -214,29 +246,87 @@ document.addEventListener("alpine:init", () => {
         const wasGlobal = !hasCollection;
         hasCollection = Boolean(this.collection);
         if (wasGlobal && hasCollection) fitted = false;
+        this.hasPolygon = polygon !== null;
         this.polygonError = "";
+        this.zoomError = "";
         writePolygon();
+        writeMinZoom(this.minZoom);
+        this._syncZoomPicker();
         this.render();
       },
 
       prepareSubmit(event) {
         editor?.sync();
         writePolygon();
+        writeMinZoom(this.minZoom);
         if (hasCollection && (!polygon || !editor?.canSubmit())) {
           event.preventDefault();
           this.polygonError = !polygon
             ? "Draw a polygon for this collection layer."
             : "Wait for the extent tools to finish loading before saving.";
         }
+        if (hasCollection && this.minZoom === null) {
+          event.preventDefault();
+          this.zoomError = polygon
+            ? "Choose a minimum zoom on the zoom picker."
+            : "Draw the layer extent before choosing a minimum zoom.";
+        }
       },
 
       destroy() {
         disposed = true;
         ++revision;
+        zoomPicker?.destroy();
+        zoomPicker = null;
         void renderQueue.then(stopEditor).finally(() => {
           map?.remove();
           map = null;
         });
+      },
+
+      _syncZoomPicker() {
+        if (!hasCollection || !polygon) {
+          zoomPicker?.destroy();
+          zoomPicker = null;
+          writeMinZoom(this.minZoom);
+          return;
+        }
+
+        const container = document.getElementById("layer-min-zoom-map");
+        if (!container) return;
+        const trimmedUrl = this.url.trim();
+        const shapeError = urlShapeError(this.type, trimmedUrl);
+        const usesStyle = this.type === "style" && !shapeError;
+        const pickerStyle = usesStyle ? trimmedUrl : protomapsStyleUrl();
+        const previewLayer =
+          !usesStyle && !shapeError
+            ? {
+                name: config?.name ?? "",
+                type: this.type,
+                url: trimmedUrl,
+                attribution: this.attribution,
+              }
+            : null;
+
+        if (!zoomPicker) {
+          zoomPicker = new LayerMinZoomPicker({
+            container,
+            polygon,
+            minZoom: this.minZoom,
+            minZoomWasChosen: this.minZoom !== null,
+            style: pickerStyle,
+            previewLayer,
+            onChange: (zoom) => {
+              this.minZoom = zoom;
+              this.zoomError = "";
+              writeMinZoom(zoom);
+            },
+          });
+          return;
+        }
+
+        zoomPicker.updatePolygon(polygon);
+        zoomPicker.updatePreview(pickerStyle, previewLayer);
       },
 
       _setStatus(status: PreviewStatus, text = "") {

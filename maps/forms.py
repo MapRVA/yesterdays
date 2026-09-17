@@ -30,14 +30,24 @@ class MapLayerForm(forms.ModelForm):
         widget=forms.HiddenInput,
         validators=[validate_layer_polygon],
     )
+    min_zoom = forms.IntegerField(
+        required=False,
+        min_value=0,
+        max_value=24,
+        widget=forms.HiddenInput,
+        help_text=(
+            "Zoom OUT to the first level where this layer should be available."
+        ),
+    )
 
     FIELD_GROUPS = (
+        ("Basic Information", ("name", "slug", "collection", "order")),
+        ("Map Data", ("type", "url")),
+        ("Minimum Zoom", ("min_zoom",)),
         (
-            "Basic Information",
-            ("name", "slug", "collection", "order", "description"),
+            "Additional Metadata",
+            ("description", "attribution", "source_link", "iiif_link", "oim_link"),
         ),
-        ("Map Data", ("type", "url", "attribution")),
-        ("Links", ("source_link", "iiif_link", "oim_link")),
     )
 
     class Meta:
@@ -55,6 +65,7 @@ class MapLayerForm(forms.ModelForm):
             "iiif_link",
             "oim_link",
             "polygon",
+            "min_zoom",
         ]
 
     def __init__(self, *args, **kwargs):
@@ -63,9 +74,10 @@ class MapLayerForm(forms.ModelForm):
             polygon = self.instance.polygon
             self.initial["polygon"] = polygon.geojson if polygon is not None else ""
         elif not self.data.get(self.add_prefix("collection")):
-            # Global layers ignore even stale or malformed submitted geometry.
+            # Global layers ignore stale or malformed collection-only metadata.
             self.data = self.data.copy()
             self.data[self.add_prefix("polygon")] = ""
+            self.data[self.add_prefix("min_zoom")] = ""
         self.fields["slug"].help_text = (
             "URL-friendly identifier. Must be unique within the collection, or "
             "unique among Global layers when no collection is set."
@@ -104,6 +116,14 @@ class MapLayerForm(forms.ModelForm):
             and cleaned["polygon"] is None
         ):
             self.add_error("polygon", "Draw a polygon for this collection layer.")
+        if (
+            cleaned.get("collection") is not None
+            and "min_zoom" in cleaned
+            and cleaned["min_zoom"] is None
+        ):
+            self.add_error(
+                "min_zoom", "Choose a minimum zoom for this collection layer."
+            )
         # MapLayer's slug uniqueness lives in conditional UniqueConstraints,
         # which ModelForm._post_clean() skips (validate_constraints=False), so
         # check explicitly to surface a field error instead of an IntegrityError.

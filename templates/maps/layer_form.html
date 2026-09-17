@@ -37,13 +37,13 @@
     {% csrf_token %}
     {{ form.polygon }}
     <div class="row g-4">
-        <div class="col-lg-7">
+        <div class="col-lg-10">
             {% if form.non_field_errors %}
                 <div class="alert alert-danger">{{ form.non_field_errors }}</div>
             {% endif %}
 
             {% for title, fields in form.field_groups %}
-                <div class="card shadow-sm mb-4">
+                <div class="card shadow-sm mb-4"{% if title == 'Minimum Zoom' %} x-show="collection" x-cloak{% endif %}>
                     <div class="card-header"><h2 class="h6 mb-0">{{ title }}</h2></div>
                     <div class="card-body">
                         {% for field in fields %}
@@ -54,7 +54,9 @@
                                         <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
                                     </div>
                                 {% else %}
-                                    <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
+                                    {% if field.name != 'min_zoom' %}
+                                        <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
+                                    {% endif %}
                                     {% if field.name == 'collection' %}
                                         <select name="{{ field.html_name }}" id="{{ field.id_for_label }}" class="form-select" x-model="collection" @change="collectionChanged()">
                                             {% for value, label in field.field.choices %}
@@ -71,6 +73,22 @@
                                         <input type="url" name="{{ field.html_name }}" id="{{ field.id_for_label }}" class="form-control" maxlength="{{ field.field.max_length }}" required x-model="url" @input.debounce.400ms="render()">
                                     {% elif field.name == 'attribution' %}
                                         <textarea name="{{ field.html_name }}" id="{{ field.id_for_label }}" class="form-control" rows="3" x-model="attribution" @input.debounce.400ms="render()"></textarea>
+                                    {% elif field.name == 'min_zoom' %}
+                                        {{ field }}
+                                        <div class="min-zoom-picker position-relative">
+                                            <div id="layer-min-zoom-map"></div>
+                                            <div class="min-zoom-picker-empty text-center p-4"
+                                                 x-show="!hasPolygon" x-cloak>
+                                                <span>Draw the layer extent to choose its minimum zoom.</span>
+                                            </div>
+                                        </div>
+                                        <div class="d-flex justify-content-between align-items-center gap-3 mt-2">
+                                            <output class="badge text-bg-secondary flex-shrink-0"
+                                                    for="{{ field.id_for_label }}"
+                                                    x-text="minZoom === null ? 'No zoom' : `Zoom ${minZoom}`"></output>
+                                        </div>
+                                        <p class="small text-danger mb-0 mt-2"
+                                           x-show="zoomError" x-text="zoomError" role="alert"></p>
                                     {% else %}
                                         {{ field }}
                                     {% endif %}
@@ -85,6 +103,29 @@
                         {% endfor %}
                     </div>
                 </div>
+
+                {% if title == 'Map Data' %}
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header">
+                        <h2 class="h6 mb-0">Layer Extent</h2>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="layer-preview-map"></div>
+                    </div>
+                    <div class="card-body border-top" x-show="collection">
+                        <p class="small mb-2">Draw a polygon tracing the layer’s extent before saving. You can edit or drag an existing outline, or draw a replacement.</p>
+                        <p class="small text-danger mb-0" x-show="polygonError" x-text="polygonError" role="alert"></p>
+                        {% for err in form.polygon.errors %}
+                            <div class="invalid-feedback d-block">{{ err }}</div>
+                        {% endfor %}
+                    </div>
+                    <div class="card-footer small"
+                         :class="{ 'text-danger': status === 'error', 'text-muted': status !== 'error' }">
+                        <span x-show="status === 'ok'"><i class="fas fa-check me-1"></i>Previewing the current source.</span>
+                        <span x-show="status !== 'ok'" x-text="statusText"></span>
+                    </div>
+                </div>
+                {% endif %}
             {% endfor %}
 
             <div class="d-flex flex-column flex-sm-row justify-content-sm-between align-items-stretch align-items-sm-center gap-2 mb-4">
@@ -104,30 +145,6 @@
             </div>
         </div>
 
-        <div class="col-lg-5">
-            <div class="layer-preview-sticky">
-                <div class="card shadow-sm">
-                    <div class="card-header">
-                        <h2 class="h6 mb-0"><i class="fas fa-map me-2"></i>Preview</h2>
-                    </div>
-                    <div class="card-body p-0">
-                        <div id="layer-preview-map"></div>
-                    </div>
-                    <div class="card-body border-top" x-show="collection">
-                        <p class="small mb-2">Draw a polygon tracing the layer’s extent before saving. You can edit or drag an existing outline, or draw a replacement.</p>
-                        <p class="small text-danger mb-0" x-show="polygonError" x-text="polygonError" role="alert"></p>
-                        {% for err in form.polygon.errors %}
-                            <div class="invalid-feedback d-block">{{ err }}</div>
-                        {% endfor %}
-                    </div>
-                    <div class="card-footer small"
-                         :class="{ 'text-danger': status === 'error', 'text-muted': status !== 'error' }">
-                        <span x-show="status === 'ok'"><i class="fas fa-check me-1"></i>Previewing the current source.</span>
-                        <span x-show="status !== 'ok'" x-text="statusText"></span>
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
 </form>
 

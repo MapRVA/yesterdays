@@ -14,6 +14,7 @@ from .models import LayerCollection, MapLayer
 PMTILES_URL = "https://example.com/tiles/richmond-1876.pmtiles"
 XYZ_URL = "https://example.com/tiles/{z}/{x}/{y}.png"
 STYLE_URL = "https://example.com/styles/basemap.json"
+MIN_ZOOM = 10
 
 
 def example_polygon():
@@ -55,6 +56,43 @@ class MapLayerExtentMigrationTests(TransactionTestCase):
                 (-77.60, 37.40, -77.30, 37.65),
             )
             self.assertIsNone(new_model.objects.get(pk=global_layer.pk).polygon)
+        finally:
+            MigrationExecutor(connection).migrate(
+                [("maps", "0008_maplayer_min_zoom")]
+            )
+
+
+class MapLayerMinZoomMigrationTests(TransactionTestCase):
+    def test_backfills_collection_layers_from_extent(self):
+        before = [("maps", "0007_maplayer_polygon")]
+        after = [("maps", "0008_maplayer_min_zoom")]
+        executor = MigrationExecutor(connection)
+        executor.migrate(before)
+        try:
+            old_apps = executor.loader.project_state(before).apps
+            collection = old_apps.get_model("maps", "LayerCollection").objects.create(
+                name="Migration collection", slug="zoom-migration-collection"
+            )
+            layer_model = old_apps.get_model("maps", "MapLayer")
+            local = layer_model.objects.create(
+                name="Local",
+                slug="zoom-migration-local",
+                url=PMTILES_URL,
+                collection=collection,
+                polygon=example_polygon(),
+            )
+            global_layer = layer_model.objects.create(
+                name="Global",
+                slug="zoom-migration-global",
+                url=PMTILES_URL,
+            )
+            executor = MigrationExecutor(connection)
+            executor.migrate(after)
+            new_model = executor.loader.project_state(after).apps.get_model(
+                "maps", "MapLayer"
+            )
+            self.assertEqual(new_model.objects.get(pk=local.pk).min_zoom, MIN_ZOOM)
+            self.assertIsNone(new_model.objects.get(pk=global_layer.pk).min_zoom)
         finally:
             MigrationExecutor(connection).migrate(after)
 
@@ -106,6 +144,7 @@ class MapLayerCleanTests(TestCase):
             url=f"{PMTILES_URL}/{{z}}/{{x}}/{{y}}",
             collection=self.collection,
             polygon=example_polygon(),
+            min_zoom=MIN_ZOOM,
         )
         with self.assertRaises(ValidationError) as ctx:
             layer.full_clean()
@@ -127,6 +166,7 @@ class MapLayerCleanTests(TestCase):
             url=PMTILES_URL,
             collection=self.collection,
             polygon=example_polygon(),
+            min_zoom=MIN_ZOOM,
         ).full_clean()
 
     def test_style_in_collection_is_rejected(self):
@@ -137,6 +177,7 @@ class MapLayerCleanTests(TestCase):
             url=STYLE_URL,
             collection=self.collection,
             polygon=example_polygon(),
+            min_zoom=MIN_ZOOM,
         )
         with self.assertRaises(ValidationError) as ctx:
             layer.full_clean()
@@ -150,6 +191,7 @@ class MapLayerCleanTests(TestCase):
             url=PMTILES_URL,
             collection=self.collection,
             polygon=example_polygon(),
+            min_zoom=MIN_ZOOM,
             is_default=True,
         )
         with self.assertRaises(ValidationError) as ctx:
@@ -163,33 +205,45 @@ class MapLayerCleanTests(TestCase):
             url=PMTILES_URL,
             collection=self.collection,
             polygon=example_polygon(),
+            min_zoom=MIN_ZOOM,
         )
         layer.refresh_from_db()
         self.assertEqual(layer.polygon.extent, example_polygon().extent)
         self.assertEqual(layer.polygon.srid, 4326)
+        self.assertEqual(layer.min_zoom, MIN_ZOOM)
         layer.collection = None
         layer.save(update_fields=["collection"])
         layer.refresh_from_db()
         self.assertIsNone(layer.polygon)
+        self.assertIsNone(layer.min_zoom)
         layer.collection = self.collection
         with self.assertRaises(ValidationError) as ctx:
             layer.full_clean()
         self.assertIn("polygon", ctx.exception.message_dict)
+        self.assertIn("min_zoom", ctx.exception.message_dict)
         layer.polygon = example_polygon()
+        layer.min_zoom = MIN_ZOOM
         layer.save(update_fields=["collection"])
         layer.refresh_from_db()
         self.assertEqual(layer.polygon, example_polygon())
 
     def test_global_discards_polygon_on_validation_and_save(self):
         layer = MapLayer(
-            name="Base", slug="base", url=PMTILES_URL, polygon=example_polygon()
+            name="Base",
+            slug="base",
+            url=PMTILES_URL,
+            polygon=example_polygon(),
+            min_zoom=MIN_ZOOM,
         )
         layer.full_clean()
         self.assertIsNone(layer.polygon)
+        self.assertIsNone(layer.min_zoom)
         layer.polygon = example_polygon()
+        layer.min_zoom = MIN_ZOOM
         layer.save()
         layer.refresh_from_db()
         self.assertIsNone(layer.polygon)
+        self.assertIsNone(layer.min_zoom)
 
     def test_new_collection_layer_requires_user_polygon(self):
         layer = MapLayer(
@@ -199,9 +253,36 @@ class MapLayerCleanTests(TestCase):
         with self.assertRaises(ValidationError) as ctx:
             layer.full_clean()
         self.assertIn("polygon", ctx.exception.message_dict)
+        self.assertIn("min_zoom", ctx.exception.message_dict)
         self.assertIsNone(layer.polygon)
         with self.assertRaises(IntegrityError), transaction.atomic():
             layer.save()
+
+    def test_collection_layer_requires_valid_min_zoom(self):
+        missing = MapLayer(
+            name="Missing zoom",
+            slug="missing-zoom",
+            url=PMTILES_URL,
+            collection=self.collection,
+            polygon=example_polygon(),
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            missing.full_clean()
+        self.assertEqual(set(ctx.exception.message_dict), {"min_zoom"})
+
+        for min_zoom in (-1, 25):
+            with self.subTest(min_zoom=min_zoom):
+                invalid = MapLayer(
+                    name="Invalid zoom",
+                    slug=f"invalid-zoom-{min_zoom}",
+                    url=PMTILES_URL,
+                    collection=self.collection,
+                    polygon=example_polygon(),
+                    min_zoom=min_zoom,
+                )
+                with self.assertRaises(ValidationError) as ctx:
+                    invalid.full_clean()
+                self.assertIn("min_zoom", ctx.exception.message_dict)
 
     def test_database_enforces_extent_role(self):
         layer = MapLayer.objects.create(
@@ -210,8 +291,14 @@ class MapLayerCleanTests(TestCase):
             url=PMTILES_URL,
             collection=self.collection,
             polygon=example_polygon(),
+            min_zoom=MIN_ZOOM,
         )
-        for update in ({"polygon": None}, {"collection": None}):
+        for update in (
+            {"polygon": None},
+            {"min_zoom": None},
+            {"min_zoom": 25},
+            {"collection": None},
+        ):
             with (
                 self.subTest(update=update),
                 self.assertRaises(IntegrityError),
@@ -226,6 +313,7 @@ class MapLayerCleanTests(TestCase):
             url=PMTILES_URL,
             collection=self.collection,
             polygon=Polygon(((0, 0), (1, 1), (0, 1), (1, 0), (0, 0))),
+            min_zoom=MIN_ZOOM,
         )
         with self.assertRaises(ValidationError) as ctx:
             layer.full_clean()
@@ -243,6 +331,7 @@ class MapLayerFormTests(TestCase):
             url=PMTILES_URL,
             collection=self.collection,
             polygon=example_polygon(),
+            min_zoom=MIN_ZOOM,
         )
 
     def _data(self, **overrides):
@@ -254,6 +343,7 @@ class MapLayerFormTests(TestCase):
             "type": "pmtiles",
             "url": PMTILES_URL,
             "polygon": example_polygon().geojson,
+            "min_zoom": MIN_ZOOM,
         }
         data.update(overrides)
         return data
@@ -287,11 +377,22 @@ class MapLayerFormTests(TestCase):
         layer = form.save()
         layer.refresh_from_db()
         self.assertEqual(layer.polygon.coords, polygon.coords)
+        self.assertEqual(layer.min_zoom, MIN_ZOOM)
 
     def test_new_collection_editor_has_no_default_polygon(self):
         form = MapLayerForm(instance=MapLayer(collection=self.collection))
         self.assertEqual(form.polygon_editor_data(), {"polygon": None})
         self.assertEqual(form["polygon"].value(), "")
+        self.assertIsNone(form["min_zoom"].value())
+
+    def test_collection_rejects_missing_or_invalid_min_zoom(self):
+        for min_zoom in ("", "1.5", "-1", "25"):
+            with self.subTest(min_zoom=min_zoom):
+                form = MapLayerForm(
+                    self._data(slug=f"zoom-{min_zoom}", min_zoom=min_zoom)
+                )
+                self.assertFalse(form.is_valid())
+                self.assertIn("min_zoom", form.errors)
 
     def test_collection_rejects_missing_or_invalid_polygon(self):
         for polygon in (
@@ -309,9 +410,17 @@ class MapLayerFormTests(TestCase):
                 self.assertIn("polygon", form.errors)
 
     def test_global_ignores_submitted_polygon(self):
-        form = MapLayerForm(self._data(slug="global", collection="", polygon="invalid"))
+        form = MapLayerForm(
+            self._data(
+                slug="global",
+                collection="",
+                polygon="invalid",
+                min_zoom="invalid",
+            )
+        )
         self.assertTrue(form.is_valid(), form.errors)
         self.assertIsNone(form.save().polygon)
+        self.assertIsNone(form.instance.min_zoom)
 
     def test_bound_polygon_survives_other_errors(self):
         polygon = Polygon.from_bbox((-77.48, 37.50, -77.40, 37.58))
@@ -320,6 +429,7 @@ class MapLayerFormTests(TestCase):
         self.assertEqual(
             form.polygon_editor_data()["polygon"], json.loads(polygon.geojson)
         )
+        self.assertEqual(form["min_zoom"].value(), MIN_ZOOM)
         deleted = MapLayerForm(self._data(name="", polygon=""))
         self.assertFalse(deleted.is_valid())
         self.assertIsNone(deleted.polygon_editor_data()["polygon"])
@@ -330,6 +440,7 @@ class MapLayerFormTests(TestCase):
         self.assertEqual(
             form.polygon_editor_data()["polygon"], json.loads(layer.polygon.geojson)
         )
+        self.assertEqual(form["min_zoom"].value(), MIN_ZOOM)
 
 
 class LayerManageViewTests(TestCase):
@@ -344,6 +455,7 @@ class LayerManageViewTests(TestCase):
             url=PMTILES_URL,
             collection=self.collection,
             polygon=example_polygon(),
+            min_zoom=MIN_ZOOM,
         )
 
     def _urls(self):
@@ -448,10 +560,12 @@ class LayerManageViewTests(TestCase):
             "type": "pmtiles",
             "url": PMTILES_URL,
             "polygon": polygon.geojson,
+            "min_zoom": 12,
         }
         self.assertRedirects(self.client.post(url, data), url)
         self.layer.refresh_from_db()
         self.assertEqual(self.layer.polygon.coords, polygon.coords)
+        self.assertEqual(self.layer.min_zoom, 12)
         response = self.client.post(url, {**data, "name": ""})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(

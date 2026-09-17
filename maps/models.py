@@ -2,6 +2,7 @@ from math import isfinite
 
 from django.contrib.gis.db import models as gis_models
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator
 from django.db import models
 from django.urls import reverse
 from django.utils.text import slugify
@@ -108,6 +109,12 @@ class MapLayer(models.Model):
         validators=[validate_layer_polygon],
         help_text="Geographic extent of this collection layer. Global layers have no extent.",
     )
+    min_zoom = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        validators=[MaxValueValidator(24)],
+        help_text="Lowest whole-number zoom for this collection layer (0–24).",
+    )
     order = models.PositiveIntegerField(
         default=0, help_text="Display order (lower numbers first)"
     )
@@ -140,9 +147,10 @@ class MapLayer(models.Model):
             )
         return reverse("maps:browse_maps")
 
-    def _normalize_polygon(self):
+    def _normalize_collection_metadata(self):
         if self.collection_id is None:
             self.polygon = None
+            self.min_zoom = None
 
     def save(self, *args, **kwargs):
         update_fields = kwargs.get("update_fields")
@@ -150,19 +158,30 @@ class MapLayer(models.Model):
             "collection",
             "collection_id",
             "polygon",
+            "min_zoom",
         }.intersection(update_fields):
-            self._normalize_polygon()
+            self._normalize_collection_metadata()
             if update_fields is not None:
-                kwargs["update_fields"] = set(update_fields) | {"polygon"}
+                kwargs["update_fields"] = set(update_fields) | {
+                    "polygon",
+                    "min_zoom",
+                }
         super().save(*args, **kwargs)
 
     def clean(self):
         super().clean()
-        self._normalize_polygon()
+        self._normalize_collection_metadata()
+        collection_errors = {}
         if self.collection_id is not None and self.polygon is None:
-            raise ValidationError(
-                {"polygon": "Draw a polygon for this collection layer."}
+            collection_errors["polygon"] = (
+                "Draw a polygon for this collection layer."
             )
+        if self.collection_id is not None and self.min_zoom is None:
+            collection_errors["min_zoom"] = (
+                "Choose a minimum zoom for this collection layer."
+            )
+        if collection_errors:
+            raise ValidationError(collection_errors)
         try:
             validate_layer_polygon(self.polygon)
         except ValidationError as error:
@@ -240,6 +259,18 @@ class MapLayer(models.Model):
                     | models.Q(collection__isnull=False, polygon__isnull=False)
                 ),
                 name="maplayer_polygon_matches_collection",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(collection__isnull=True, min_zoom__isnull=True)
+                    | models.Q(
+                        collection__isnull=False,
+                        min_zoom__isnull=False,
+                        min_zoom__gte=0,
+                        min_zoom__lte=24,
+                    )
+                ),
+                name="maplayer_min_zoom_matches_collection",
             ),
             models.UniqueConstraint(
                 fields=["collection", "slug"],
