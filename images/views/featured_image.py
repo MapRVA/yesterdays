@@ -28,24 +28,18 @@ def featured_image_queue(request):
     entries = None
     days_queued = 0
     if region is not None:
-        entries = list(
+        entries = (
             ImageOfTheDay.objects.select_related("image", "image__collection", "user")
             .filter(region=region, day__gte=today)
             .order_by("day")
         )
-        # How many days beyond today are covered without a gap. Today itself
-        # isn't counted, but the run has to start there: a queue with a hole
-        # today has nothing lined up, however many later days are filled.
-        for entry in entries:
-            if entry.day != today + datetime.timedelta(days=days_queued):
-                break
-            days_queued += 1
-        days_queued = max(days_queued - 1, 0)
+        days_queued = ImageOfTheDay.days_queued(region)
     context = {
         "entries": entries,
         "region": region,
         "today": today,
         "days_queued": days_queued,
+        "days_queued_badge_class": ImageOfTheDay.queue_badge_class(days_queued),
     }
     return render(request, "images/featured_image_queue.html", context)
 

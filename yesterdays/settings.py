@@ -181,6 +181,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "osm_auth.context_processors.osm_auth",
                 "images.context_processors.site_settings",
+                "images.context_processors.featured_image_queue_alert",
                 "regions.context_processors.current_region",
             ],
         },

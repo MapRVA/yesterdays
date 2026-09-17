@@ -4,8 +4,9 @@ from django.conf import settings
 from django.urls import reverse
 
 from maps.models import MapLayer
+from regions.context_processors import get_current_region
 
-from .models import SiteSettings
+from .models import ImageOfTheDay, SiteSettings
 from .views import get_tile_version
 
 
@@ -60,4 +61,23 @@ def site_settings(request):
         "tile_version": get_tile_version(),
         "DIRECTORIES_ENABLED": settings.DIRECTORIES_ENABLED,
         "map_layers_json": json.dumps(_build_map_layers_data()),
+    }
+
+
+def featured_image_queue_alert(request):
+    """Warn staff in the navbar when the current region's queue runs low.
+
+    Only staff see the Admin menu, so everyone else skips the queries.
+    ``featured_queue_badge_class`` is None when there is nothing to flag.
+    """
+    user = getattr(request, "user", None)
+    if not (user and user.is_staff):
+        return {}
+    region = get_current_region(request)
+    if region is None:
+        return {}
+    days_queued = ImageOfTheDay.days_queued(region)
+    return {
+        "featured_queue_days": days_queued,
+        "featured_queue_badge_class": ImageOfTheDay.queue_badge_class(days_queued),
     }

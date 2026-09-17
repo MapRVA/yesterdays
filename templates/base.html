@@ -75,11 +75,24 @@
                     {% if user.is_staff %}
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                            Admin
+                            <span class="position-relative">
+                                Admin
+                                {% if featured_queue_badge_class %}
+                                {# Bootstrap notification dot: flags a low featured-image queue #}
+                                <span class="position-absolute top-0 start-100 translate-middle p-1 {{ featured_queue_badge_class }} border border-light rounded-circle">
+                                    <span class="visually-hidden">Featured image queue is running low</span>
+                                </span>
+                                {% endif %}
+                            </span>
                         </a>
                         <ul class="dropdown-menu">
                             <li><a class="dropdown-item" href="{% url 'images:validation_queue' %}">Validation Queue</a></li>
-                            <li><a class="dropdown-item" href="{% url 'images:featured_image_queue' %}">Featured Image Queue</a></li>
+                            <li><a class="dropdown-item d-flex align-items-center justify-content-between" href="{% url 'images:featured_image_queue' %}">
+                                Featured Image Queue
+                                {% if featured_queue_badge_class %}
+                                <span class="badge rounded-pill {{ featured_queue_badge_class }} ms-2" title="{{ featured_queue_days }} next day{{ featured_queue_days|pluralize }} queued">{{ featured_queue_days }}</span>
+                                {% endif %}
+                            </a></li>
                             <li><a class="dropdown-item" href="{% url 'images:duplicate_image_pairs' %}">Possible Duplicates</a></li>
                             <li><a class="dropdown-item" href="{% url 'admin:index' %}">Admin Panel</a></li>
                         </ul>

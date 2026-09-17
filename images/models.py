@@ -2191,6 +2191,30 @@ class ImageOfTheDay(models.Model):
         return candidate
 
     @classmethod
+    def days_queued(cls, region):
+        """How many days after today are filled without a gap.
+
+        Today isn't counted, but the run has to start there: with nothing
+        queued today the count is zero, however many later days are filled.
+        """
+        today = timezone.localdate()
+        run = (cls.next_available_day(region, start=today) - today).days
+        return max(run - 1, 0)
+
+    @staticmethod
+    def queue_badge_class(days_queued):
+        """Bootstrap background class for a queue this many days deep.
+
+        Returns None when the queue is healthy, so callers can skip the
+        warning entirely or fall back to a neutral colour.
+        """
+        if days_queued <= 3:
+            return "bg-danger"
+        if days_queued <= 5:
+            return "text-bg-warning"
+        return None
+
+    @classmethod
     def for_today(cls, region):
         """The entry featured in ``region`` today, or None."""
         return cls._in_region(region).filter(day=timezone.localdate()).first()
