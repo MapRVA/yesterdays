@@ -41,6 +41,12 @@
             </ol>
         </nav>
 
+        {% if region_fallback %}
+            <div class="alert alert-info" role="status">
+                {{ source.name }} has no images in your selected region. Showing all images from {{ source.name }}.
+            </div>
+        {% endif %}
+
         <!-- Source Header -->
         <div class="card mb-4">
             <div class="card-body">
@@ -59,7 +65,7 @@
                     <div class="text-start text-md-end">
                         <div class="btn-group">
                             {% if pending_images > 0 %}
-                                <a href="{% url 'images:georeference_interface' %}?source={{ source.slug }}" class="btn btn-success">
+                                <a href="{% url 'images:georeference_interface' %}?source={{ source.slug }}{% if browse_region %}&region={{ browse_region.wikidata_item.wikidata_id|urlencode }}{% endif %}" class="btn btn-success">
                                     <i class="fas fa-map-marker-alt me-2"></i>Start Georeferencing
                                 </a>
                             {% endif %}
@@ -106,7 +112,7 @@
                     </h5>
                 </div>
                 <div class="card-body p-0">
-                    {% include 'images/partials/map_display.html' with source_id=source.id map_id='source-map' zoom_to_contents=True %}
+                    {% include 'images/partials/map_display.html' with source_id=source.id map_id='source-map' zoom_to_contents=True map_region=browse_region ignore_region_view=region_fallback %}
                 </div>
             </div>
         {% endif %}
@@ -168,7 +174,7 @@
                                     <i class="fas fa-external-link-alt me-1"></i>Original
                                 </a>
                                 {% if collection.pending_images > 0 %}
-                                    <a href="{% url 'images:georeference_interface' %}?source={{ source.slug }}&collection={{ collection.slug }}" class="btn btn-success btn-sm">
+                                    <a href="{% url 'images:georeference_interface' %}?source={{ source.slug }}&collection={{ collection.slug }}{% if browse_region %}&region={{ browse_region.wikidata_item.wikidata_id|urlencode }}{% endif %}" class="btn btn-success btn-sm">
                                         <i class="fas fa-map-marker-alt me-1"></i>Georeference
                                     </a>
                                 {% endif %}

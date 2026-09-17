@@ -1,4 +1,4 @@
-{# Navbar region selector: persists a region slug in a cookie. Bootstrap's  #}
+{# Navbar region selector: persists a region QID in a cookie. Bootstrap's  #}
 {# Dropdown JS owns open/close, positioning, click-outside, Escape and     #}
 {# arrow-key movement between items (data-bs-toggle below); the           #}
 {# regionSelector Alpine component (registered in assets/index.js) owns    #}
@@ -8,7 +8,7 @@
     id="region-selector"
     data-autocomplete-url="{% url 'regions:region_autocomplete' %}"
     data-cookie-name="{{ region_cookie_name }}"
-    data-current-slug="{{ current_region.slug|default:'' }}"
+    data-current-qid="{{ current_region.wikidata_item.wikidata_id|default:'' }}"
     x-data="regionSelector()">
     {# auto-close="outside" keeps the menu open while typing in, or         #}
     {# clicking around, the search field.                                    #}
@@ -42,7 +42,7 @@
             </div>
         </div>
         {# The active item carries a check, swapped for a spinner once it's   #}
-        {# clicked (select() moves currentSlug optimistically and reloads).  #}
+        {# clicked (select() moves currentQid optimistically and reloads).   #}
         {# x-show sits on a <span> around each icon rather than the <i>:      #}
         {# Font Awesome swaps the <i> for an <svg>, and Alpine bindings      #}
         {# shouldn't ride on the swapped node.                               #}
@@ -52,11 +52,11 @@
         {# the query), where the list is the most-georeferenced regions.     #}
         <button type="button"
                 class="dropdown-item"
-                :class="{ active: !currentSlug }"
+                :class="{ active: !currentQid }"
                 x-show="!query"
                 @click="select(null)">
             <i class="fas fa-globe fa-fw me-2" aria-hidden="true"></i>Global
-            <span class="ms-auto" x-show="!currentSlug">
+            <span class="ms-auto" x-show="!currentQid">
                 <span class="spinner-border spinner-border-sm" x-show="selecting" aria-hidden="true"></span>
                 <span x-show="!selecting"><i class="fas fa-check" aria-hidden="true"></i></span>
             </span>
@@ -68,16 +68,16 @@
             {# trigger's label, for the same reason: selecting reloads.    #}
             {# Held back until a list has arrived (fetched), since an      #}
             {# empty one can't yet report that it carries this region.     #}
-            {# The slug check drops it the instant something else is       #}
-            {# clicked — select() moves currentSlug before the reload —    #}
+            {# The QID check drops it the instant something else is        #}
+            {# clicked — select() moves currentQid before the reload —     #}
             {# so choosing Global doesn't flash it in under the check.     #}
             <button type="button"
                     class="dropdown-item"
-                    :class="{ active: currentSlug === '{{ current_region.slug }}' }"
-                    x-show="!query && fetched && currentSlug === '{{ current_region.slug }}' && !currentIsSuggested()"
-                    @click="select({ slug: currentSlug })">
+                    :class="{ active: currentQid === '{{ current_region.wikidata_item.wikidata_id }}' }"
+                    x-show="!query && fetched && currentQid === '{{ current_region.wikidata_item.wikidata_id }}' && !currentIsSuggested()"
+                    @click="select({ wikidata_id: currentQid })">
                 <i class="fas fa-map-marker-alt fa-fw me-2" aria-hidden="true"></i>{{ current_region.long_name }}
-                <span class="ms-auto" x-show="currentSlug === '{{ current_region.slug }}'">
+                <span class="ms-auto" x-show="currentQid === '{{ current_region.wikidata_item.wikidata_id }}'">
                     <span class="spinner-border spinner-border-sm" x-show="selecting" aria-hidden="true"></span>
                     <span x-show="!selecting"><i class="fas fa-check" aria-hidden="true"></i></span>
                 </span>
@@ -85,13 +85,13 @@
         {% endif %}
         <div class="dropdown-divider" x-show="!query"></div>
         <h6 class="dropdown-header" x-show="!query">Popular</h6>
-        <template x-for="region in suggestions" :key="region.slug">
+        <template x-for="region in suggestions" :key="region.wikidata_id">
             <button type="button"
                     class="dropdown-item"
-                    :class="{ active: region.slug === currentSlug }"
+                    :class="{ active: region.wikidata_id === currentQid }"
                     @click="select(region)">
                 <span x-text="region.long_name"></span>
-                <span class="ms-auto" x-show="region.slug === currentSlug">
+                <span class="ms-auto" x-show="region.wikidata_id === currentQid">
                     <span class="spinner-border spinner-border-sm" x-show="selecting" aria-hidden="true"></span>
                     <span x-show="!selecting"><i class="fas fa-check" aria-hidden="true"></i></span>
                 </span>

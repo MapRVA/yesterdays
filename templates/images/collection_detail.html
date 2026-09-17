@@ -61,6 +61,12 @@
             </ol>
         </nav>
 
+        {% if region_fallback %}
+            <div class="alert alert-info" role="status">
+                {{ collection.name }} has no images in your selected region. Showing all images from {{ collection.name }}.
+            </div>
+        {% endif %}
+
         <!-- Collection Header -->
         <div class="card mb-4">
             <div class="card-body">
@@ -83,7 +89,7 @@
                     <div class="text-start text-md-end">
                         <div class="btn-group">
                             {% if pending_images > 0 %}
-                                <a href="{% url 'images:georeference_interface' %}?source={{ source.slug }}&collection={{ collection.slug }}" class="btn btn-success">
+                                <a href="{{ georeference_url }}" class="btn btn-success">
                                     <i class="fas fa-map-marker-alt me-2"></i>Start Georeferencing
                                 </a>
                             {% endif %}
@@ -148,7 +154,7 @@
                     </h5>
                 </div>
                 <div class="card-body p-0">
-                    {% include 'images/partials/map_display.html' with collection_id=collection.id map_id='collection-map' height='60vh' zoom_to_contents=True %}
+                    {% include 'images/partials/map_display.html' with collection_id=collection.id map_id='collection-map' height='60vh' zoom_to_contents=True map_region=browse_region ignore_region_view=region_fallback %}
                 </div>
             </div>
         {% endif %}
@@ -159,10 +165,8 @@
         </div>
 
         <!-- Image Grid with bulk selection support -->
-        {% with geo_url="/georeference/?source="|add:source.slug|add:"&collection="|add:collection.slug %}
         {% with staff_url="/admin/images/image/add/?collection="|add:collection.id %}
-            {% include 'images/partials/image_grid.html' with georeference_url=geo_url show_collection_link=False badges=True buttons=True empty_message="This collection doesn't have any images yet." staff_action_url=staff_url staff_action_text="Add Images" show_toolbar=True %}
-        {% endwith %}
+            {% include 'images/partials/image_grid.html' with georeference_url=georeference_url show_collection_link=False badges=True buttons=True empty_message="This collection doesn't have any images yet." staff_action_url=staff_url staff_action_text="Add Images" show_toolbar=True %}
         {% endwith %}
     </div>
 </div>

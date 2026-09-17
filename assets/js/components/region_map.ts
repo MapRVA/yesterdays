@@ -33,7 +33,7 @@ const REGION_MAP_PRELOAD_MARGIN = "600px";
 
 // One region, as serialized by regions.summaries.get_region_summaries.
 export interface RegionSummary {
-  slug: string;
+  wikidata_id: string;
   short_name: string;
   long_name: string;
   subtitle: string;
@@ -51,14 +51,14 @@ export function readRegionSummaries(): RegionSummary[] {
   return JSON.parse(data.textContent) as RegionSummary[];
 }
 
-// The server-rendered cards, by slug, for keeping card and pin hover
-// states in step. Each page passes its own card selector; the slug is
-// data-region-slug either way.
+// The server-rendered cards, by Wikidata QID, for keeping card and pin hover
+// states in step. Each page passes its own card selector; the QID is
+// data-region-qid either way.
 export function readRegionCards(selector: string): Map<string, HTMLElement> {
   const cards = new Map<string, HTMLElement>();
   document.querySelectorAll<HTMLElement>(selector).forEach((card) => {
-    const slug = card.dataset.regionSlug;
-    if (slug) cards.set(slug, card);
+    const qid = card.dataset.regionQid;
+    if (qid) cards.set(qid, card);
   });
   return cards;
 }
@@ -96,7 +96,7 @@ function formatCounts(region: RegionSummary): string {
 // textContent is what keeps them out of the parser.
 function buildPinPopup(
   region: RegionSummary,
-  onSelect: (slug: string) => void,
+  onSelect: (qid: string) => void,
 ): HTMLDivElement {
   const container = document.createElement("div");
 
@@ -122,7 +122,7 @@ function buildPinPopup(
   button.className = "btn btn-primary btn-sm w-100";
   button.innerHTML = '<i class="fas fa-map-marker-alt me-1"></i>';
   button.appendChild(document.createTextNode(`Explore ${region.short_name}`));
-  button.addEventListener("click", () => onSelect(region.slug));
+  button.addEventListener("click", () => onSelect(region.wikidata_id));
   container.appendChild(button);
 
   return container;
@@ -159,13 +159,13 @@ function buildMarkerElement(region: RegionSummary): HTMLDivElement {
 export interface RegionMapOptions {
   container: HTMLElement;
   summaries: RegionSummary[];
-  // Cards to keep in step with the pins, by slug. A region without a card
+  // Cards to keep in step with the pins, by QID. A region without a card
   // (the directory lists unadvertised regions, which get no pin, and a page
   // may show only its first few) simply isn't linked.
   cards: Map<string, HTMLElement>;
   // What a popup's button does: each page owns where selecting a region
   // takes the visitor.
-  onSelect: (slug: string) => void;
+  onSelect: (qid: string) => void;
 }
 
 export function initRegionMap({
@@ -212,7 +212,7 @@ export function initRegionMap({
       )
       .addTo(map);
 
-    const card = cards.get(region.slug);
+    const card = cards.get(region.wikidata_id);
     if (card) {
       card.addEventListener("mouseenter", () =>
         markerElement.classList.add("is-active"),

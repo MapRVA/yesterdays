@@ -16,7 +16,7 @@
             <div class="col-lg-4">
                 <div id="region-cards" class="region-card-list">
                     {% for region in region_summaries|slice:":3" %}
-                    <div class="card region-card" data-region-slug="{{ region.slug }}">
+                    <div class="card region-card" data-region-qid="{{ region.wikidata_id }}">
                         {% if region.thumbnail %}
                         <img src="{{ region.thumbnail }}" class="region-summary-thumb card-img-top" alt="" loading="lazy">
                         {% else %}

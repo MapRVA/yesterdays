@@ -62,10 +62,10 @@
     {# map's pins; searching surfaces them.                                #}
     <div id="region-directory-grid" class="region-directory-grid" data-cookie-name="{{ region_cookie_name }}">
         {% for region in regions %}
-        <article class="card region-directory-card{% if current_region.slug == region.slug %} is-current{% endif %}{% if not region.advertise %} d-none{% endif %}"
+        <article class="card region-directory-card{% if current_region.wikidata_item.wikidata_id == region.wikidata_id %} is-current{% endif %}{% if not region.advertise %} d-none{% endif %}"
                  data-region-card
                  {% if not region.advertise %}data-region-unadvertised{% endif %}
-                 data-region-slug="{{ region.slug }}"
+                 data-region-qid="{{ region.wikidata_id }}"
                  data-region-search="{{ region.short_name }} {{ region.long_name }} {{ region.subtitle }}">
             {% if region.thumbnail %}
             <img src="{{ region.thumbnail }}" class="region-summary-thumb card-img-top" alt="" loading="lazy">
@@ -77,7 +77,7 @@
             <div class="card-body d-flex flex-column">
                 <div class="d-flex justify-content-between align-items-start gap-2">
                     <h2 class="h4 mb-1">{{ region.long_name }}</h2>
-                    {% if current_region.slug == region.slug %}
+                    {% if current_region.wikidata_item.wikidata_id == region.wikidata_id %}
                     <span class="badge text-bg-primary">Current</span>
                     {% endif %}
                 </div>
@@ -88,8 +88,8 @@
                     &middot;
                     {{ region.georeferenced_count|intcomma }} mapped
                 </p>
-                <a href="/" class="btn btn-primary mt-auto align-self-start" data-region-select="{{ region.slug }}">
-                    {% if current_region.slug == region.slug %}Continue exploring{% else %}Explore {{ region.short_name }}{% endif %}
+                <a href="/" class="btn btn-primary mt-auto align-self-start" data-region-select="{{ region.wikidata_id }}">
+                    {% if current_region.wikidata_item.wikidata_id == region.wikidata_id %}Continue exploring{% else %}Explore {{ region.short_name }}{% endif %}
                     <i class="fas fa-arrow-right ms-1" aria-hidden="true"></i>
                 </a>
             </div>

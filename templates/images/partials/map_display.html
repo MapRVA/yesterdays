@@ -14,6 +14,8 @@ Usage:
    falling back to its centerpoint and then the SiteSettings defaults.)
 - Geocoder: {% include 'images/partials/map_display.html' with include_geocoder=True %}
 - Scale-based visibility: {% include 'images/partials/map_display.html' with enable_scale_visibility=True %}
+- Regional source/collection maps: pass map_region explicitly to filter image tiles.
+  Set ignore_region_view=True for a global fallback despite a selected navbar region.
 - Auto-zoom to contents: {% include 'images/partials/map_display.html' with zoom_to_contents=True %}
 {% endcomment %}
 
@@ -66,6 +68,10 @@ document.addEventListener('DOMContentLoaded', function() {
     urlParams.append('georeferenced_by', '{{ georeferenced_by_id }}');
     {% endif %}
 
+    {% if map_region %}
+    urlParams.append('region', '{{ map_region.wikidata_item.wikidata_id|escapejs }}');
+    {% endif %}
+
     let vectorTilesUrl = window.location.origin + '{% url "images:vector_tiles" v=tile_version z=0 x=0 y=0 %}'.replace('/0/0/0.mvt', '/{z}/{x}/{y}.mvt');
 
     if (urlParams.toString()) {
@@ -86,7 +92,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // with a comma decimal separator would silently split the array.
     {% if center_lng is not None and center_lat is not None %}
     const mapCenter = [{{ center_lng|unlocalize }}, {{ center_lat|unlocalize }}];
-    {% elif current_region %}
+    {% elif current_region and not ignore_region_view %}
     const mapCenter = [{{ current_region.coordinate_location.x|unlocalize }}, {{ current_region.coordinate_location.y|unlocalize }}];
     {% else %}
     const mapCenter = [{{ default_map_center.0|unlocalize }}, {{ default_map_center.1|unlocalize }}];
@@ -96,7 +102,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // setting. Explicit content and embed parameters retain precedence.
     {% if center_lng is not None and center_lat is not None or zoom_level is not None %}
     const mapBounds = null;
-    {% elif region_map_bounds %}
+    {% elif region_map_bounds and not ignore_region_view %}
     const mapBounds = {{ region_map_bounds }};
     {% else %}
     const mapBounds = null;

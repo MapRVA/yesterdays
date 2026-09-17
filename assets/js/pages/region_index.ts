@@ -10,8 +10,8 @@ import {
   whenScrolledNear,
 } from "../components/region_map";
 
-function selectRegion(cookieName: string, slug: string | null): void {
-  writeRegionCookie(cookieName, slug);
+function selectRegion(cookieName: string, qid: string | null): void {
+  writeRegionCookie(cookieName, qid);
   window.location.href = "/";
 }
 
@@ -39,7 +39,7 @@ function initRegionDirectory(): void {
 
   // The map, once it's nearly scrolled to. Its pins cover the regions a
   // visitor lands in, so the grid's unadvertised cards simply go
-  // unlinked — readRegionCards keys by slug and the map looks each up.
+  // unlinked — readRegionCards keys by QID and the map looks each up.
   const mapContainer = document.getElementById("global-home-map");
   if (mapContainer instanceof HTMLElement) {
     const cards = readRegionCards("#region-directory-grid [data-region-card]");
@@ -48,7 +48,7 @@ function initRegionDirectory(): void {
         container: mapContainer,
         summaries: readRegionSummaries(),
         cards,
-        onSelect: (slug) => selectRegion(cookieName, slug),
+        onSelect: (qid) => selectRegion(cookieName, qid),
       }),
     );
   }

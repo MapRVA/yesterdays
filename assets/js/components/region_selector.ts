@@ -2,7 +2,6 @@ import "../../styles/components/region-selector.css";
 import { writeRegionCookie } from "./region_cookie";
 
 interface RegionSuggestion {
-  slug: string;
   short_name: string;
   long_name: string;
   wikidata_id: string;
@@ -11,7 +10,7 @@ interface RegionSuggestion {
 interface RegionSelector {
   query: string;
   suggestions: RegionSuggestion[];
-  currentSlug: string | null;
+  currentQid: string | null;
   selecting: boolean;
   fetched: boolean;
   _controller: AbortController | null;
@@ -19,9 +18,9 @@ interface RegionSelector {
   fetchSuggestions(): Promise<void>;
   focusFirstItem(): void;
   currentIsSuggested(): boolean;
-  // Only the slug is ever read, so the template can hand over the pinned
+  // Only the QID is ever read, so the template can hand over the pinned
   // current region without restating what the server already rendered.
-  select(region: Pick<RegionSuggestion, "slug"> | null): void;
+  select(region: Pick<RegionSuggestion, "wikidata_id"> | null): void;
   selectFirst(): void;
 }
 
@@ -31,7 +30,7 @@ function isAbortError(error: unknown): boolean {
 
 /**
  * Navbar region selector: a type-to-search dropdown persisting the chosen
- * region slug in a cookie, which regions.context_processors.current_region
+ * region QID in a cookie, which regions.context_processors.current_region
  * reads back on every page render. Selecting reloads the page so the
  * server rerenders everything (navbar label included) under the new
  * region.
@@ -60,7 +59,7 @@ export function initRegionSelector(): void {
     return {
       query: "",
       suggestions: [],
-      currentSlug: root?.dataset.currentSlug || null,
+      currentQid: root?.dataset.currentQid || null,
       selecting: false,
       fetched: false,
       _controller: null,
@@ -134,16 +133,16 @@ export function initRegionSelector(): void {
       // region is never offered twice in one menu.
       currentIsSuggested() {
         return this.suggestions.some(
-          (region) => region.slug === this.currentSlug
+          (region) => region.wikidata_id === this.currentQid
         );
       },
 
       select(region) {
-        const slug = region ? region.slug : null;
-        writeRegionCookie(cookieName, slug);
+        const qid = region ? region.wikidata_id : null;
+        writeRegionCookie(cookieName, qid);
         // Move the highlight optimistically so the clicked item shows the
         // spinner until the reload lands.
-        this.currentSlug = slug;
+        this.currentQid = qid;
         this.selecting = true;
         // Clear the URL hash so that map pages will fit to the selected
         // region's bounds instead of restoring the previous view.

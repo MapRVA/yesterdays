@@ -91,10 +91,10 @@ const HERO_ARROW_STUB_LENGTH = 3;
 // How long to wait on the hero photograph before building its map anyway.
 const HERO_MAP_MAX_WAIT_MS = 3000;
 
-function selectRegion(cookieName: string, slug: string): void {
+function selectRegion(cookieName: string, qid: string): void {
   // Same cookie the navbar selector writes; the reload lands on this
   // region's homepage, since yesterdays.views.home branches on it.
-  writeRegionCookie(cookieName, slug);
+  writeRegionCookie(cookieName, qid);
   window.location.reload();
 }
 
@@ -441,10 +441,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // fires, and they still have to land on a region. The click lands on
   // the stretched-link button (it covers the whole card), a real button
   // so keyboard activation comes for free.
-  cards.forEach((card, slug) => {
+  cards.forEach((card, qid) => {
     card
       .querySelector<HTMLButtonElement>(".region-card-link")
-      ?.addEventListener("click", () => selectRegion(cookieName, slug));
+      ?.addEventListener("click", () => selectRegion(cookieName, qid));
   });
 
   whenScrolledNear(container, () =>
@@ -452,7 +452,7 @@ document.addEventListener("DOMContentLoaded", () => {
       container,
       summaries: readRegionSummaries(),
       cards,
-      onSelect: (slug) => selectRegion(cookieName, slug),
+      onSelect: (qid) => selectRegion(cookieName, qid),
     }),
   );
 });

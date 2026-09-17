@@ -1,3 +1,5 @@
+from urllib.parse import urlencode
+
 from django.contrib.gis.geos import Point
 from django.core.paginator import Page, Paginator
 from django.db.models import (
@@ -12,6 +14,7 @@ from django.db.models import (
     When,
 )
 from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
 
 from regions.context_processors import get_current_region
 from regions.models import Region
@@ -19,13 +22,12 @@ from regions.models import Region
 from ..models import (
     Collection,
     CollectionRegionStats,
-    CollectionStats,
     Image,
     ImageRating,
     Source,
     TopRatedImageView,
 )
-from ..utils import get_overall_stats, render_markdown_safe
+from ..utils import _public_collection_stats, get_overall_stats, render_markdown_safe
 
 
 def apply_image_filters(request, queryset):
@@ -126,19 +128,19 @@ def apply_image_filters(request, queryset):
     return queryset
 
 
-def _browse_sources_stats():
-    """Read per-source and sitewide image statistics from CollectionStats.
+def _browse_sources_stats(region=None):
+    """Read per-source and overall counts, optionally scoped to a region.
 
     The denormalized stats table is maintained eagerly by signal handlers,
     so these are cheap sums over a few hundred rows at most.
     """
+    rows = _public_collection_stats(region)
+    if region is not None:
+        rows = rows.filter(total_images__gt=0)
     per_source = (
-        CollectionStats.objects.filter(
-            collection__source__public=True,
-            collection__public=True,
-        )
-        .values("collection__source")
+        rows.values("collection__source")
         .annotate(
+            collections=Count("collection"),
             total=Sum("total_images"),
             georeferenced=Sum(
                 F("georeferenced_low")
@@ -150,7 +152,7 @@ def _browse_sources_stats():
     )
     return {
         "by_source": {row["collection__source"]: row for row in per_source},
-        "overall": get_overall_stats(),
+        "overall": get_overall_stats(region),
     }
 
 
@@ -166,20 +168,15 @@ def browse_sources(request):
         .order_by("name")
     )
 
-    # CollectionRegionStats already includes descendant-region rollups. Its
-    # zeroed rows must be ignored: they record a collection's former region,
-    # not images it currently holds.
     region = get_current_region(request)
+    stats = _browse_sources_stats(region)
     if region is not None:
-        sources = sources.filter(
-            collections__public=True,
-            collections__region_stats__region=region,
-            collections__region_stats__total_images__gt=0,
-        ).distinct()
+        sources = sources.filter(pk__in=stats["by_source"])
 
-    stats = _browse_sources_stats()
     for source in sources:
         row = stats["by_source"].get(source.id)
+        if region is not None:
+            source.public_collections_count = row["collections"]
         source.total_images = row["total"] if row else 0
         source.georeferenced_images = row["georeferenced"] if row else 0
         source.will_not_georef_images = row["will_not_georef"] if row else 0
@@ -191,10 +188,13 @@ def browse_sources(request):
 
     overall_stats = stats["overall"]
 
-    # Get top-rated image from entire site for Open Graph metadata
+    top_rated_entries = TopRatedImageView.objects.all()
+    if region is not None:
+        top_rated_entries = top_rated_entries.filter(
+            image_id__in=Image.objects.in_region(region).values("pk")
+        )
     top_rated_entry = (
-        TopRatedImageView.objects.all()
-        .order_by("-sort_value", "-avg_rating", "-vote_count", "image_id")
+        top_rated_entries.order_by("-sort_value", "-avg_rating", "-vote_count", "image_id")
         .first()
     )
     top_rated_image = None
@@ -205,6 +205,7 @@ def browse_sources(request):
 
     context = {
         "sources": sources,
+        "browse_region": region,
         "overall_stats": overall_stats,
         "top_rated_image": top_rated_image,
     }
@@ -212,14 +213,26 @@ def browse_sources(request):
 
 
 def source_detail(request, slug):
-    """Detail view for a specific source showing its public collections.
-
-    With a region selected in the navbar, the collections are ordered by how
-    many of their images depict that region, so the ones worth opening come
-    first. The numbers on each card stay sitewide.
-    """
+    """Public collections and counts in the selected region, or a global fallback."""
     source = get_object_or_404(Source, slug=slug, public=True)
     collections = list(source.collections.filter(public=True).select_related("stats"))
+    region = get_current_region(request)
+    regional_stats = {}
+    if region is not None:
+        regional_stats = {
+            row.collection_id: row
+            for row in CollectionRegionStats.objects.filter(
+                region=region,
+                collection__source=source,
+                collection__public=True,
+                total_images__gt=0,
+            )
+        }
+    region_fallback = region is not None and not regional_stats
+    if region_fallback:
+        region = None
+    if region is not None:
+        collections = [c for c in collections if c.pk in regional_stats]
 
     # Attach per-collection statistics from the denormalized stats table, and
     # sum them for the source-level totals
@@ -227,7 +240,11 @@ def source_detail(request, slug):
     georeferenced_images = 0
     will_not_georef_images = 0
     for collection in collections:
-        stats = getattr(collection, "stats", None)
+        stats = (
+            regional_stats[collection.pk]
+            if region is not None
+            else getattr(collection, "stats", None)
+        )
         collection.total_images = stats.total_images if stats else 0
         collection.georeferenced_images = stats.georeferenced_images if stats else 0
         collection.will_not_georef_images = stats.will_not_georef_images if stats else 0
@@ -236,26 +253,17 @@ def source_detail(request, slug):
         georeferenced_images += collection.georeferenced_images
         will_not_georef_images += collection.will_not_georef_images
 
-    # Order by the selected region's image count, densest first. Python's sort
-    # is stable, so collections tied on the count (including every collection
-    # when no region is selected) keep Collection.Meta's name ordering.
-    region = get_current_region(request)
+    # Stable sort retains alphabetical ordering for equal regional counts.
     if region is not None:
-        region_counts = dict(
-            CollectionRegionStats.objects.filter(
-                region=region,
-                collection_id__in=[collection.id for collection in collections],
-            ).values_list("collection_id", "total_images")
-        )
-        collections.sort(key=lambda collection: -region_counts.get(collection.id, 0))
+        collections.sort(key=lambda collection: -collection.total_images)
 
-    # Get top-rated image for Open Graph metadata
+    preview_images = Image.objects.filter(
+        collection__source=source, collection__public=True
+    )
+    if region is not None:
+        preview_images = preview_images.in_region(region)
     top_rated_entry = (
-        TopRatedImageView.objects.filter(
-            image_id__in=Image.objects.filter(
-                collection__source=source, collection__public=True
-            ).values_list("id", flat=True)
-        )
+        TopRatedImageView.objects.filter(image_id__in=preview_images.values("pk"))
         .order_by("-sort_value", "-avg_rating", "-vote_count", "image_id")
         .first()
     )
@@ -273,6 +281,8 @@ def source_detail(request, slug):
     context = {
         "source": source,
         "collections": collections,
+        "browse_region": region,
+        "region_fallback": region_fallback,
         # `collections` is a list, so the template can't call .count on it
         "collection_count": len(collections),
         "total_images": total_images,
@@ -298,31 +308,27 @@ def collection_detail(request, source_slug, collection_slug):
         public=True,
     )
 
-    # Get filter parameters from URL
-    georeference_status = (
-        request.GET.get("georeference_status", "").split(",")
-        if request.GET.get("georeference_status")
-        else []
-    )
-    start_year = request.GET.get("start_year")
-    end_year = request.GET.get("end_year")
-    with_subjects = (
-        request.GET.get("with_subjects", "").split(",")
-        if request.GET.get("with_subjects")
-        else []
-    )
-    without_subjects = (
-        request.GET.get("without_subjects", "").split(",")
-        if request.GET.get("without_subjects")
-        else []
-    )
-    no_subjects = request.GET.get("no_subjects") == "true"
+    region = get_current_region(request)
+    stats = getattr(collection, "stats", None)
+    region_fallback = False
+    if region is not None:
+        regional_stats = CollectionRegionStats.objects.filter(
+            collection=collection, region=region, total_images__gt=0
+        ).first()
+        if regional_stats is None:
+            region_fallback = True
+            region = None
+        else:
+            stats = regional_stats
+
+    scoped_images = collection.images.filter(duplicate_of__isnull=True)
+    if region is not None:
+        scoped_images = scoped_images.in_region(region)
 
     # Sort images: georeferenced images second-to-last, "will not reference" images at the end
     # Exclude duplicate images from the collection view
     images = (
-        collection.images.filter(duplicate_of__isnull=True)
-        .prefetch_related("subjects")
+        scoped_images.prefetch_related("subjects")
         .annotate(
             has_georeference=Case(
                 When(
@@ -337,68 +343,8 @@ def collection_detail(request, source_slug, collection_slug):
         .order_by("will_not_georef", "has_georeference", "id")
     )
 
-    # Apply year filtering
-    if start_year:
-        try:
-            start_year_int = int(start_year)
-            images = images.filter(
-                Q(fuzzy_start_decdate__gte=start_year_int)
-                | Q(start_decdate__gte=start_year_int)
-            )
-        except ValueError:
-            pass
-
-    if end_year:
-        try:
-            end_year_int = int(end_year)
-            images = images.filter(
-                Q(fuzzy_end_decdate__lte=end_year_int)
-                | Q(end_decdate__lte=end_year_int)
-            )
-        except ValueError:
-            pass
-
-    # Apply subject filtering
-    if no_subjects:
-        images = images.filter(subjects__isnull=True)
-    elif with_subjects:
-        # Include only images with ALL of these subjects
-        for subject_id in with_subjects:
-            if subject_id:
-                images = images.filter(subjects__id=subject_id)
-    elif without_subjects:
-        # Exclude images with ANY of these subjects
-        images = images.exclude(subjects__id__in=without_subjects)
-
-    # Apply georeference status filtering
-    if georeference_status:
-        # Build the filter conditions based on selected statuses
-        filter_conditions = Q()
-
-        if "georeferenced" in georeference_status:
-            filter_conditions |= Q(aerial=False, georeferences__isnull=False) | Q(
-                aerial=True, aerial_georeferences__isnull=False
-            )
-
-        if "pending" in georeference_status:
-            filter_conditions |= (
-                Q(georeferences__isnull=True)
-                & Q(aerial=False)
-                & Q(will_not_georef=False)
-            ) | (
-                Q(aerial_georeferences__isnull=True)
-                & Q(aerial=True)
-                & Q(will_not_georef=False)
-            )
-
-        if "will_not_georef" in georeference_status:
-            filter_conditions |= Q(will_not_georef=True)
-
-        # Apply the filter if any conditions were added
-        if filter_conditions:
-            images = images.filter(filter_conditions)
-    # Unfiltered collection statistics from the denormalized stats table
-    stats = getattr(collection, "stats", None)
+    images = apply_image_filters(request, images)
+    # Statistics describe the regional collection before grid filters.
     total_images = stats.total_images if stats else 0
     georeferenced_images = stats.georeferenced_images if stats else 0
     will_not_georef_images = stats.will_not_georef_images if stats else 0
@@ -411,9 +357,9 @@ def collection_detail(request, source_slug, collection_slug):
     # Get top-rated image for Open Graph metadata
     top_rated_entry = (
         TopRatedImageView.objects.filter(
-            image_id__in=Image.objects.filter(collection=collection).values_list(
-                "id", flat=True
-            )
+            image_id__in=(
+                scoped_images if region is not None else collection.images.all()
+            ).values("pk")
         )
         .order_by("-sort_value", "-avg_rating", "-vote_count", "image_id")
         .first()
@@ -429,9 +375,19 @@ def collection_detail(request, source_slug, collection_slug):
     if collection.description:
         rendered_description = render_markdown_safe(collection.description)
 
+    georeference_params = {"source": source.slug, "collection": collection.slug}
+    if region is not None:
+        georeference_params["region"] = region.wikidata_item.wikidata_id
+    georeference_url = (
+        reverse("images:georeference_interface") + "?" + urlencode(georeference_params)
+    )
+
     context = {
         "source": source,
         "collection": collection,
+        "browse_region": region,
+        "region_fallback": region_fallback,
+        "georeference_url": georeference_url,
         "page_obj": page_obj,
         "total_images": total_images,
         "georeferenced_images": georeferenced_images,

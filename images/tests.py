@@ -1523,8 +1523,7 @@ class CollectionRegionStatsTests(StatsEventsMixin, TestCase):
 
 
 class SourceDetailRegionOrderingTests(StatsEventsMixin, TestCase):
-    """source_detail orders collections by the selected region's image count,
-    without changing the sitewide numbers on the cards."""
+    """Source collections and their statistics follow the selected region."""
 
     @classmethod
     def setUpTestData(cls):
@@ -1565,17 +1564,40 @@ class SourceDetailRegionOrderingTests(StatsEventsMixin, TestCase):
         response = self.client.get(self.source.get_absolute_url())
         self.assertEqual(self.names(response), ["Big", "Small"])
 
-    def test_selected_region_puts_its_collections_first(self):
+    def test_selected_region_only_shows_matching_collections(self):
+        self.client.cookies[REGION_COOKIE_NAME] = "richmond"
+        response = self.client.get(self.source.get_absolute_url())
+        self.assertEqual(self.names(response), ["Small"])
+        self.assertEqual(response.context["collection_count"], 1)
+        self.assertEqual(response.context["total_images"], 1)
+
+    def test_card_numbers_and_order_use_regional_images(self):
+        self.img("big-city", collection=self.big, region=self.region)
+        self.img("small-city", collection=self.small)
         self.client.cookies[REGION_COOKIE_NAME] = "richmond"
         response = self.client.get(self.source.get_absolute_url())
         self.assertEqual(self.names(response), ["Small", "Big"])
+        by_name = {c.name: c for c in response.context["collections"]}
+        self.assertEqual(by_name["Big"].total_images, 1)
+        self.assertEqual(by_name["Small"].total_images, 2)
+        self.assertEqual(response.context["total_images"], 3)
+        self.assertEqual(response.context["pending_images"], 3)
+        self.assertIn(response.context["top_rated_image"].pk,
+                      Image.objects.in_region(self.region).values_list("pk", flat=True))
+        self.assertContains(response, "&region=Q43421")
 
-    def test_card_numbers_stay_sitewide(self):
+    def test_source_falls_back_when_no_public_collection_matches(self):
+        self.small.public = False
+        self.small.save()
         self.client.cookies[REGION_COOKIE_NAME] = "richmond"
         response = self.client.get(self.source.get_absolute_url())
-        by_name = {c.name: c for c in response.context["collections"]}
-        self.assertEqual(by_name["Big"].total_images, 3)
-        self.assertEqual(by_name["Small"].total_images, 1)
+        self.assertEqual(self.names(response), ["Big"])
+        self.assertEqual(response.context["total_images"], 3)
+        self.assertTrue(response.context["region_fallback"])
+        self.assertIsNone(response.context["browse_region"])
+        self.assertEqual(response.context["current_region"], self.region)
+        self.assertContains(response, "Src has no images in your selected region. Showing all images from Src.")
+        self.assertNotContains(response, "&region=Q43421")
 
     def test_collection_count_still_renders(self):
         """`collections` is a list, so a template calling .count on it would
@@ -1673,72 +1695,166 @@ class CollectionDetailRegionFilterTests(TestCase):
     def page_image_ids(self, response):
         return {image.id for image in response.context["page_obj"]}
 
-    def test_offers_selected_region_when_it_contains_some_images(self):
+    def refresh_stats(self):
+        CollectionStats.refresh_for([self.collection.pk])
+        CollectionRegionStats.refresh_for([self.collection.pk])
+
+    def test_selected_region_filters_images_counts_and_preview(self):
         self.client.cookies[REGION_COOKIE_NAME] = self.state.slug
+        response = self.client.get(self.collection.get_absolute_url())
+        expected = {self.city_image.pk, self.state_image.pk}
+        self.assertEqual(self.page_image_ids(response), expected)
+        self.assertEqual(response.context["total_images"], 2)
+        self.assertEqual(response.context["pending_images"], 2)
+        self.assertIn(response.context["top_rated_image"].pk, expected)
+        self.assertFalse(response.context["region_fallback"])
+        self.assertContains(response, "&amp;region=Q1370")
 
-        response = self.client.get(
-            self.collection.get_absolute_url(), {"start_year": "1900"}
-        )
+    def test_city_does_not_include_images_assigned_to_its_ancestor(self):
+        self.client.cookies[REGION_COOKIE_NAME] = self.city.slug
+        response = self.client.get(self.collection.get_absolute_url())
+        self.assertEqual(self.page_image_ids(response), {self.city_image.pk})
 
-        self.assertTrue(response.context["show_current_region_filter"])
-        self.assertEqual(response.context["current_region_image_count"], 2)
-        self.assertEqual(
-            response.context["region_filter_url"],
-            "?start_year=1900&region=Q1370",
-        )
-        self.assertContains(response, "All in Collection")
-        self.assertContains(response, "Only Virginia")
-
-    def test_does_not_offer_selected_region_for_all_or_no_images(self):
-        for region in (self.country, self.empty):
-            with self.subTest(region=region.slug):
-                self.client.cookies[REGION_COOKIE_NAME] = region.slug
+    def test_global_and_stale_cookie_keep_all_images(self):
+        for slug in ("", "deleted-region"):
+            with self.subTest(slug=slug):
+                self.client.cookies[REGION_COOKIE_NAME] = slug
                 response = self.client.get(self.collection.get_absolute_url())
-                self.assertFalse(response.context["show_current_region_filter"])
+                self.assertEqual(self.page_image_ids(response),
+                                 {self.city_image.pk, self.state_image.pk, self.other_image.pk})
+                self.assertEqual(response.context["total_images"], 3)
+                self.assertFalse(response.context["region_fallback"])
 
-    def test_region_qid_filters_by_effective_region_and_descendants(self):
-        response = self.client.get(
-            self.collection.get_absolute_url(), {"region": "Q1370"}
-        )
+    def test_no_regional_images_falls_back_without_changing_selection(self):
+        self.client.cookies[REGION_COOKIE_NAME] = self.empty.slug
+        response = self.client.get(self.collection.get_absolute_url())
+        self.assertEqual(len(self.page_image_ids(response)), 3)
+        self.assertEqual(response.context["total_images"], 3)
+        self.assertTrue(response.context["region_fallback"])
+        self.assertIsNone(response.context["browse_region"])
+        self.assertEqual(response.context["current_region"], self.empty)
+        self.assertNotIn("region=", response.context["georeference_url"])
+        self.assertContains(response, "Collection has no images in your selected region. Showing all images from Collection.")
 
-        self.assertEqual(
-            self.page_image_ids(response),
-            {self.city_image.id, self.state_image.id},
-        )
-        self.assertEqual(response.context["filtered_region"], self.state)
-        self.assertContains(response, "All in Collection")
-        self.assertContains(response, "Only Virginia")
+    def test_empty_collection_keeps_empty_state_and_banner(self):
+        self.collection.images.all().delete()
+        self.refresh_stats()
+        self.client.cookies[REGION_COOKIE_NAME] = self.city.slug
+        response = self.client.get(self.collection.get_absolute_url())
+        self.assertEqual(response.context["total_images"], 0)
+        self.assertEqual(self.page_image_ids(response), set())
+        self.assertContains(response, "has no images in your selected region")
+        self.assertContains(response, "No Images")
 
-    def test_unknown_region_qid_is_ignored(self):
-        response = self.client.get(
-            self.collection.get_absolute_url(), {"region": "Q999999999"}
-        )
+    def test_grid_filters_do_not_broaden_or_change_header_counts(self):
+        self.client.cookies[REGION_COOKIE_NAME] = self.state.slug
+        for params in ({"start_year": "1900"}, {"georeference_status": "georeferenced"},
+                       {"with_subjects": "999999"}):
+            with self.subTest(params=params):
+                response = self.client.get(self.collection.get_absolute_url(), params)
+                self.assertEqual(self.page_image_ids(response), set())
+                self.assertEqual(response.context["total_images"], 2)
+                self.assertFalse(response.context["region_fallback"])
 
-        self.assertEqual(
-            self.page_image_ids(response),
-            {self.city_image.id, self.state_image.id, self.other_image.id},
-        )
-        self.assertIsNone(response.context["filtered_region"])
+    def test_inheritance_overrides_duplicates_and_unassigned_images(self):
+        self.source.region = self.city
+        self.source.save()
+        inherited, duplicate = Image.objects.bulk_create([
+            Image(collection=self.collection, title="Inherited", permalink="https://example.com/inherited"),
+            Image(collection=self.collection, title="Duplicate", permalink="https://example.com/duplicate",
+                  duplicate_of=self.city_image),
+        ])
+        self.refresh_stats()
+        self.client.cookies[REGION_COOKIE_NAME] = self.city.slug
+        response = self.client.get(self.collection.get_absolute_url())
+        self.assertEqual(self.page_image_ids(response), {self.city_image.pk, inherited.pk})
+        self.assertEqual(response.context["total_images"], 2)
+        self.collection.region = self.other
+        self.collection.save()
+        self.refresh_stats()
+        response = self.client.get(self.collection.get_absolute_url())
+        self.assertEqual(self.page_image_ids(response), {self.city_image.pk})
+        self.source.region = None
+        self.source.save()
+        self.collection.region = None
+        self.collection.save()
+        self.refresh_stats()
+        response = self.client.get(self.collection.get_absolute_url())
+        self.assertEqual(self.page_image_ids(response), {self.city_image.pk})
 
-    def test_pagination_preserves_region_qid(self):
-        Image.objects.bulk_create(
-            [
-                Image(
-                    collection=self.collection,
-                    title=f"Additional state image {index}",
-                    permalink=f"https://img.example.com/state-{index}.jpg",
-                    region=self.state,
-                )
-                for index in range(23)
-            ]
-        )
+    def test_statistics_progress_and_map_use_the_same_region(self):
+        Georeference.objects.create(image=self.city_image, point=Point(-77.43, 37.54), confidence="high")
+        Image.objects.filter(pk=self.state_image.pk).update(will_not_georef=True)
+        self.refresh_stats()
+        self.client.cookies[REGION_COOKIE_NAME] = self.state.slug
+        response = self.client.get(self.collection.get_absolute_url())
+        self.assertEqual(response.context["total_images"], 2)
+        self.assertEqual(response.context["georeferenced_images"], 1)
+        self.assertEqual(response.context["will_not_georef_images"], 1)
+        self.assertEqual(response.context["pending_images"], 0)
+        self.assertEqual(response.context["completion_percentage"], 100)
+        self.assertContains(response, "urlParams.append('region', 'Q1370')")
+        self.assertNotContains(response, "Start Georeferencing")
+        self.client.cookies[REGION_COOKIE_NAME] = self.empty.slug
+        response = self.client.get(self.collection.get_absolute_url())
+        self.assertEqual(response.context["total_images"], 3)
+        self.assertNotContains(response, "urlParams.append('region'")
 
-        response = self.client.get(
-            self.collection.get_absolute_url(), {"region": "Q1370"}
-        )
+    def test_pagination_stays_in_region(self):
+        Image.objects.bulk_create([
+            Image(collection=self.collection, title=f"Additional state image {index}",
+                  permalink=f"https://img.example.com/state-{index}.jpg", region=self.state)
+            for index in range(23)
+        ])
+        self.refresh_stats()
+        self.client.cookies[REGION_COOKIE_NAME] = self.state.slug
+        first = self.client.get(self.collection.get_absolute_url())
+        second = self.client.get(self.collection.get_absolute_url(), {"page": 2})
+        self.assertTrue(first.context["page_obj"].has_next())
+        self.assertEqual(second.context["page_obj"].paginator.count, 25)
+        self.assertNotIn(self.other_image.pk, self.page_image_ids(first) | self.page_image_ids(second))
 
-        self.assertTrue(response.context["page_obj"].has_next())
-        self.assertContains(response, "?page=2&region=Q1370")
+    def test_regional_tiles_filter_by_inherited_region_and_ancestry(self):
+        # Keep all points identical: only the metadata region may distinguish them.
+        self.source.region = self.city
+        self.source.save()
+        Image.objects.filter(pk=self.city_image.pk).update(region=None)
+        for image in (self.city_image, self.state_image, self.other_image):
+            Georeference.objects.create(image=image, point=Point(-77.43, 37.54), confidence="high")
+        with connection.cursor() as cursor:
+            cursor.execute("REFRESH MATERIALIZED VIEW public_georeferences_mvt")
+        url = reverse("images:vector_tiles", kwargs={"v": 1, "z": 0, "x": 0, "y": 0})
+        params = {"collection": self.collection.pk}
+        global_tile = self.client.get(url, params)
+        city_tile = self.client.get(url, {**params, "region": "Q43421"})
+        image_tile = self.client.get(url, {**params, "image": self.city_image.pk})
+        state_tile = self.client.get(url, {**params, "region": "Q1370"})
+        empty_tile = self.client.get(url, {**params, "region": "Q61"})
+        self.assertEqual(city_tile.status_code, 200)
+        self.assertTrue(city_tile.content)
+        self.assertEqual(city_tile.content, image_tile.content)
+        self.assertNotEqual(state_tile.content, city_tile.content)
+        self.assertNotEqual(state_tile.content, global_tile.content)
+        self.assertEqual(empty_tile.content, b"")
+        self.assertEqual(city_tile["Cache-Control"], "public, max-age=0, s-maxage=300")
+        self.client.cookies[REGION_COOKIE_NAME] = self.city.slug
+        self.assertEqual(self.client.get(url, params).content, global_tile.content)
+        self.assertEqual(self.client.get(url, {"region": "deleted-region"}).status_code, 404)
+
+    def test_georeference_queue_combines_region_collection_and_difficulty(self):
+        Image.objects.filter(pk=self.city_image.pk).update(difficulty="easy")
+        url = reverse("images:georeference_interface")
+        params = {"source": self.source.slug, "collection": self.collection.slug,
+                  "region": "Q1370", "difficulty": "easy"}
+        response = self.client.get(url, params)
+        self.assertEqual(response.context["current_image"], self.city_image)
+        self.assertEqual(response.context["remaining_count"], 1)
+        response = self.client.get(url, {**params, "region": "Q61"})
+        self.assertIsNone(response.context["current_image"])
+        self.assertEqual(response.context["remaining_count"], 0)
+        self.assertEqual(self.client.get(url, {**params, "region": "deleted-region"}).status_code, 404)
+        response = self.client.get(url, {**params, "image": self.other_image.pk})
+        self.assertEqual(response.context["current_image"], self.other_image)
 
 
 class SourceBrowseRegionFilteringTests(StatsEventsMixin, TestCase):
@@ -1816,6 +1932,63 @@ class SourceBrowseRegionFilteringTests(StatsEventsMixin, TestCase):
 
     def test_without_a_selected_region_keeps_the_sitewide_source_list(self):
         self.assertEqual(self.source_slugs(), {"city", "empty", "other", "state"})
+
+    def test_source_cards_and_overall_stats_are_regional(self):
+        self.img("Outside override", collection=self.city_collection, region=self.other)
+        self.img("Skipped", collection=self.city_collection, will_not_georef=True)
+        self.img("Duplicate", collection=self.city_collection,
+                 duplicate_of=self.city_collection.images.first())
+        georeferenced = self.img("Georeferenced", collection=self.city_collection)
+        with self.stats_events():
+            Georeference.objects.create(image=georeferenced, point=Point(-77.43, 37.54), confidence="high")
+        Collection.objects.create(source=self.city_collection.source, name="Empty collection", slug="empty")
+        self.client.cookies[REGION_COOKIE_NAME] = self.city.slug
+        response = self.client.get(reverse("images:browse_sources"))
+        source, = response.context["sources"]
+        self.assertEqual(source.public_collections_count, 1)
+        self.assertEqual(source.total_images, 3)
+        self.assertEqual(source.georeferenced_images, 1)
+        self.assertEqual(source.will_not_georef_images, 1)
+        self.assertEqual(source.pending_images, 1)
+        overall = response.context["overall_stats"]
+        self.assertEqual(overall["total_sources"], 1)
+        self.assertEqual(overall["total_collections"], 1)
+        self.assertEqual(overall["total_images"], 2)
+        self.assertEqual(overall["total_georeferenced"], 1)
+        self.assertIn(response.context["top_rated_image"].pk,
+                      Image.objects.in_region(self.city).values_list("pk", flat=True))
+        self.assertContains(response, "&region=Q43421")
+        detail = self.client.get(self.city_collection.source.get_absolute_url())
+        self.assertEqual(detail.context["total_images"], 3)
+        self.assertContains(detail, "urlParams.append('region', 'Q43421')")
+
+    def test_private_and_zeroed_collections_do_not_create_matching_sources(self):
+        self.city_collection.public = False
+        self.city_collection.save()
+        self.img("Private", collection=self.other_collection, region=self.city)
+        self.other_collection.source.public = False
+        self.other_collection.source.save()
+        CollectionRegionStats.objects.create(collection=self.state_collection, region=self.city, total_images=0)
+        self.client.cookies[REGION_COOKIE_NAME] = self.city.slug
+        response = self.client.get(reverse("images:browse_sources"))
+        self.assertEqual(list(response.context["sources"]), [])
+        self.assertEqual(response.context["overall_stats"]["total_images"], 0)
+        self.assertContains(response, "There are no image sources with images in")
+
+    def test_empty_source_falls_back_and_keeps_empty_state(self):
+        self.client.cookies[REGION_COOKIE_NAME] = self.city.slug
+        response = self.client.get(self.empty_source.get_absolute_url())
+        self.assertTrue(response.context["region_fallback"])
+        self.assertEqual(response.context["total_images"], 0)
+        self.assertContains(response, "Empty has no images in your selected region.")
+        self.assertContains(response, "No Collections")
+
+    def test_stale_cookie_keeps_global_counts_and_list(self):
+        self.client.cookies[REGION_COOKIE_NAME] = "deleted-region"
+        response = self.client.get(reverse("images:browse_sources"))
+        self.assertEqual(len(response.context["sources"]), 4)
+        self.assertEqual(response.context["overall_stats"]["total_images"], 3)
+
 
 
 class FavoritesRegionTests(StatsEventsMixin, TestCase):

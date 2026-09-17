@@ -11,6 +11,7 @@ from django.views.decorators.http import require_http_methods
 
 from osm_auth.models import UserPreferences
 from regions.context_processors import get_current_region
+from regions.models import Region
 from subjects.models import Subject
 
 from ..models import (
@@ -114,7 +115,8 @@ def georeference_interface(request):
     # The navbar region is a preference for the default random queue, not an
     # additional restriction on links that deliberately target another queue
     # or image. Difficulty is intentionally absent here: it narrows either the
-    # regional default queue or an explicit queue below.
+    # regional default queue or an explicit queue below. Links from regional
+    # browse pages explicitly opt into a region alongside their source/collection.
     has_explicit_scope = any(
         (
             current_image is not None,
@@ -124,7 +126,13 @@ def georeference_interface(request):
             subject_slug,
         )
     )
-    if not has_explicit_scope:
+    region_qid = request.GET.get("region")
+    if region_qid:
+        region = get_object_or_404(
+            Region, wikidata_item__wikidata_id=region_qid
+        )
+        images = images.in_region(region)
+    elif not has_explicit_scope:
         region = get_current_region(request)
         if region is not None:
             images = images.in_region(region)

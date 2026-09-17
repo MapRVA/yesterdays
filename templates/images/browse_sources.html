@@ -90,7 +90,7 @@
                         {% if source.pending_images > 0 %}
                             <div class="card-footer bg-body border-top-0">
                                 <div class="d-flex justify-content-end">
-                                    <a href="{% url 'images:georeference_interface' %}?source={{ source.slug }}" class="btn btn-success btn-sm">
+                                    <a href="{% url 'images:georeference_interface' %}?source={{ source.slug }}{% if browse_region %}&region={{ browse_region.wikidata_item.wikidata_id|urlencode }}{% endif %}" class="btn btn-success btn-sm">
                                         <i class="fas fa-map-marker-alt me-1"></i>Georeference
                                     </a>
                                 </div>
@@ -103,7 +103,7 @@
                     <div class="text-center py-5">
                         <i class="fas fa-archive fa-3x text-muted mb-3"></i>
                         <h3 class="text-muted">No Sources Available</h3>
-                        <p class="text-muted">There are no image sources configured yet.</p>
+                        <p class="text-muted">{% if browse_region %}There are no image sources with images in {{ browse_region }}.{% else %}There are no image sources configured yet.{% endif %}</p>
                         {% if user.is_staff %}
                             <a href="/admin/images/source/add/" class="btn btn-primary">
                                 <i class="fas fa-plus me-2"></i>Add Source

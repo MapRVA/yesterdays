@@ -4,7 +4,10 @@ import json
 from django.contrib.gis.geos import Point
 from django.db import connection
 from django.http import HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404
 from django.urls import reverse
+
+from regions.models import Region
 
 from ..models import Image, TileVersion
 from .core import get_min_scale_for_zoom
@@ -335,8 +338,17 @@ def vector_tiles_endpoint(request, z, x, y, v=None):
     album_id = request.GET.get("album")
     georeferenced_by = request.GET.get("georeferenced_by")
 
+    region_qid = request.GET.get("region")
+    region = (
+        get_object_or_404(Region, wikidata_item__wikidata_id=region_qid)
+        if region_qid
+        else None
+    )
     is_filtered = any(
-        [image_id, collection_id, source_id, subject_id, album_id, georeferenced_by]
+        [
+            image_id, collection_id, source_id, subject_id,
+            album_id, georeferenced_by, region,
+        ]
     )
 
     mvt_data = _generate_tile(
@@ -350,6 +362,7 @@ def vector_tiles_endpoint(request, z, x, y, v=None):
         subject_id,
         album_id,
         georeferenced_by,
+        region=region,
     )
 
     return _make_tile_response(mvt_data, is_filtered, versioned=v is not None)
@@ -388,6 +401,7 @@ def _generate_tile(
     subject_id,
     album_id,
     georeferenced_by=None,
+    region=None,
 ) -> bytes:
     """Generate MVT tile from database."""
 
@@ -414,6 +428,15 @@ def _generate_tile(
             "image_id IN (SELECT i.id FROM images_image i JOIN images_collection c ON i.collection_id = c.id WHERE c.source_id = %s)"
         )
         where_params.append(source_id)
+    if region is not None:
+        effective_region_sql = Image.EFFECTIVE_REGION_SQL.format(alias="i.")
+        where_conditions.append(
+            "image_id IN (SELECT i.id FROM images_image i "
+            "WHERE i.duplicate_of_id IS NULL AND "
+            + effective_region_sql
+            + " = ANY(%s))"
+        )
+        where_params.append(region.self_and_descendant_ids())
     if subject_id:
         # Include images mapped to this subject OR to any descendant subject
         # (one whose materialized ancestor set in subjects_subjectancestor
