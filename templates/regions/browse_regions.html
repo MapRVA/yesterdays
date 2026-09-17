@@ -27,6 +27,13 @@
         </div>
         {% endif %}
     </div>
+    {% if request.user.is_staff %}
+    <div class="d-flex justify-content-end mb-3">
+        <a href="{% url 'regions:region_manage' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-cog me-1"></i>Manage Regions
+        </a>
+    </div>
+    {% endif %}
 
     {% if region_summaries %}
     <div class="region-directory-map">

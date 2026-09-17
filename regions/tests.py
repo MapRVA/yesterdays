@@ -4,6 +4,7 @@ from unittest import mock
 
 import pyoxigraph
 import requests
+from django.contrib.auth.models import User
 from django.contrib.gis.geos import Point, Polygon
 from django.core.cache import cache
 from django.db import IntegrityError
@@ -29,6 +30,7 @@ from yesterdays.views import HOME_SUBJECT_LABEL_LIMIT
 
 from .admin import RegionAdminForm
 from .context_processors import REGION_COOKIE_NAME, current_region
+from .forms import RegionForm
 from .models import Region, RegionAncestor
 from .region_ancestors import update_region_ancestors
 from .views import _AUTOCOMPLETE_LIMIT
@@ -109,6 +111,114 @@ class RegionProtectTests(TestCase):
         )
         with self.assertRaises(ProtectedError):
             region.delete()
+
+
+class RegionManageViewTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.staff = User.objects.create_user("staff", password="pw", is_staff=True)
+        cls.member = User.objects.create_user("member", password="pw")
+        cls.item = WikidataItem.objects.bulk_create(
+            [WikidataItem(wikidata_id="Q1370", title="Virginia")]
+        )[0]
+        cls.region = make_region(
+            short_name="Virginia",
+            long_name="Virginia, United States",
+            slug="virginia",
+            wikidata_item=cls.item,
+        )
+
+    def _urls(self):
+        return (
+            reverse("regions:region_manage"),
+            reverse("regions:region_create"),
+            reverse("regions:region_edit", args=[self.region.pk]),
+        )
+
+    def _edit_data(self, **overrides):
+        data = {
+            "wikidata_id": self.item.wikidata_id,
+            "short_name": self.region.short_name,
+            "long_name": self.region.long_name,
+            "slug": self.region.slug,
+            "advertise": "on",
+            "representative_image": "",
+        }
+        data.update(overrides)
+        return data
+
+    def test_management_pages_require_staff(self):
+        for url in self._urls():
+            with self.subTest(url=url):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 302)
+                self.assertIn("/admin/login/", response["Location"])
+
+        self.client.force_login(self.member)
+        for url in self._urls():
+            with self.subTest(url=url):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 302)
+                self.assertIn("/admin/login/", response["Location"])
+
+    def test_staff_can_open_manage_create_and_edit_pages(self):
+        self.client.force_login(self.staff)
+        for url in self._urls():
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url).status_code, 200)
+        response = self.client.get(reverse("regions:region_edit", args=[self.region.pk]))
+        self.assertContains(response, "region-map-bounds-map")
+        self.assertContains(response, "region-geocoder-bounds-map")
+        self.assertContains(response, "Use the rectangle tool")
+        self.assertContains(response, self.region.long_name)
+
+    def test_spatial_metadata_edit_round_trip(self):
+        self.client.force_login(self.staff)
+        url = reverse("regions:region_edit", args=[self.region.pk])
+        response = self.client.post(
+            url,
+            self._edit_data(
+                center_latitude="37.53",
+                center_longitude="-77.44",
+                map_west="-79",
+                map_south="36",
+                map_east="-75",
+                map_north="40",
+                geocoder_west="-78.8",
+                geocoder_south="36.2",
+                geocoder_east="-75.2",
+                geocoder_north="39.8",
+            ),
+        )
+        self.assertRedirects(response, url)
+        self.region.refresh_from_db()
+        self.assertEqual(self.region.map_bbox, [-79.0, 36.0, -75.0, 40.0])
+        self.assertEqual(self.region.search_bbox, [-78.8, 36.2, -75.2, 39.8])
+        self.assertAlmostEqual(self.region.coordinate_location.x, -77.44)
+        self.assertAlmostEqual(self.region.coordinate_location.y, 37.53)
+
+    def test_invalid_rectangle_returns_field_error_without_saving(self):
+        self.client.force_login(self.staff)
+        url = reverse("regions:region_edit", args=[self.region.pk])
+        response = self.client.post(
+            url,
+            self._edit_data(
+                map_west="-75",
+                map_south="40",
+                map_east="-79",
+                map_north="36",
+            ),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("map_east", response.context["form"].errors)
+        self.assertIn("map_north", response.context["form"].errors)
+        self.region.refresh_from_db()
+        self.assertIsNone(self.region.map_bounds)
+
+    def test_standalone_form_hides_raw_spatial_fields(self):
+        form = RegionForm(instance=self.region)
+        for field in form.spatial_fields():
+            self.assertEqual(field.field.widget.input_type, "hidden")
 
 
 @mock.patch("regions.admin.check_region")

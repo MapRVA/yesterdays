@@ -46,6 +46,10 @@ export default defineConfig({
           __dirname,
           "./assets/js/pages/region_index.ts",
         ),
+        region_edit: path.resolve(
+          __dirname,
+          "./assets/js/pages/region_edit.ts",
+        ),
         image_detail: path.resolve(
           __dirname,
           "./assets/js/pages/image_detail.js",

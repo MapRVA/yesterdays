@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+
+{% block title %}Manage Regions – Yesterdays{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb" class="mb-4">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'home' %}">Home</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'regions:region_index' %}">Regions</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Manage</li>
+            </ol>
+        </nav>
+
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h1 class="h3 mb-0">Manage Regions</h1>
+            <a href="{% url 'regions:region_create' %}" class="btn btn-primary">
+                <i class="fas fa-plus me-1"></i>New Region
+            </a>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th scope="col">Name</th>
+                            <th scope="col">Wikidata</th>
+                            <th scope="col">Slug</th>
+                            <th scope="col">Visibility</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for region in regions %}
+                            <tr>
+                                <td><a href="{% url 'regions:region_edit' region.pk %}">{{ region.long_name }}</a></td>
+                                <td><a href="{{ region.wikidata_item.wikidata_url }}" target="_blank" rel="noopener">{{ region.wikidata_item.wikidata_id }}</a></td>
+                                <td><code>{{ region.slug }}</code></td>
+                                <td>
+                                    {% if region.advertise %}
+                                        <span class="badge text-bg-success">Advertised</span>
+                                    {% else %}
+                                        <span class="badge text-bg-secondary">Search only</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="4" class="text-center text-muted py-4">No regions yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

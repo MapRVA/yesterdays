@@ -1,0 +1,11 @@
+/* Staff region metadata form (templates/regions/region_form.html) */
+
+[x-cloak] {
+  display: none !important;
+}
+
+.region-spatial-map {
+  width: 100%;
+  height: 52vh;
+  min-height: 340px;
+}

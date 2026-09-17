@@ -1,7 +1,11 @@
+from django.conf import settings
+from django.contrib import messages
+from django.contrib.admin.views.decorators import staff_member_required
 from django.db.models import Q
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, redirect, render
 
+from .forms import RegionForm
 from .models import Region
 from .summaries import get_region_summaries
 
@@ -32,6 +36,66 @@ def region_index(request):
             ],
         },
     )
+
+
+@staff_member_required
+def region_manage(request):
+    """Staff list of regions available for metadata editing."""
+    regions = Region.objects.select_related("wikidata_item").order_by("long_name")
+    return render(request, "regions/region_manage.html", {"regions": regions})
+
+
+def _point_data(point):
+    return [point.x, point.y] if point is not None else None
+
+
+def _render_region_form(request, form, region=None):
+    effective_point = region.coordinate_location if region is not None else None
+    wikidata_point = (
+        region.wikidata_coordinate_location if region is not None else None
+    )
+    editor_config = {
+        "protomapsApiKey": settings.PROTOMAPS_API_KEY or "",
+        "effectiveCenter": _point_data(effective_point),
+        "wikidataCenter": _point_data(wikidata_point),
+    }
+    return render(
+        request,
+        "regions/region_form.html",
+        {"form": form, "region": region, "region_editor_config": editor_config},
+    )
+
+
+@staff_member_required
+def region_create(request):
+    """Create a region, then land on its edit page."""
+    if request.method == "POST":
+        form = RegionForm(request.POST)
+        if form.is_valid():
+            region = form.save()
+            messages.success(request, f'Created region "{region.long_name}".')
+            return redirect("regions:region_edit", pk=region.pk)
+    else:
+        form = RegionForm()
+    return _render_region_form(request, form)
+
+
+@staff_member_required
+def region_edit(request, pk):
+    """Edit region metadata and spatial settings on a MapLibre map."""
+    region = get_object_or_404(
+        Region.objects.select_related("wikidata_item", "representative_image"),
+        pk=pk,
+    )
+    if request.method == "POST":
+        form = RegionForm(request.POST, instance=region)
+        if form.is_valid():
+            region = form.save()
+            messages.success(request, f'Saved region "{region.long_name}".')
+            return redirect("regions:region_edit", pk=region.pk)
+    else:
+        form = RegionForm(instance=region)
+    return _render_region_form(request, form, region)
 
 
 def _popular_regions():

@@ -1585,6 +1585,162 @@ class SourceDetailRegionOrderingTests(StatsEventsMixin, TestCase):
         self.assertNotContains(response, '<div class="h4 mb-0"></div>')
 
 
+class CollectionDetailRegionFilterTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        items = WikidataItem.objects.bulk_create(
+            [
+                WikidataItem(wikidata_id="Q43421", title="Richmond"),
+                WikidataItem(wikidata_id="Q1370", title="Virginia"),
+                WikidataItem(wikidata_id="Q1391", title="Maryland"),
+                WikidataItem(wikidata_id="Q30", title="United States"),
+                WikidataItem(wikidata_id="Q61", title="Washington, D.C."),
+            ]
+        )
+        cls.city = make_region(
+            short_name="Richmond",
+            long_name="Richmond, Virginia",
+            slug="richmond",
+            wikidata_item=items[0],
+        )
+        cls.state = make_region(
+            short_name="Virginia",
+            long_name="Virginia",
+            slug="virginia",
+            wikidata_item=items[1],
+        )
+        cls.other = make_region(
+            short_name="Maryland",
+            long_name="Maryland",
+            slug="maryland",
+            wikidata_item=items[2],
+        )
+        cls.country = make_region(
+            short_name="United States",
+            long_name="United States",
+            slug="united-states",
+            wikidata_item=items[3],
+        )
+        cls.empty = make_region(
+            short_name="Washington, D.C.",
+            long_name="Washington, D.C.",
+            slug="washington-dc",
+            wikidata_item=items[4],
+        )
+        RegionAncestor.objects.bulk_create(
+            [
+                RegionAncestor(region=cls.city, ancestor=items[1]),
+                RegionAncestor(region=cls.city, ancestor=items[3]),
+                RegionAncestor(region=cls.state, ancestor=items[3]),
+                RegionAncestor(region=cls.other, ancestor=items[3]),
+            ]
+        )
+
+        cls.source = Source.objects.create(
+            name="Src", slug="src", url="https://example.com", description=""
+        )
+        cls.collection = Collection.objects.create(
+            source=cls.source,
+            name="Collection",
+            slug="collection",
+            url="https://example.com/collection",
+        )
+        cls.city_image, cls.state_image, cls.other_image = Image.objects.bulk_create(
+            [
+                Image(
+                    collection=cls.collection,
+                    title="City image",
+                    permalink="https://img.example.com/city.jpg",
+                    region=cls.city,
+                ),
+                Image(
+                    collection=cls.collection,
+                    title="State image",
+                    permalink="https://img.example.com/state.jpg",
+                    region=cls.state,
+                ),
+                Image(
+                    collection=cls.collection,
+                    title="Other image",
+                    permalink="https://img.example.com/other.jpg",
+                    region=cls.other,
+                ),
+            ]
+        )
+        CollectionStats.refresh_for([cls.collection.pk])
+        CollectionRegionStats.refresh_for([cls.collection.pk])
+
+    def page_image_ids(self, response):
+        return {image.id for image in response.context["page_obj"]}
+
+    def test_offers_selected_region_when_it_contains_some_images(self):
+        self.client.cookies[REGION_COOKIE_NAME] = self.state.slug
+
+        response = self.client.get(
+            self.collection.get_absolute_url(), {"start_year": "1900"}
+        )
+
+        self.assertTrue(response.context["show_current_region_filter"])
+        self.assertEqual(response.context["current_region_image_count"], 2)
+        self.assertEqual(
+            response.context["region_filter_url"],
+            "?start_year=1900&region=Q1370",
+        )
+        self.assertContains(response, "All in Collection")
+        self.assertContains(response, "Only Virginia")
+
+    def test_does_not_offer_selected_region_for_all_or_no_images(self):
+        for region in (self.country, self.empty):
+            with self.subTest(region=region.slug):
+                self.client.cookies[REGION_COOKIE_NAME] = region.slug
+                response = self.client.get(self.collection.get_absolute_url())
+                self.assertFalse(response.context["show_current_region_filter"])
+
+    def test_region_qid_filters_by_effective_region_and_descendants(self):
+        response = self.client.get(
+            self.collection.get_absolute_url(), {"region": "Q1370"}
+        )
+
+        self.assertEqual(
+            self.page_image_ids(response),
+            {self.city_image.id, self.state_image.id},
+        )
+        self.assertEqual(response.context["filtered_region"], self.state)
+        self.assertContains(response, "All in Collection")
+        self.assertContains(response, "Only Virginia")
+
+    def test_unknown_region_qid_is_ignored(self):
+        response = self.client.get(
+            self.collection.get_absolute_url(), {"region": "Q999999999"}
+        )
+
+        self.assertEqual(
+            self.page_image_ids(response),
+            {self.city_image.id, self.state_image.id, self.other_image.id},
+        )
+        self.assertIsNone(response.context["filtered_region"])
+
+    def test_pagination_preserves_region_qid(self):
+        Image.objects.bulk_create(
+            [
+                Image(
+                    collection=self.collection,
+                    title=f"Additional state image {index}",
+                    permalink=f"https://img.example.com/state-{index}.jpg",
+                    region=self.state,
+                )
+                for index in range(23)
+            ]
+        )
+
+        response = self.client.get(
+            self.collection.get_absolute_url(), {"region": "Q1370"}
+        )
+
+        self.assertTrue(response.context["page_obj"].has_next())
+        self.assertContains(response, "?page=2&region=Q1370")
+
+
 class SourceBrowseRegionFilteringTests(StatsEventsMixin, TestCase):
     """The source browse page only lists sources with images in its region."""
 
