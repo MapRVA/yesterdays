@@ -120,7 +120,13 @@ export function clearFormAndGetNext(ctx: GeoreferenceContext): void {
   // Reset confidence validation
   if (els.confidenceHighRadio) els.confidenceHighRadio.disabled = false;
 
-  // Scroll to top and reload to get next image
+  // Scroll to top and reload to get next image. A reload re-applies the
+  // scroll offset saved on this history entry, which on mobile drops the next
+  // image partway down the page (and lands late, once the viewer and map have
+  // grown the document), so opt out of restoration for this entry first.
+  if ("scrollRestoration" in history) {
+    history.scrollRestoration = "manual";
+  }
   window.scrollTo(0, 0);
 
   // Remove current_image parameter if present to avoid redirecting back to
