@@ -38,30 +38,18 @@ PICTURE_CACHE_SECONDS = 900
 HERO_MIN_STARS = 4.5
 HERO_POOL_CACHE_KEY = "global_home_hero_pool_v1"
 
-# The invitation band caches a *pool* rather than a photograph, because two
-# visitors must not be handed the same one to place: whoever submits second
-# is told the image is already georeferenced (anonymously they can't submit
-# at all, see images.views.georeference.georeference_image), which is a poor
-# way to meet a first-time contributor. Fifty candidates is deep enough that
-# a collision is rare while the expensive selection still runs once per
-# period rather than once per request — the homepage is what crawlers hit.
-INVITE_POOL_CACHE_KEY = "global_home_invite_pool_v1"
-INVITE_POOL_SIZE = 50
-
-# How long either band remembers having nothing to offer. A photograph pool
-# can hold for the full period, but its emptiness means nobody has marked
-# an image easy (or rated one highly enough) yet, which stops being true the
-# moment someone does — and the band would otherwise sit in its fallback for
-# the rest of the period. The cache is per-process LocMem, so a save-time
-# invalidation couldn't reach the other workers anyway; a short retry is the
-# honest fix.
+# How long the hero remembers having nothing to offer. A full pool can hold
+# for the whole period, but an empty one means nobody has rated an image
+# highly enough yet, which stops being true the moment someone does — and
+# the band would otherwise sit in its fallback for the rest of the period.
+# The cache is per-process LocMem, so a save-time invalidation couldn't
+# reach the other workers anyway; a short retry is the honest fix.
 POOL_MISS_CACHE_SECONDS = 60
 
-# A pooled candidate may have changed since the pool was built — placed by
-# someone else, in the invitation's case; deleted, made private, or stripped
-# of its georeference, in the hero's — so each draw is checked and retried.
-# Bounded because each retry is a query, and an exhausted draw just means
-# the band shows its copy alone.
+# A pooled candidate may have changed since the pool was built — deleted,
+# made private, or stripped of its georeference — so each draw is checked
+# and retried. Bounded because each retry is a query, and an exhausted draw
+# just falls through to the fallback.
 POOL_DRAW_ATTEMPTS = 3
 
 # The global homepage's activity band is a three-card panel laid out beside
@@ -263,93 +251,6 @@ def get_hero_feature():
     }
 
 
-def _invite_pool():
-    """Photographs the homepage may offer up for placing, flattened and cached.
-
-    Easy difficulty only: the visitor drawing one of these is very likely
-    about to attempt their first georeference, and it should be answerable
-    from the picture itself. Otherwise the filters are the georeference
-    interface's own definition of "still needs placing", so anything offered
-    here is a photograph it would have handed out anyway.
-
-    Empty when the site has no easy photograph waiting — difficulty is
-    admin-assigned and nullable, so that's an ordinary state for a young
-    site rather than an error. Held only briefly in that case, since it
-    stops being true the moment an admin labels something.
-    """
-    cached = cache.get(INVITE_POOL_CACHE_KEY)
-    if cached is not None:
-        return cached
-
-    candidates = (
-        Image.objects.filter(
-            difficulty="easy",
-            georeferences__isnull=True,
-            will_not_georef=False,
-            aerial=False,
-            duplicate_of__isnull=True,
-            collection__public=True,
-            collection__source__public=True,
-        )
-        .exclude(thumbnail__isnull=True)
-        .exclude(thumbnail="")
-        .select_related("collection__source")
-        # Randomly, so the pool itself turns over between periods and the
-        # same fifty photographs aren't offered all week.
-        .order_by("?")[:INVITE_POOL_SIZE]
-    )
-    pool = [
-        {
-            "id": image.id,
-            "title": image.title,
-            "url": image.get_absolute_url(),
-            "thumbnail": image.thumbnail,
-            "source_name": image.collection.source.name,
-            "source_url": image.collection.source.get_absolute_url(),
-        }
-        for image in candidates
-    ]
-
-    cache.set(
-        INVITE_POOL_CACHE_KEY,
-        pool,
-        PICTURE_CACHE_SECONDS if pool else POOL_MISS_CACHE_SECONDS,
-    )
-    return pool
-
-
-def get_invite_image():
-    """One unplaced photograph to hand this visitor, for the homepage's invitation.
-
-    Where the hero shows a *finished* georeference, the band below it offers
-    an unfinished one and asks for it. Drawn per request rather than cached,
-    so two people reading the homepage at the same moment are unlikely to be
-    sent to the same photograph — the pool is what's cached, and the draw
-    costs one existence check against a pool entry that may have been placed
-    since.
-
-    None when the pool is empty, or in the unlikely event that every draw
-    lands on an already-placed photograph. The band then renders as copy
-    alone pointing at the interface's own random selection: the explanation
-    is worth keeping even when the invitation isn't available.
-    """
-    pool = list(_invite_pool())
-
-    for _ in range(POOL_DRAW_ATTEMPTS):
-        if not pool:
-            return None
-
-        candidate = random.choice(pool)
-        if not Georeference.objects.filter(image_id=candidate["id"]).exists():
-            return candidate
-
-        # Only this draw's copy of the pool: rewriting the cached one would
-        # renew its lifetime, and it's per-process anyway.
-        pool = [entry for entry in pool if entry["id"] != candidate["id"]]
-
-    return None
-
-
 def get_subjects_feature(site_settings):
     """The photograph the subjects band labels, and what is tagged in it.
 
@@ -440,7 +341,6 @@ def home(request):
             {
                 "page_title": "Home",
                 "hero_feature": get_hero_feature(),
-                "invite_image": get_invite_image(),
                 # Read straight through, never cached: the stats tables are
                 # signal-maintained precisely so these numbers carry no lag.
                 "overall_stats": get_overall_stats(),
