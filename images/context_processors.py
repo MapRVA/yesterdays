@@ -1,8 +1,9 @@
 import json
 
 from django.conf import settings
+from django.urls import reverse
 
-from maps.models import LayerCollection, MapLayer
+from maps.models import MapLayer
 
 from .models import SiteSettings
 from .views import get_tile_version
@@ -23,29 +24,14 @@ def _build_map_layers_data():
             layer_data["attribution"] = layer.attribution
         primary_layers.append(layer_data)
 
-    collections_data = []
-    for collection in LayerCollection.objects.prefetch_related("layers").all():
-        collection_data = {
-            "name": collection.name,
-            "description": collection.description,
-            "layers": [],
-        }
-        for layer in collection.layers.all():
-            layer_data = {
-                "name": layer.name,
-                "type": layer.type,
-                "url": layer.url,
-            }
-            if layer.attribution:
-                layer_data["attribution"] = layer.attribution
-            if layer.description:
-                layer_data["description"] = layer.description
-            collection_data["layers"].append(layer_data)
-        collections_data.append(collection_data)
-
     return {
         "primary_layers": primary_layers,
-        "collections": collections_data,
+        "overlay_tiles": {
+            "url": reverse("maps:layer_extent_tile", args=[0, 0, 0]).replace(
+                "/0/0/0.mvt", "/{z}/{x}/{y}.mvt"
+            ),
+            "maxzoom": settings.MAP_LAYER_TILE_MAX_ZOOM,
+        },
     }
 
 

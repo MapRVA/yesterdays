@@ -33,7 +33,6 @@ export function createLayerOffcanvas(mapId: string): LayerOffcanvas {
       <div class="offcanvas-body">
         <h6 class="text-muted small text-uppercase mb-2">Base Layers</h6>
         <div class="list-group list-group-flush base-layers-list"></div>
-        <hr class="my-3 border-2 opacity-50">
         <div class="overlay-layers-container"></div>
       </div>
     `;
@@ -82,7 +81,7 @@ export function populateCollectionSubmenus(
   collections: LayerCollectionData[],
   onSelect: (overlay: OverlayLayerConfig) => void,
 ): void {
-  let layerIndex = 0;
+  overlayContainer.replaceChildren();
 
   for (const collection of collections) {
     if (collection.layers.length === 0) continue;
@@ -97,13 +96,14 @@ export function populateCollectionSubmenus(
 
     for (const layer of collection.layers) {
       const overlay: OverlayLayerConfig = {
-        layerId: `overlay-${layerIndex}`,
+        layer,
+        collection: { id: collection.id, name: collection.name },
+        layerId: `overlay-${layer.id}`,
         tileUrl: layer.url,
         title: layer.name,
         tileType: layer.type || "pmtiles",
         attribution: layer.attribution || "",
       };
-      layerIndex++;
 
       const button = document.createElement("button");
       button.type = "button";

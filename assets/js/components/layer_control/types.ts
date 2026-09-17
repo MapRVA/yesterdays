@@ -4,8 +4,8 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 export type MapLayerType = "pmtiles" | "xyz" | "style";
 
 // Shape of window.MAP_LAYERS_DATA, serialized into templates/base.html by
-// images/context_processors.py::_build_map_layers_data(). Every field is
-// optional here because the payload is read defensively at runtime.
+// images/context_processors.py::_build_map_layers_data(), and the collection
+// metadata fetched from its overlay_tiles as the viewport changes.
 export interface PrimaryLayerData {
   slug: string;
   name: string;
@@ -16,6 +16,7 @@ export interface PrimaryLayerData {
 }
 
 export interface OverlayLayerData {
+  id: number;
   name: string;
   type: MapLayerType;
   url: string;
@@ -24,14 +25,19 @@ export interface OverlayLayerData {
 }
 
 export interface LayerCollectionData {
+  id: number;
   name: string;
-  description: string;
   layers: OverlayLayerData[];
+}
+
+export interface OverlayTilesData {
+  url: string;
+  maxzoom: number;
 }
 
 export interface MapLayersData {
   primary_layers?: PrimaryLayerData[];
-  collections?: LayerCollectionData[];
+  overlay_tiles?: OverlayTilesData;
 }
 
 export interface LayerControlOptions {
@@ -80,6 +86,8 @@ export type BaseLayer = StyleBaseLayer | RasterBaseLayer;
 // A user-selectable tile overlay, held in memory so it can be re-added after a
 // style swap destroys the map's sources and layers.
 export interface OverlayLayerConfig {
+  layer: OverlayLayerData;
+  collection: Pick<LayerCollectionData, "id" | "name">;
   layerId: string;
   tileUrl: string;
   title: string;

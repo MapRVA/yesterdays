@@ -219,6 +219,11 @@ CACHES = {
     },
 }
 
+# Layer discovery overzooms this coarse tileset; per-layer min_zoom is checked
+# in the browser. Tile responses are cached by browsers and configured CDNs.
+MAP_LAYER_TILE_MAX_ZOOM = 9
+MAP_LAYER_TILE_CACHE_SECONDS = int(os.getenv("MAP_LAYER_TILE_CACHE_SECONDS", "3600"))
+
 # Read database password from mounted secret if available
 db_password_file = os.getenv("DB_PASSWORD_FILE", "/etc/georef-db/password")
 if os.path.exists(db_password_file):

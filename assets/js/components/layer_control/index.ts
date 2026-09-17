@@ -2,10 +2,9 @@
  * LayerControl - A shared MapLibre control for switching between base layers
  * and overlays.
  *
- * Base layers and overlays come from window.MAP_LAYERS_DATA (set by the
- * images.context_processors.site_settings context processor). Primary layers
- * (no collection) become base layer options; layers inside a collection become
- * overlay options.
+ * Base layers and the discovery tileset come from window.MAP_LAYERS_DATA.
+ * Collection overlays are fetched as the camera changes; the active overlay
+ * remains available regardless of its extent or minimum zoom.
  *
  * Usage:
  *   import { LayerControl } from "../components/layer_control";
@@ -63,6 +62,11 @@ import {
   hideOtherOverlayLayers,
 } from "./overlay_layers";
 import { showSwapIndicator } from "./swap_indicator";
+import {
+  TileOverlays,
+  withActiveOverlay,
+  type OverlayLoadState,
+} from "./tile_overlays";
 import type {
   BaseLayer,
   ImageDisplayStyle,
@@ -80,6 +84,9 @@ export class LayerControl implements IControl {
 
   private baseLayers: Record<string, BaseLayer> = {};
   private collections: LayerCollectionData[] = [];
+  private tileOverlays: TileOverlays | undefined;
+  private overlayLoadState: OverlayLoadState = "loading";
+  private collectionContainer!: HTMLElement;
   private currentBaseLayer: string | null = null;
   private currentOverlay: OverlayLayerConfig | null = null;
   private readonly initialStyle: string | StyleSpecification;
@@ -153,7 +160,7 @@ export class LayerControl implements IControl {
     if (map.loaded()) {
       this.initializeLayers();
     } else {
-      map.on("load", () => this.initializeLayers());
+      map.once("load", this.initializeLayers);
     }
 
     this.renderLayerLabel();
@@ -162,6 +169,8 @@ export class LayerControl implements IControl {
   }
 
   onRemove(): void {
+    this.map?.off("load", this.initializeLayers);
+    this.tileOverlays?.destroy();
     if (this.fullscreenChangeHandler) {
       document.removeEventListener(
         "fullscreenchange",
@@ -203,7 +212,7 @@ export class LayerControl implements IControl {
     }
   }
 
-  private initializeLayers(): void {
+  private initializeLayers = (): void => {
     const data = window.MAP_LAYERS_DATA;
     if (!data) {
       console.error("MAP_LAYERS_DATA not found on window");
@@ -214,7 +223,6 @@ export class LayerControl implements IControl {
     if (data.primary_layers && data.primary_layers.length > 0) {
       this.buildBaseLayers(data.primary_layers);
     }
-    this.collections = data.collections ?? [];
 
     populateBaseLayerButtons(
       this.offcanvas.baseLayersList,
@@ -227,9 +235,43 @@ export class LayerControl implements IControl {
       },
     );
 
+    this.collectionContainer = document.createElement("div");
+    this.offcanvas.overlayContainer.appendChild(this.collectionContainer);
     this.populateOverlays();
+
+    // Image controls are built once, so refreshing collection choices preserves
+    // the display style, point size, and keyboard focus in this separate panel.
+    if (this.options.showImageLayerToggle) {
+      this.imagePanel = buildImageLayerPanel(this.offcanvas.overlayContainer, {
+        mapId: this.mapId,
+        initialRadius: this.simpleCircleRadius,
+        onToggleImageLayers: () => {
+          this.toggleImageLayers();
+          this.offcanvas.instance.hide();
+        },
+        onStyleChange: (style) => this.setImageDisplayStyle(style),
+        onRadiusChange: (radius) => this.setSimpleCircleRadius(radius),
+      });
+    }
+    if (this.map && data.overlay_tiles) {
+      this.tileOverlays = new TileOverlays(
+        this.map,
+        data.overlay_tiles,
+        (collections, state) => {
+          this.collections = collections;
+          this.overlayLoadState = state;
+          this.populateOverlays();
+        },
+      );
+    } else {
+      console.error(
+        "MAP_LAYERS_DATA.overlay_tiles is missing; layer discovery is disabled",
+      );
+      this.overlayLoadState = "error";
+      this.populateOverlays();
+    }
     this.renderLayerLabel();
-  }
+  };
 
   /**
    * Build base layers from the primary_layers payload. The initial style-type
@@ -294,27 +336,35 @@ export class LayerControl implements IControl {
   }
 
   private populateOverlays(): void {
+    const container = this.collectionContainer;
     populateCollectionSubmenus(
-      this.offcanvas.overlayContainer,
-      this.collections,
+      container,
+      withActiveOverlay(this.collections, this.currentOverlay),
       (overlay) => {
         this.switchToOverlayLayer(overlay);
         this.offcanvas.instance.hide();
       },
     );
 
-    if (this.options.showImageLayerToggle) {
-      this.imagePanel = buildImageLayerPanel(this.offcanvas.overlayContainer, {
-        mapId: this.mapId,
-        initialRadius: this.simpleCircleRadius,
-        onToggleImageLayers: () => {
-          this.toggleImageLayers();
-          this.offcanvas.instance.hide();
-        },
-        onStyleChange: (style) => this.setImageDisplayStyle(style),
-        onRadiusChange: (radius) => this.setSimpleCircleRadius(radius),
-      });
+    // With no collection layers in view the menu only offers base layers, so
+    // there is nothing to say; only loading and failures get a status line.
+    if (this.overlayLoadState !== "ready") {
+      const message = document.createElement("p");
+      message.className = "text-muted small mt-3";
+      message.setAttribute("role", "status");
+      message.textContent = this.overlayLoadState === "loading"
+        ? "Loading layers in view…"
+        : "Error fetching additional layers";
+      container.appendChild(message);
     }
+
+    // Separate this section from the base layers only when it has content.
+    if (container.firstChild) {
+      const divider = document.createElement("hr");
+      divider.className = "my-3 border-2 opacity-50";
+      container.prepend(divider);
+    }
+    this.updateSelection();
   }
 
   private switchToBaseLayer(newLayerKey: string): void {
@@ -492,7 +542,7 @@ export class LayerControl implements IControl {
     if (this.currentOverlay?.layerId === layerId) {
       map.setLayoutProperty(layerId, "visibility", "none");
       this.currentOverlay = null;
-      this.updateSelection();
+      this.populateOverlays();
       return;
     }
 
@@ -510,7 +560,7 @@ export class LayerControl implements IControl {
 
     map.setLayoutProperty(layerId, "visibility", "visible");
     this.currentOverlay = overlay;
-    this.updateSelection();
+    this.populateOverlays();
   }
 
   private toggleImageLayers(): void {

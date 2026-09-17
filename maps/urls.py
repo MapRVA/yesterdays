@@ -6,6 +6,11 @@ app_name = "maps"
 
 urlpatterns = [
     path("", views.browse_maps, name="browse_maps"),
+    path(
+        "tiles/<int:z>/<int:x>/<int:y>.mvt",
+        views.layer_extent_tile,
+        name="layer_extent_tile",
+    ),
     # Staff management pages sit ahead of the slug catch-all so the ordering
     # is deliberate rather than accidental.
     path("manage/", views.layer_manage, name="layer_manage"),

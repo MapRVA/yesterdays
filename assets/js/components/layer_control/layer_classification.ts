@@ -1,6 +1,7 @@
 // Decides which layers count as overlays (they must stay above user-selected
 // tile layers) and where a newly added tile layer belongs in the stack.
 import type { Map as MapLibreMap } from "maplibre-gl";
+import { DISCOVERY_LAYER_IDS } from "./tile_overlays";
 import { LAYER_IDS } from "../map_display/layer_ids";
 
 // Overlay layers owned by other pages: the georeference interfaces (pins,
@@ -17,6 +18,7 @@ const PAGE_OVERLAY_LAYER_IDS = [
 
 const ALWAYS_OVERLAY_LAYER_IDS: readonly string[] = [
   ...Object.values(LAYER_IDS),
+  ...DISCOVERY_LAYER_IDS,
   ...PAGE_OVERLAY_LAYER_IDS,
 ];
 

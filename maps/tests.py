@@ -5,8 +5,10 @@ from django.contrib.gis.geos import Polygon
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
-from django.test import TestCase, TransactionTestCase
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
+
+from images.context_processors import _build_map_layers_data
 
 from .forms import MapLayerForm
 from .models import LayerCollection, MapLayer
@@ -21,6 +23,83 @@ def example_polygon():
     polygon = Polygon.from_bbox((-77.48, 37.50, -77.40, 37.58))
     polygon.srid = 4326
     return polygon
+
+
+class LayerExtentTileTests(TestCase):
+    def setUp(self):
+        self.collection = LayerCollection.objects.create(name="Local maps", slug="local")
+        self.layer = MapLayer.objects.create(
+            name="Local sheet", slug="local", url=PMTILES_URL,
+            collection=self.collection, polygon=example_polygon(), min_zoom=10,
+        )
+
+    def tile(self, z=9, x=145, y=198, **headers):
+        return self.client.get(
+            reverse("maps:layer_extent_tile", args=[z, x, y]), **headers
+        )
+
+    def test_maxzoom_includes_layers_with_higher_minimum_zoom(self):
+        response = self.tile()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/vnd.mapbox-vector-tile")
+        # MVT properties are encoded in the tile's string dictionary.
+        for value in (b"layer_extents", b"Local sheet", b"Local maps", b"min_zoom"):
+            self.assertIn(value, response.content)
+        self.layer.min_zoom = 24
+        self.layer.save()
+        self.assertIn(b"Local sheet", self.tile().content)
+
+    def test_lower_zoom_tiles_filter_by_minimum_zoom(self):
+        self.assertEqual(self.tile(z=8, x=72, y=99).content, b"")
+        self.layer.min_zoom = 8
+        self.layer.save()
+        self.assertIn(b"Local sheet", self.tile(z=8, x=72, y=99).content)
+
+    def test_only_intersecting_collection_layers_are_included(self):
+        MapLayer.objects.create(name="Global basemap", slug="global", url=PMTILES_URL)
+        self.assertNotIn(b"Global basemap", self.tile().content)
+        self.assertEqual(self.tile(x=0, y=0).content, b"")
+        self.layer.polygon = Polygon.from_bbox((10, 10, 11, 11))
+        self.layer.save()
+        self.assertEqual(self.tile().content, b"")
+
+    def test_tiny_polygons_are_retained_for_discovery(self):
+        self.layer.polygon = Polygon.from_bbox((-77.440001, 37.540001, -77.44, 37.540002))
+        self.layer.save()
+        self.assertIn(b"Local sheet", self.tile().content)
+
+    @override_settings(MAP_LAYER_TILE_CACHE_SECONDS=600)
+    def test_cache_headers_and_conditional_requests(self):
+        response = self.tile()
+        self.assertIn("public", response["Cache-Control"])
+        self.assertIn("max-age=600", response["Cache-Control"])
+        self.assertEqual(self.tile(HTTP_IF_NONE_MATCH=response["ETag"]).status_code, 304)
+        self.layer.name = "Renamed sheet"
+        self.layer.save()
+        changed = self.tile(HTTP_IF_NONE_MATCH=response["ETag"])
+        self.assertEqual(changed.status_code, 200)
+        self.assertNotEqual(changed["ETag"], response["ETag"])
+        empty = self.tile(x=0, y=0)
+        self.assertIn("max-age=600", empty["Cache-Control"])
+
+    def test_page_payload_contains_only_basemaps_and_coarse_tileset(self):
+        with self.assertNumQueries(1):
+            data = _build_map_layers_data()
+        self.assertNotIn("collections", data)
+        self.assertEqual(data["overlay_tiles"], {
+            "url": "/layers/tiles/{z}/{x}/{y}.mvt", "maxzoom": 9,
+        })
+        self.assertNotIn(
+            self.layer.name, [layer["name"] for layer in data["primary_layers"]]
+        )
+
+    def test_invalid_tile_coordinates_and_methods(self):
+        for z, x, y in ((10, 0, 0), (0, 1, 0), (9, 512, 0), (9, 0, 512), (999, 0, 0)):
+            with self.subTest(z=z, x=x, y=y):
+                self.assertEqual(self.tile(z, x, y).status_code, 404)
+        self.assertEqual(self.client.post(
+            reverse("maps:layer_extent_tile", args=[9, 145, 198])
+        ).status_code, 405)
 
 
 class MapLayerExtentMigrationTests(TransactionTestCase):
