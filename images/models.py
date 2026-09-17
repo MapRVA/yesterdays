@@ -2201,6 +2201,15 @@ class ImageOfTheDay(models.Model):
         run = (cls.next_available_day(region, start=today) - today).days
         return max(run - 1, 0)
 
+    @classmethod
+    def ever_featured(cls, region):
+        """Whether ``region`` has ever had an image queued or featured.
+
+        A region that has never used the feature has nothing to warn about —
+        an empty queue there is the expected state, not a lapse.
+        """
+        return cls._in_region(region).exists()
+
     @staticmethod
     def queue_badge_class(days_queued):
         """Bootstrap background class for a queue this many days deep.

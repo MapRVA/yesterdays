@@ -790,6 +790,67 @@ class FeaturedImageQueueViewTests(TestCase):
         self.assertIsNone(response.context["entries"])
 
 
+class FeaturedQueueNavbarAlertTests(TestCase):
+    """The navbar notification dot flagging a low featured-image queue."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.staff = User.objects.create_user(
+            username="staff", first_name="Sam", is_staff=True
+        )
+        source = Source.objects.create(
+            name="Src", slug="src", url="https://example.com", description=""
+        )
+        collection = Collection.objects.create(
+            source=source, name="Col", slug="col", url="https://example.com"
+        )
+        cls.image = Image.objects.create(
+            collection=collection,
+            title="Broad Street",
+            permalink="https://img.example.com/broad.jpg",
+        )
+        item = WikidataItem.objects.create(wikidata_id="Q43421", title="Richmond")
+        cls.region = make_region(
+            short_name="Richmond",
+            long_name="Richmond, Virginia",
+            slug="richmond",
+            wikidata_item=item,
+        )
+
+    def setUp(self):
+        self.client.force_login(self.staff)
+        self.client.cookies[REGION_COOKIE_NAME] = "richmond"
+
+    def _context(self):
+        response = self.client.get(reverse("images:featured_image_queue"))
+        return response.context
+
+    def test_never_featured_region_gets_no_dot(self):
+        # No queue and no history: the feature simply isn't in use here, so
+        # there is nothing to nag about.
+        self.assertIsNone(self._context().get("featured_queue_badge_class"))
+
+    def test_lapsed_queue_gets_a_dot(self):
+        # A region that has featured before but has run dry is a real lapse.
+        ImageOfTheDay.objects.create(
+            image=self.image,
+            region=self.region,
+            day=timezone.localdate() - datetime.timedelta(days=1),
+        )
+        context = self._context()
+        self.assertEqual(context["featured_queue_days"], 0)
+        self.assertEqual(context["featured_queue_badge_class"], "bg-danger")
+
+    def test_healthy_queue_gets_no_dot(self):
+        for offset in range(8):
+            ImageOfTheDay.objects.create(
+                image=self.image,
+                region=self.region,
+                day=timezone.localdate() + datetime.timedelta(days=offset),
+            )
+        self.assertIsNone(self._context()["featured_queue_badge_class"])
+
+
 class GeoreferenceRegionQueueTests(TestCase):
     """The navbar region scopes only the default contribution queue."""
 

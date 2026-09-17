@@ -69,12 +69,18 @@ def featured_image_queue_alert(request):
 
     Only staff see the Admin menu, so everyone else skips the queries.
     ``featured_queue_badge_class`` is None when there is nothing to flag.
+
+    Regions that have never featured an image are skipped too: an empty
+    queue is that region's normal state, so nagging about it would leave the
+    dot permanently lit for anyone who simply isn't using the feature.
     """
     user = getattr(request, "user", None)
     if not (user and user.is_staff):
         return {}
     region = get_current_region(request)
     if region is None:
+        return {}
+    if not ImageOfTheDay.ever_featured(region):
         return {}
     days_queued = ImageOfTheDay.days_queued(region)
     return {
