@@ -1,7 +1,9 @@
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
-from django.db.models import Q
+from django.contrib.postgres.search import TrigramWordSimilarity
+from django.db.models import Case, IntegerField, Q, Value, When
+from django.db.models.functions import Greatest, Lower
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
@@ -15,6 +17,16 @@ _MAX_AUTOCOMPLETE_QUERY_LEN = 100
 # Keep the navbar dropdown focused while the full directory remains available
 # through the "Explore all regions" link.
 _AUTOCOMPLETE_LIMIT = 3
+
+# Minimum ``word_similarity(query, name)`` for a fuzzy-only hit, and the
+# shortest query the fuzzy branch runs for. Both match the subject-tagging
+# autocomplete (subjects/views.py): the threshold sits below Postgres's 0.3
+# default so a transposition in a ~6-letter word still matches
+# (``word_similarity('chruch', 'Church Hill')`` is about 0.27), and one
+# character is too little to say anything about a name, so single-character
+# queries stay on literal matching alone.
+_AUTOCOMPLETE_WORD_SIMILARITY_THRESHOLD = 0.25
+_MIN_FUZZY_QUERY_LEN = 2
 
 
 def region_index(request):
@@ -131,8 +143,15 @@ def region_autocomplete(request):
 
     An empty or missing ``q`` returns the three most-georeferenced
     advertised regions, which the dropdown heads with "Popular". A query
-    instead filters every region by either display name, alphabetically,
-    before that same cap is applied.
+    instead searches every region by either display name, fuzzily: a
+    literal match (exact, then prefix, then substring) on either name
+    always outranks a trigram-only hit, so a typo still finds a place
+    without pushing the name that was actually typed down the list.
+
+    Word similarity is measured against both names and the better of the
+    two wins, since a visitor may type either the compact navbar name or
+    the disambiguated one. It also orders within a tier, so a whole-word
+    match leads the prefix matches that merely start the same way.
     """
     query = request.GET.get("q", "").strip()
     if len(query) > _MAX_AUTOCOMPLETE_QUERY_LEN:
@@ -141,8 +160,36 @@ def region_autocomplete(request):
     if not query:
         return JsonResponse(_popular_regions(), safe=False)
 
-    regions = Region.objects.select_related("wikidata_item").filter(
-        Q(short_name__icontains=query) | Q(long_name__icontains=query)
+    literal = Q(short_name__icontains=query) | Q(long_name__icontains=query)
+    matches = literal
+    if len(query) >= _MIN_FUZZY_QUERY_LEN:
+        matches |= Q(similarity__gte=_AUTOCOMPLETE_WORD_SIMILARITY_THRESHOLD)
+
+    regions = (
+        Region.objects.annotate(
+            similarity=Greatest(
+                TrigramWordSimilarity(query, "short_name"),
+                TrigramWordSimilarity(query, "long_name"),
+            ),
+            match_rank=Case(
+                When(
+                    Q(short_name__iexact=query) | Q(long_name__iexact=query),
+                    then=Value(0),
+                ),
+                When(
+                    Q(short_name__istartswith=query)
+                    | Q(long_name__istartswith=query),
+                    then=Value(1),
+                ),
+                When(literal, then=Value(2)),
+                default=Value(3),
+                output_field=IntegerField(),
+            ),
+            lower_long_name=Lower("long_name"),
+        )
+        .filter(matches)
+        .select_related("wikidata_item")
+        .order_by("match_rank", "-similarity", "lower_long_name")
     )
     results = [
         {

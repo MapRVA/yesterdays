@@ -1095,6 +1095,35 @@ class RegionAutocompleteTests(TestCase):
         response = self.client.get(self.url, {"q": "richmond"})
         self.assertEqual(len(response.json()), 3)
 
+    def test_typo_match_found(self):
+        # Transposed letters in either display name still find the region.
+        self.assertIn(
+            "Church Hill",
+            self._short_names(self.client.get(self.url, {"q": "chruch"})),
+        )
+        self.assertIn(
+            "Shockoe Bottom",
+            self._short_names(self.client.get(self.url, {"q": "shokoe"})),
+        )
+        # "Richmond" lives only in the long names, and it is misspelled here.
+        self.assertIn(
+            "Church Hill",
+            self._short_names(self.client.get(self.url, {"q": "richmnod"})),
+        )
+
+    def test_literal_match_beats_fuzzy(self):
+        item = WikidataItem.objects.create(wikidata_id="Q905", title="Shokoe Hill")
+        make_region(
+            short_name="Shokoe Hill",
+            long_name="Shokoe Hill, Richmond",
+            slug="shokoe-hill",
+            wikidata_item=item,
+        )
+        names = self._short_names(self.client.get(self.url, {"q": "shockoe"}))
+        self.assertIn("Shockoe Bottom", names)
+        self.assertIn("Shokoe Hill", names)
+        self.assertLess(names.index("Shockoe Bottom"), names.index("Shokoe Hill"))
+
     def test_no_match_returns_empty(self):
         response = self.client.get(self.url, {"q": "zzzz"})
         self.assertEqual(response.json(), [])
