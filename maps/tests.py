@@ -365,6 +365,15 @@ class BrowseMapsRegionTests(TestCase):
         )
         self.assertNotContains(response, self.unassigned_layer.name)
 
+    def test_management_link_is_staff_only_and_not_duplicated_in_empty_state(self):
+        manage_url = reverse("maps:layer_manage")
+        self.assertNotContains(self.browse(), manage_url)
+
+        staff = User.objects.create_user("staff", password="pw", is_staff=True)
+        self.client.force_login(staff)
+        self.assertContains(self.browse(), manage_url, count=1)
+        self.assertContains(self.browse(self.empty_region.slug), manage_url, count=1)
+
     def test_detail_url_remains_accessible_for_another_selection(self):
         self.client.cookies[REGION_COOKIE_NAME] = self.other_region.slug
         response = self.client.get(self.richmond_layer.get_absolute_url())

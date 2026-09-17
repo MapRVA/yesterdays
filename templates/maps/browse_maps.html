@@ -22,6 +22,13 @@
 
         <!-- Page Header -->
         <h1 class="mb-4">Map Layers{% if current_region %} for {{ current_region.long_name }}{% endif %}</h1>
+        {% if request.user.is_staff %}
+            <div class="d-flex justify-content-end mb-3">
+                <a href="{% url 'maps:layer_manage' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-layer-group me-1"></i>Manage Layers
+                </a>
+            </div>
+        {% endif %}
 
         {% for item in collections %}
             <!-- Collection Section -->
@@ -73,9 +80,6 @@
                 {% if user.is_staff %}
                     <a href="/admin/maps/layercollection/add/" class="btn btn-primary">
                         <i class="fas fa-plus me-2"></i>Add Collection
-                    </a>
-                    <a href="{% url 'maps:layer_manage' %}" class="btn btn-outline-secondary">
-                        <i class="fas fa-layer-group me-2"></i>Manage Layers
                     </a>
                 {% endif %}
             </div>
