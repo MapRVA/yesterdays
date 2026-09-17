@@ -1,6 +1,6 @@
 # Searching
 
-The search page features three search modes: semantic, text, and reverse image.
+The search page features four search modes: semantic, text, reverse image, and in view.
 
 ## Semantic Search
 
@@ -46,3 +46,13 @@ You can upload your image by doing any of the following:
 - pasting an image from your clipboard using CTRL+V or CMD+V
 
 Images are searched using the same CLIP model described in the Semantic Search section above.
+
+## In View Search
+
+In View search lets you click on a map and quickly find images of that location.
+Images are returned in order of distance from the selected point.
+
+When someone georeferences a photograph with the direction the camera was pointed, that image is only shown if your selected location falls within 40° of where it was pointing.
+If a georeference does not record a direction, it will still be included in In View search results.
+
+For now, "From Above" images are not included in In View search results.
