@@ -59,7 +59,6 @@ def get_region_summaries(advertised_only=True):
         row = counts.get(region.id)
         summaries.append(
             {
-                "slug": region.slug,
                 "short_name": region.short_name,
                 "long_name": region.long_name,
                 "wikidata_id": region.wikidata_item.wikidata_id,

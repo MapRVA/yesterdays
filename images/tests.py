@@ -1570,6 +1570,9 @@ class SourceDetailRegionOrderingTests(StatsEventsMixin, TestCase):
         self.assertEqual(self.names(response), ["Small"])
         self.assertEqual(response.context["collection_count"], 1)
         self.assertEqual(response.context["total_images"], 1)
+        self.assertContains(
+            response, "Showing 1 of 2 collections with images in Richmond"
+        )
 
     def test_card_numbers_and_order_use_regional_images(self):
         self.img("big-city", collection=self.big, region=self.region)
@@ -1585,6 +1588,7 @@ class SourceDetailRegionOrderingTests(StatsEventsMixin, TestCase):
         self.assertIn(response.context["top_rated_image"].pk,
                       Image.objects.in_region(self.region).values_list("pk", flat=True))
         self.assertContains(response, "&region=Q43421")
+        self.assertNotContains(response, "Showing 2 of 2 collections")
 
     def test_source_falls_back_when_no_public_collection_matches(self):
         self.small.public = False
@@ -1709,6 +1713,7 @@ class CollectionDetailRegionFilterTests(TestCase):
         self.assertIn(response.context["top_rated_image"].pk, expected)
         self.assertFalse(response.context["region_fallback"])
         self.assertContains(response, "&amp;region=Q1370")
+        self.assertContains(response, "Showing 2 of 3 images in Virginia")
 
     def test_city_does_not_include_images_assigned_to_its_ancestor(self):
         self.client.cookies[REGION_COOKIE_NAME] = self.city.slug
@@ -1724,6 +1729,7 @@ class CollectionDetailRegionFilterTests(TestCase):
                                  {self.city_image.pk, self.state_image.pk, self.other_image.pk})
                 self.assertEqual(response.context["total_images"], 3)
                 self.assertFalse(response.context["region_fallback"])
+                self.assertNotContains(response, "Showing 3 of 3 images")
 
     def test_no_regional_images_falls_back_without_changing_selection(self):
         self.client.cookies[REGION_COOKIE_NAME] = self.empty.slug
@@ -1955,6 +1961,7 @@ class SourceBrowseRegionFilteringTests(StatsEventsMixin, TestCase):
         self.assertEqual(overall["total_collections"], 1)
         self.assertEqual(overall["total_images"], 2)
         self.assertEqual(overall["total_georeferenced"], 1)
+        self.assertContains(response, "Showing 1 of 4 sources with images in Richmond")
         self.assertIn(response.context["top_rated_image"].pk,
                       Image.objects.in_region(self.city).values_list("pk", flat=True))
         self.assertContains(response, "&region=Q43421")

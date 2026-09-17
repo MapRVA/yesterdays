@@ -44,6 +44,12 @@
             <h1><i class="fas fa-archive me-3"></i>Browse Sources</h1>
         </div>
 
+        {% if browse_region and overall_stats.total_sources < total_source_count %}
+            <div class="alert alert-secondary" role="status">
+                Showing {{ overall_stats.total_sources }} of {{ total_source_count }} source{{ total_source_count|pluralize }} with images in {{ browse_region }}.
+            </div>
+        {% endif %}
+
         <div class="row">
             {% for source in sources %}
                 <div class="col-lg-6 col-xl-4 mb-4">

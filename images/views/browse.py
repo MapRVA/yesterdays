@@ -158,6 +158,7 @@ def _browse_sources_stats(region=None):
 
 def browse_sources(request):
     """Browse public sources, scoped to the navbar region when selected."""
+    total_source_count = Source.objects.filter(public=True).count()
     sources = (
         Source.objects.filter(public=True)
         .annotate(
@@ -206,6 +207,7 @@ def browse_sources(request):
     context = {
         "sources": sources,
         "browse_region": region,
+        "total_source_count": total_source_count,
         "overall_stats": overall_stats,
         "top_rated_image": top_rated_image,
     }
@@ -216,6 +218,7 @@ def source_detail(request, slug):
     """Public collections and counts in the selected region, or a global fallback."""
     source = get_object_or_404(Source, slug=slug, public=True)
     collections = list(source.collections.filter(public=True).select_related("stats"))
+    total_collection_count = len(collections)
     region = get_current_region(request)
     regional_stats = {}
     if region is not None:
@@ -285,6 +288,7 @@ def source_detail(request, slug):
         "region_fallback": region_fallback,
         # `collections` is a list, so the template can't call .count on it
         "collection_count": len(collections),
+        "total_collection_count": total_collection_count,
         "total_images": total_images,
         "georeferenced_images": georeferenced_images,
         "pending_images": total_images - georeferenced_images - will_not_georef_images,
@@ -310,6 +314,7 @@ def collection_detail(request, source_slug, collection_slug):
 
     region = get_current_region(request)
     stats = getattr(collection, "stats", None)
+    total_collection_images = stats.total_images if stats else 0
     region_fallback = False
     if region is not None:
         regional_stats = CollectionRegionStats.objects.filter(
@@ -390,6 +395,7 @@ def collection_detail(request, source_slug, collection_slug):
         "georeference_url": georeference_url,
         "page_obj": page_obj,
         "total_images": total_images,
+        "total_collection_images": total_collection_images,
         "georeferenced_images": georeferenced_images,
         "pending_images": total_images - georeferenced_images - will_not_georef_images,
         "will_not_georef_images": will_not_georef_images,

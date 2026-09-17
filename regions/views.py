@@ -118,7 +118,6 @@ def _popular_regions():
     )
     return [
         {
-            "slug": summary["slug"],
             "short_name": summary["short_name"],
             "long_name": summary["long_name"],
             "wikidata_id": summary["wikidata_id"],
@@ -147,7 +146,6 @@ def region_autocomplete(request):
     )
     results = [
         {
-            "slug": region.slug,
             "short_name": region.short_name,
             "long_name": region.long_name,
             "wikidata_id": region.wikidata_item.wikidata_id,

@@ -61,12 +61,6 @@
             </ol>
         </nav>
 
-        {% if region_fallback %}
-            <div class="alert alert-info" role="status">
-                {{ collection.name }} has no images in your selected region. Showing all images from {{ collection.name }}.
-            </div>
-        {% endif %}
-
         <!-- Collection Header -->
         <div class="card mb-4">
             <div class="card-body">
@@ -163,6 +157,16 @@
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h2><i class="fas fa-images me-2"></i>Images</h2>
         </div>
+
+        {% if region_fallback %}
+            <div class="alert alert-info" role="status">
+                {{ collection.name }} has no images in your selected region. Showing all images from {{ collection.name }}.
+            </div>
+        {% elif browse_region and total_images < total_collection_images %}
+            <div class="alert alert-secondary" role="status">
+                Showing {{ total_images }} of {{ total_collection_images }} image{{ total_collection_images|pluralize }} in {{ browse_region }}.
+            </div>
+        {% endif %}
 
         <!-- Image Grid with bulk selection support -->
         {% with staff_url="/admin/images/image/add/?collection="|add:collection.id %}

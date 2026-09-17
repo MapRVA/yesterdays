@@ -1109,7 +1109,6 @@ class RegionAutocompleteTests(TestCase):
             response.json(),
             [
                 {
-                    "slug": "church-hill",
                     "short_name": "Church Hill",
                     "long_name": "Church Hill, Richmond",
                     "wikidata_id": "Q901",
@@ -1172,13 +1171,18 @@ class CurrentRegionContextProcessorTests(TestCase):
     def test_no_cookie_returns_none(self):
         self.assertIsNone(self._context()["current_region"])
 
-    def test_valid_slug_resolves_region(self):
+    def test_valid_qid_resolves_region(self):
+        self.assertEqual(
+            self._context("Q920")["current_region"], self.region
+        )
+
+    def test_legacy_slug_still_resolves_region(self):
         self.assertEqual(
             self._context("richmond")["current_region"], self.region
         )
 
-    def test_unknown_slug_returns_none_without_error(self):
-        self.assertIsNone(self._context("deleted-region")["current_region"])
+    def test_unknown_identifier_returns_none_without_error(self):
+        self.assertIsNone(self._context("Q999999999")["current_region"])
 
     def test_cookie_name_exposed_in_context(self):
         self.assertEqual(
@@ -1189,7 +1193,7 @@ class CurrentRegionContextProcessorTests(TestCase):
         map_bounds = Polygon.from_bbox((-77.7, 37.3, -77.2, 37.8))
         map_bounds.srid = 4326
         Region.objects.filter(pk=self.region.pk).update(map_bounds=map_bounds)
-        context = self._context("richmond")
+        context = self._context("Q920")
         self.assertEqual(
             context["region_map_center"],
             [TEST_POINT.x, TEST_POINT.y],
@@ -1356,8 +1360,8 @@ class RegionSummaryTests(TestCase):
             ).group(1)
         )
 
-    def _summary(self, slug):
-        return next(s for s in self._summaries() if s["slug"] == slug)
+    def _summary(self, qid):
+        return next(s for s in self._summaries() if s["wikidata_id"] == qid)
 
     def _make_collection(self, slug, *, source_public=True, collection_public=True):
         source = Source.objects.create(
@@ -1371,7 +1375,7 @@ class RegionSummaryTests(TestCase):
         # Both regions are at zero images, so the busiest-first ordering
         # falls back to long_name.
         self.assertEqual(
-            [s["slug"] for s in self._summaries()], ["texas", "virginia"]
+            [s["wikidata_id"] for s in self._summaries()], ["Q1439", "Q1370"]
         )
 
     def test_advertise_controls_summary_regardless_of_hierarchy(self):
@@ -1390,17 +1394,17 @@ class RegionSummaryTests(TestCase):
         )
 
         self.assertEqual(
-            [s["slug"] for s in self._summaries()], ["texas", "virginia"]
+            [s["wikidata_id"] for s in self._summaries()], ["Q1439", "Q1370"]
         )
 
         Region.objects.filter(pk=self.virginia.pk).update(advertise=False)
         Region.objects.filter(pk=richmond.pk).update(advertise=True)
         self.assertEqual(
-            [s["slug"] for s in self._summaries()], ["richmond", "texas"]
+            [s["wikidata_id"] for s in self._summaries()], ["Q43421", "Q1439"]
         )
 
     def test_summary_carries_names_and_coordinate(self):
-        summary = self._summary("virginia")
+        summary = self._summary("Q1370")
         self.assertEqual(summary["short_name"], "Virginia")
         self.assertEqual(summary["long_name"], "Virginia, United States")
         # Carried for the autocomplete endpoint, which builds its popular
@@ -1410,7 +1414,7 @@ class RegionSummaryTests(TestCase):
         self.assertEqual(summary["lat"], 37.4316)
 
     def test_region_without_holdings_summarizes_to_zero(self):
-        summary = self._summary("virginia")
+        summary = self._summary("Q1370")
         self.assertEqual(summary["image_count"], 0)
         self.assertEqual(summary["georeferenced_count"], 0)
         self.assertIsNone(summary["thumbnail"])
@@ -1429,7 +1433,7 @@ class RegionSummaryTests(TestCase):
             total_images=7,
             georeferenced_high=3,
         )
-        summary = self._summary("virginia")
+        summary = self._summary("Q1370")
         self.assertEqual(summary["image_count"], 12)
         self.assertEqual(summary["georeferenced_count"], 6)
 
@@ -1444,7 +1448,7 @@ class RegionSummaryTests(TestCase):
             region=self.virginia,
             total_images=7,
         )
-        self.assertEqual(self._summary("virginia")["image_count"], 0)
+        self.assertEqual(self._summary("Q1370")["image_count"], 0)
 
     def test_busiest_region_comes_first(self):
         CollectionRegionStats.objects.create(
@@ -1453,7 +1457,7 @@ class RegionSummaryTests(TestCase):
             total_images=5,
         )
         self.assertEqual(
-            [s["slug"] for s in self._summaries()], ["virginia", "texas"]
+            [s["wikidata_id"] for s in self._summaries()], ["Q1370", "Q1439"]
         )
 
     def test_thumbnail_follows_the_representative_image(self):
@@ -1476,17 +1480,17 @@ class RegionSummaryTests(TestCase):
             representative_image=without_thumb
         )
         self.assertEqual(
-            self._summary("virginia")["thumbnail"],
+            self._summary("Q1370")["thumbnail"],
             "https://img.example.com/va-thumb.jpg",
         )
         # A representative image that hasn't got a thumbnail yet reads as
         # "no photo", not as an empty URL.
-        self.assertIsNone(self._summary("texas")["thumbnail"])
+        self.assertIsNone(self._summary("Q1439")["thumbnail"])
 
     def test_cards_render_alongside_the_map(self):
         response = self.client.get(reverse("home"))
-        self.assertContains(response, 'data-region-slug="virginia"')
-        self.assertContains(response, 'data-region-slug="texas"')
+        self.assertContains(response, 'data-region-qid="Q1370"')
+        self.assertContains(response, 'data-region-qid="Q1439"')
 
     def test_global_homepage_carries_the_sitewide_feed(self):
         # The feed itself is exercised by the activity app's tests; here
@@ -1499,7 +1503,7 @@ class RegionSummaryTests(TestCase):
         Region.objects.filter(pk=self.virginia.pk).update(
             custom_coordinate_location=Point(-77.44, 37.53, srid=4326)
         )
-        summary = self._summary("virginia")
+        summary = self._summary("Q1370")
         self.assertEqual([summary["lng"], summary["lat"]], [-77.44, 37.53])
 
     def test_cookie_name_reaches_the_map_container(self):
@@ -1518,7 +1522,7 @@ class RegionSummaryTests(TestCase):
         response = self.client.get(reverse("home"))
         self.assertNotContains(response, "<script>alert(1)</script>")
         self.assertEqual(
-            self._summary("texas")["long_name"],
+            self._summary("Q1439")["long_name"],
             "Texas</script><script>alert(1)</script>",
         )
 
@@ -1563,13 +1567,13 @@ class RegionDirectoryTests(TestCase):
         self.assertTemplateUsed(response, "regions/browse_regions.html")
         return response
 
-    def _card_slugs(self, response):
+    def _card_qids(self, response):
         return [
-            slug.decode()
-            for slug in re.findall(rb'data-region-slug="([^"]+)"', response.content)
+            qid.decode()
+            for qid in re.findall(rb'data-region-qid="([^"]+)"', response.content)
         ]
 
-    def _pin_slugs(self, response):
+    def _pin_qids(self, response):
         payload = json.loads(
             re.search(
                 rb'<script id="region-summaries-data" type="application/json">(.*?)</script>',
@@ -1577,7 +1581,7 @@ class RegionDirectoryTests(TestCase):
                 re.DOTALL,
             ).group(1)
         )
-        return [summary["slug"] for summary in payload]
+        return [summary["wikidata_id"] for summary in payload]
 
     def _stats(self, region, total):
         source = Source.objects.create(
@@ -1591,23 +1595,23 @@ class RegionDirectoryTests(TestCase):
             total_images=total,
         )
 
-    def _card_tag(self, response, slug):
+    def _card_tag(self, response, qid):
         return re.search(
-            rb'<article[^>]*data-region-slug="%s"[^>]*>' % slug.encode(),
+            rb'<article[^>]*data-region-qid="%s"[^>]*>' % qid.encode(),
             response.content,
         ).group(0)
 
     def test_unadvertised_regions_get_a_card_but_no_pin(self):
         response = self._get()
-        self.assertEqual(sorted(self._card_slugs(response)), ["richmond", "virginia"])
-        self.assertEqual(self._pin_slugs(response), ["virginia"])
+        self.assertEqual(sorted(self._card_qids(response)), ["Q1370", "Q43421"])
+        self.assertEqual(self._pin_qids(response), ["Q1370"])
 
     def test_unadvertised_cards_start_hidden_until_a_search_surfaces_them(self):
         response = self._get()
-        virginia = self._card_tag(response, "virginia")
+        virginia = self._card_tag(response, "Q1370")
         self.assertNotIn(b"data-region-unadvertised", virginia)
         self.assertNotIn(b"d-none", virginia)
-        richmond = self._card_tag(response, "richmond")
+        richmond = self._card_tag(response, "Q43421")
         self.assertIn(b"data-region-unadvertised", richmond)
         self.assertIn(b"d-none", richmond)
         # The visible count matches: one advertised region, not two regions.
@@ -1620,10 +1624,10 @@ class RegionDirectoryTests(TestCase):
     def test_cards_run_busiest_first(self):
         self._stats(self.richmond, 9)
         response = self._get()
-        self.assertEqual(self._card_slugs(response), ["richmond", "virginia"])
+        self.assertEqual(self._card_qids(response), ["Q43421", "Q1370"])
 
         self._stats(self.virginia, 40)
-        self.assertEqual(self._card_slugs(self._get()), ["virginia", "richmond"])
+        self.assertEqual(self._card_qids(self._get()), ["Q1370", "Q43421"])
 
     def test_card_leads_with_the_representative_photograph(self):
         source = Source.objects.create(name="Src", slug="src")
