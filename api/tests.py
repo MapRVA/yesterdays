@@ -166,6 +166,7 @@ class ApiFixturesMixin:
         )
         SubjectMapping.objects.create(image=cls.img1, subject=cls.subject)
         cls.osm_element = OsmElement.objects.create(
+            osm_type="W",
             osm_id=12345,
             subject=cls.subject,
             geometry=Polygon(POLYGON_COORDS, srid=4326),
@@ -657,6 +658,8 @@ class TestSubjectsEndpoint(ApiFixturesMixin, TestCase):
         self.assertEqual(len(data["features"]), 1)
         feature = data["features"][0]
         self.assertEqual(feature["properties"]["osm_id"], 12345)
+        self.assertEqual(feature["properties"]["osm_type"], "W")
+        self.assertEqual(feature["properties"]["osm_ref"], "way/12345")
 
     def test_geometry_empty_subject(self):
         """Geometry endpoint returns empty FeatureCollection for subject with no OSM elements."""

@@ -1220,18 +1220,6 @@ class SiteSettingsAdmin(admin.ModelAdmin):
             },
         ),
         (
-            "Default Subject Bounding Box",
-            {
-                "fields": (
-                    "default_subject_bbox_west",
-                    "default_subject_bbox_south",
-                    "default_subject_bbox_east",
-                    "default_subject_bbox_north",
-                ),
-                "description": "Default bounding box used when refreshing OSM metadata for subjects (typically wider than the search bbox to cover the broader region)",
-            },
-        ),
-        (
             "Homepage Activity Feed",
             {
                 "fields": (

@@ -1,15 +1,19 @@
+import importlib
 import json
 import re
 from datetime import date, timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pyoxigraph
+import requests
 from django.contrib.admin.sites import AdminSite
 from django.contrib.admin.utils import flatten_fieldsets
 from django.contrib.auth.models import User
+from django.contrib.gis.geos import Point, Polygon
 from django.core.exceptions import ImproperlyConfigured
+from django.db import IntegrityError, connection, transaction
 from django.test import (
     Client,
     RequestFactory,
@@ -34,6 +38,7 @@ from images.tasks import (
 
 from .admin import SubjectAdmin
 from .models import (
+    OsmElement,
     Subject,
     SubjectAncestor,
     WikidataItem,
@@ -42,8 +47,11 @@ from .models import (
 from .similarity import build_subject_query_embedding
 from .sparql_safety import UnsafeSparqlInput, looks_like_pid, looks_like_qid
 from .tasks import (
+    PostpassResultTruncated,
+    fetch_osm_features,
     get_next_requested_wikidata_item,
     get_next_stale_wikidata_item,
+    sync_osm_elements,
 )
 from .views import _MAX_AUTOCOMPLETE_QUERY_LEN
 from .wikidata_closure import (
@@ -56,6 +64,265 @@ from .wikidata_closure import (
 )
 
 DIM = 768
+
+SQUARE = {
+    "type": "Polygon",
+    "coordinates": [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]],
+}
+
+
+def _subject(title, slug, qid):
+    """A Subject with the WikidataItem its NOT NULL FK demands."""
+    return Subject.objects.create(
+        title=title,
+        slug=slug,
+        wikidata_item=WikidataItem.objects.create(wikidata_id=qid, title=title),
+    )
+
+
+def _feature(osm_type, osm_id, geometry=None):
+    """A Postpass feature as fetch_osm_features hands it to the sync."""
+    return {
+        "type": "Feature",
+        "properties": {"osm_id": osm_id, "osm_type": osm_type, "tags": {}},
+        "geometry": geometry or {"type": "Point", "coordinates": [-117.46, 34.10]},
+    }
+
+
+class FetchOsmFeaturesTests(SimpleTestCase):
+    def test_query_dedupes_per_element_and_fetches_one_past_the_cap(self):
+        session = Mock()
+        session.post.return_value.json.return_value = {"features": []}
+
+        with override_settings(METADATA_REFRESH_POSTPASS_MAX_FEATURES=25):
+            fetch_osm_features(session, "Q491128")
+
+        sql = session.post.call_args.kwargs["data"]["data"]
+        self.assertIn("DISTINCT ON (osm_type, osm_id)", sql)
+        self.assertIn("""tags @> '{"wikidata": "Q491128"}'::jsonb""", sql)
+        self.assertIn("ST_Dimension(geom) DESC", sql)
+        self.assertIn("LIMIT 26", sql)
+        # ->> can't use Postpass's GIN indexes; a bbox would defeat the point
+        self.assertNotIn("->>", sql)
+        self.assertNotIn("&&", sql)
+
+    def test_more_matches_than_the_cap_is_refused(self):
+        session = Mock()
+        session.post.return_value.json.return_value = {
+            "features": [_feature("W", i) for i in range(3)]
+        }
+
+        with override_settings(METADATA_REFRESH_POSTPASS_MAX_FEATURES=2):
+            with self.assertRaises(PostpassResultTruncated):
+                fetch_osm_features(session, "Q491128")
+
+    def test_exactly_the_cap_is_accepted(self):
+        session = Mock()
+        features = [_feature("W", i) for i in range(2)]
+        session.post.return_value.json.return_value = {"features": features}
+
+        with override_settings(METADATA_REFRESH_POSTPASS_MAX_FEATURES=2):
+            self.assertEqual(fetch_osm_features(session, "Q491128"), features)
+
+    def test_response_without_features_key_is_an_error(self):
+        session = Mock()
+        session.post.return_value.json.return_value = {"error": "nope"}
+
+        with self.assertRaises(ValueError):
+            fetch_osm_features(session, "Q491128")
+
+    def test_invalid_qid_is_rejected_before_request(self):
+        session = Mock()
+        for qid in ("", "Q", "q42", "Q42' OR TRUE --"):
+            with self.subTest(qid=qid), self.assertRaises(ValueError):
+                fetch_osm_features(session, qid)
+        session.post.assert_not_called()
+
+    def test_http_failure_does_not_become_an_empty_result(self):
+        session = Mock()
+        response = session.post.return_value
+        response.raise_for_status.side_effect = requests.HTTPError("503 unavailable")
+
+        with self.assertRaises(requests.HTTPError):
+            fetch_osm_features(session, "Q491128")
+
+        response.json.assert_not_called()
+
+    def test_timeout_does_not_become_an_empty_result(self):
+        session = Mock()
+        session.post.side_effect = requests.Timeout("Postpass timed out")
+
+        with self.assertRaises(requests.Timeout):
+            fetch_osm_features(session, "Q491128")
+
+    def test_features_are_returned_without_database_access(self):
+        session = Mock()
+        features = [
+            {
+                "type": "Feature",
+                "properties": {"osm_id": 123},
+                "geometry": {"type": "Point", "coordinates": [-117.46, 34.10]},
+            }
+        ]
+        session.post.return_value.json.return_value = {"features": features}
+
+        result = fetch_osm_features(
+            session, "Q491128", postpass_url="https://postpass.example/api", timeout=12
+        )
+
+        self.assertEqual(result, features)
+        self.assertEqual(session.post.call_args.args, ("https://postpass.example/api",))
+        self.assertEqual(session.post.call_args.kwargs["timeout"], 12)
+
+
+class SyncOsmElementsTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.subject = _subject("Fontana", "fontana", "Q491128")
+        cls.other = _subject("Elsewhere", "elsewhere", "Q2")
+
+    def _legacy(self, osm_id, subject=None):
+        return OsmElement.objects.create(
+            osm_type=None,
+            osm_id=osm_id,
+            subject=subject or self.subject,
+            geometry=Point(0, 0, srid=4326),
+        )
+
+    def test_creates_typed_rows(self):
+        counts = sync_osm_elements(
+            self.subject, [_feature("N", 1), _feature("R", 2, SQUARE)]
+        )
+
+        self.assertEqual(counts, (2, 0, 0))
+        self.assertEqual(
+            set(self.subject.osm_elements.values_list("osm_type", "osm_id")),
+            {("N", 1), ("R", 2)},
+        )
+
+    def test_updates_geometry_and_deletes_stale(self):
+        OsmElement.objects.create(
+            osm_type="N", osm_id=1, subject=self.subject, geometry=Point(0, 0, srid=4326)
+        )
+        OsmElement.objects.create(
+            osm_type="W", osm_id=9, subject=self.subject, geometry=Point(0, 0, srid=4326)
+        )
+
+        counts = sync_osm_elements(self.subject, [_feature("N", 1)])
+
+        self.assertEqual(counts, (0, 1, 1))
+        element = self.subject.osm_elements.get()
+        self.assertEqual((element.osm_type, element.osm_id), ("N", 1))
+        self.assertAlmostEqual(element.geometry.x, -117.46)
+
+    def test_empty_response_deletes_everything(self):
+        self._legacy(1)
+        OsmElement.objects.create(
+            osm_type="W", osm_id=2, subject=self.subject, geometry=Point(0, 0, srid=4326)
+        )
+
+        self.assertEqual(sync_osm_elements(self.subject, []), (0, 0, 2))
+        self.assertFalse(self.subject.osm_elements.exists())
+
+    def test_claims_own_untyped_row_in_place(self):
+        legacy = self._legacy(1)
+
+        self.assertEqual(sync_osm_elements(self.subject, [_feature("W", 1)]), (0, 1, 0))
+
+        legacy.refresh_from_db()
+        self.assertEqual(legacy.osm_type, "W")
+        self.assertEqual(OsmElement.objects.filter(osm_id=1).count(), 1)
+
+    def test_leaves_other_subjects_untyped_rows_alone(self):
+        legacy = self._legacy(1, subject=self.other)
+
+        self.assertEqual(sync_osm_elements(self.subject, [_feature("W", 1)]), (1, 0, 0))
+
+        legacy.refresh_from_db()
+        self.assertIsNone(legacy.osm_type)
+        self.assertEqual(legacy.subject, self.other)
+        # Typed and untyped rows for one id coexist until the other refreshes
+        self.assertEqual(OsmElement.objects.filter(osm_id=1).count(), 2)
+
+    def test_typed_row_elsewhere_wins_over_own_untyped_row(self):
+        typed = OsmElement.objects.create(
+            osm_type="W", osm_id=1, subject=self.other, geometry=Point(0, 0, srid=4326)
+        )
+        legacy = self._legacy(1)
+
+        self.assertEqual(sync_osm_elements(self.subject, [_feature("W", 1)]), (0, 1, 1))
+
+        typed.refresh_from_db()
+        self.assertEqual(typed.subject, self.subject)
+        self.assertFalse(OsmElement.objects.filter(pk=legacy.pk).exists())
+
+    def test_never_creates_untyped_rows(self):
+        sync_osm_elements(self.subject, [_feature("N", 1), _feature("W", 2)])
+
+        self.assertFalse(OsmElement.objects.filter(osm_type__isnull=True).exists())
+
+
+class OsmElementConstraintTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.subject = _subject("Fontana", "fontana", "Q491128")
+
+    def _create(self, osm_type, osm_id):
+        return OsmElement.objects.create(
+            osm_type=osm_type,
+            osm_id=osm_id,
+            subject=self.subject,
+            geometry=Point(0, 0, srid=4326),
+        )
+
+    def test_same_id_with_different_types_coexists(self):
+        self._create("W", 6411727)
+        self._create("R", 6411727)
+        self._create(None, 6411727)
+
+        self.assertEqual(OsmElement.objects.filter(osm_id=6411727).count(), 3)
+
+    def test_same_typed_element_twice_is_rejected(self):
+        self._create("W", 1)
+
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            self._create("W", 1)
+
+    def test_same_untyped_id_twice_is_rejected(self):
+        self._create(None, 1)
+
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            self._create(None, 1)
+
+
+class OsmTypeMigrationSqlTests(TestCase):
+    """The data statements in 0021, run against rows shaped like the legacy ones."""
+
+    def test_points_become_nodes_and_subjects_go_to_the_front_of_the_rotation(self):
+        migration = importlib.import_module("subjects.migrations.0021_osmelement_osm_type")
+        subject = _subject("Fontana", "fontana", "Q491128")
+        subject.osm_last_checked = timezone.now()
+        subject.save(update_fields=["osm_last_checked"])
+        point = OsmElement.objects.create(
+            osm_type=None, osm_id=1, subject=subject, geometry=Point(0, 0, srid=4326)
+        )
+        polygon = OsmElement.objects.create(
+            osm_type=None,
+            osm_id=2,
+            subject=subject,
+            geometry=Polygon(((0, 0), (0, 1), (1, 1), (1, 0), (0, 0)), srid=4326),
+        )
+
+        with connection.cursor() as cursor:
+            cursor.execute(migration.INFER_NODE_TYPE_SQL)
+            cursor.execute(migration.RESET_OSM_LAST_CHECKED_SQL)
+
+        point.refresh_from_db()
+        polygon.refresh_from_db()
+        subject.refresh_from_db()
+        self.assertEqual(point.osm_type, "N")
+        self.assertIsNone(polygon.osm_type)
+        self.assertEqual(subject.osm_last_checked.year, 1970)
 
 
 def _unit(seed):

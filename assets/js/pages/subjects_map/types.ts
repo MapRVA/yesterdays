@@ -2,6 +2,8 @@
 // Mirrors the SELECT in images/views/api.py::osm_elements_vector_tiles_endpoint.
 export interface SubjectFeatureProperties {
   osm_id: number;
+  // "N" | "W" | "R"; null for elements imported before the type was recorded.
+  osm_type: string | null;
   geom_type: string;
   subject_name: string;
   subject_slug: string;
@@ -40,6 +42,8 @@ export interface SubjectMapInfo {
 export interface SubjectsMapUrls {
   imageTiles: string;
   osmElementTiles: string;
+  // Below this zoom the server answers empty, so don't request at all.
+  osmElementMinZoom: number;
 }
 
 // Bridge between the map modules and the Alpine panel: neither holds a

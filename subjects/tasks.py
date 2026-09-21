@@ -21,7 +21,6 @@ from django.utils import timezone
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from images.models import SiteSettings
 from images.tasks import reconcile_collection_region_stats
 from regions.models import Region, RegionAncestor
 from regions.region_ancestors import update_region_ancestors
@@ -224,7 +223,7 @@ def get_postpass_url():
     return getattr(
         settings,
         "METADATA_REFRESH_POSTPASS_URL",
-        "https://postpass.geofabrik.de/api/0.2/interpreter",
+        "https://postpass.geofabrik.de/api/interpreter",
     )
 
 
@@ -233,15 +232,64 @@ def get_postpass_timeout():
     return getattr(settings, "METADATA_REFRESH_POSTPASS_TIMEOUT", 60)
 
 
-def get_postpass_bbox():
-    """Build the bounding box SQL clause for Postpass queries from SiteSettings."""
-    site_settings = SiteSettings.load()
-    return (
-        f"ST_SetSRID(ST_MakeBox2D("
-        f"ST_MakePoint({site_settings.default_subject_bbox_west}, {site_settings.default_subject_bbox_south}), "
-        f"ST_MakePoint({site_settings.default_subject_bbox_east}, {site_settings.default_subject_bbox_north})"
-        f"), 4326)"
-    )
+def get_postpass_max_features():
+    """Most OSM elements accepted for a single Wikidata item."""
+    return getattr(settings, "METADATA_REFRESH_POSTPASS_MAX_FEATURES", 100)
+
+
+class PostpassResultTruncated(RuntimeError):
+    """Postpass matched more elements than we're willing to import.
+
+    Raised instead of returning a partial list: the elements a truncated
+    result omits would look stale and get deleted.
+    """
+
+
+def sync_osm_elements(subject, features):
+    """Reconcile ``subject``'s OsmElements with the features Postpass returned.
+
+    Identity is ``(osm_type, osm_id)``. A row that predates ``osm_type``
+    (NULL) and belongs to this subject is claimed by the matching typed
+    feature rather than replaced, so its primary key survives. Untyped rows
+    under other subjects are left alone — they resolve when that subject
+    refreshes — and new rows are always typed. Whatever the response didn't
+    mention is deleted as stale, which for an empty response is everything.
+
+    Returns ``(created, updated, deleted)`` counts.
+    """
+    untyped = {
+        element.osm_id: element
+        for element in subject.osm_elements.filter(osm_type__isnull=True)
+    }
+    kept_pks = set()
+    created = updated = 0
+
+    for feature in features:
+        properties = feature["properties"]
+        osm_type = properties["osm_type"]
+        osm_id = properties["osm_id"]
+        geometry = GEOSGeometry(json.dumps(feature["geometry"]))
+
+        element = OsmElement.objects.filter(osm_type=osm_type, osm_id=osm_id).first()
+        if element is None:
+            element = untyped.pop(osm_id, None)
+        if element is None:
+            element, _ = OsmElement.objects.get_or_create(
+                osm_type=osm_type,
+                osm_id=osm_id,
+                defaults={"subject": subject, "geometry": geometry},
+            )
+            created += 1
+        else:
+            element.osm_type = osm_type
+            element.subject = subject
+            element.geometry = geometry
+            element.save()
+            updated += 1
+        kept_pks.add(element.pk)
+
+    deleted = subject.osm_elements.exclude(pk__in=kept_pks).delete()[0]
+    return created, updated, deleted
 
 
 def _do_populate_osm_for_subject(subject):
@@ -260,42 +308,25 @@ def _do_populate_osm_for_subject(subject):
 
     session = create_request_session()
     try:
-        features = fetch_osm_features(session, wikidata_id)
+        try:
+            features = fetch_osm_features(session, wikidata_id)
+        except PostpassResultTruncated as exc:
+            logger.warning(f"Skipping {subject.title}: {exc}")
+            return {"status": "skipped", "subject": subject.title, "message": str(exc)}
 
         if not features:
             logger.info(f"No OSM features found for {subject.title} ({wikidata_id})")
             return {"status": "no_data", "subject": subject.title}
 
-        osm_ids = []
-        for feature in features:
-            osm_id = feature["properties"]["osm_id"]
-            geometry = feature["geometry"]
+        created, updated, _ = sync_osm_elements(subject, features)
+        logger.info(f"Linked {created + updated} OSM element(s) to {subject.title}")
 
-            # Create or get existing OsmElement and link to subject
-            osm_element, created = OsmElement.objects.get_or_create(
-                osm_id=osm_id,
-                defaults={
-                    "subject": subject,
-                    "geometry": GEOSGeometry(json.dumps(geometry)),
-                },
-            )
-
-            if not created:
-                # Update geometry and subject if element already exists
-                osm_element.subject = subject
-                osm_element.geometry = GEOSGeometry(json.dumps(geometry))
-                osm_element.save()
-                logger.info(
-                    f"Updated existing OSM element {osm_id} for {subject.title}"
-                )
-            else:
-                logger.info(f"Created OSM element {osm_id} for {subject.title}")
-
-            osm_ids.append(osm_id)
-
-        logger.info(f"Linked {len(osm_ids)} OSM element(s) to {subject.title}")
-
-        return {"status": "success", "subject": subject.title, "osm_ids": osm_ids}
+        return {
+            "status": "success",
+            "subject": subject.title,
+            "created": created,
+            "updated": updated,
+        }
 
     finally:
         session.close()
@@ -321,72 +352,32 @@ def _do_refresh_osm_for_subject(subject):
 
     session = create_request_session()
     try:
-        features = fetch_osm_features(session, wikidata_id)
+        try:
+            features = fetch_osm_features(session, wikidata_id)
+        except PostpassResultTruncated as exc:
+            logger.warning(f"Skipping {subject.title}: {exc}")
+            return {"status": "skipped", "subject": subject.title, "message": str(exc)}
+
+        created, updated, deleted = sync_osm_elements(subject, features)
 
         if not features:
-            # No features found - delete all existing OSM elements for this subject
-            deleted_count = subject.osm_elements.count()
-            if deleted_count > 0:
-                subject.osm_elements.all().delete()
-                logger.info(
-                    f"Deleted {deleted_count} OSM element(s) for {subject.title} (no longer in OSM)"
-                )
-            else:
-                logger.info(f"No OSM features found for {subject.title}")
-            return {
-                "status": "no_data",
-                "subject": subject.title,
-                "deleted": deleted_count,
-            }
-
-        # Get current OSM IDs for this subject
-        current_osm_ids = set(subject.osm_elements.values_list("osm_id", flat=True))
-        new_osm_ids = {f["properties"]["osm_id"] for f in features}
-
-        # Delete OSM elements that are no longer in the API response
-        stale_osm_ids = current_osm_ids - new_osm_ids
-        deleted_count = 0
-        if stale_osm_ids:
-            deleted_count = subject.osm_elements.filter(
-                osm_id__in=stale_osm_ids
-            ).delete()[0]
+            # An empty answer means the tag is gone from OSM; sync dropped everything
             logger.info(
-                f"Deleted {deleted_count} stale OSM element(s) for {subject.title}"
+                f"No OSM features found for {subject.title}; "
+                f"deleted {deleted} element(s) no longer in OSM"
             )
-
-        # Create or update OsmElements for all features
-        created_count = 0
-        updated_count = 0
-        for feature in features:
-            osm_id = feature["properties"]["osm_id"]
-            geometry = feature["geometry"]
-
-            osm_element, created = OsmElement.objects.get_or_create(
-                osm_id=osm_id,
-                defaults={
-                    "subject": subject,
-                    "geometry": GEOSGeometry(json.dumps(geometry)),
-                },
-            )
-
-            if not created:
-                osm_element.subject = subject
-                osm_element.geometry = GEOSGeometry(json.dumps(geometry))
-                osm_element.save()
-                updated_count += 1
-            else:
-                created_count += 1
+            return {"status": "no_data", "subject": subject.title, "deleted": deleted}
 
         logger.info(
             f"Refreshed OSM elements for {subject.title}: "
-            f"created {created_count}, updated {updated_count}, deleted {deleted_count}"
+            f"created {created}, updated {updated}, deleted {deleted}"
         )
         return {
             "status": "success",
             "subject": subject.title,
-            "created": created_count,
-            "updated": updated_count,
-            "deleted": deleted_count,
+            "created": created,
+            "updated": updated,
+            "deleted": deleted,
         }
 
     finally:
@@ -399,13 +390,20 @@ def fetch_osm_features(
     postpass_url: str | None = None,
     timeout: int | None = None,
 ) -> list:
-    """Fetch OSM features from Postpass API for a Wikidata item.
+    """Fetch OSM features worldwide from Postpass for a Wikidata item.
+
+    Each feature's properties carry ``osm_id`` and ``osm_type`` (``N``, ``W``
+    or ``R``). An empty list is a real answer — nothing in OSM carries the
+    tag — so callers may delete on it; anything doubtful raises instead.
 
     Args:
         session: requests Session object
         wikidata_id: Wikidata ID (e.g., Q42)
         postpass_url: Optional override for Postpass API URL (defaults to settings)
         timeout: Optional override for request timeout (defaults to settings)
+
+    Raises:
+        PostpassResultTruncated: more matches than METADATA_REFRESH_POSTPASS_MAX_FEATURES
     """
     # Validate wikidata_id format to prevent SQL injection
     # Wikidata IDs are always Q followed by one or more digits (e.g., Q42, Q12345)
@@ -414,11 +412,21 @@ def fetch_osm_features(
 
     postpass_url = postpass_url or get_postpass_url()
     timeout = timeout or get_postpass_timeout()
-    bbox_clause = get_postpass_bbox()
+    max_features = get_postpass_max_features()
+    tag_filter = json.dumps({"wikidata": wikidata_id})
 
+    # JSON containment uses Postpass's GIN tag indexes; extracting text with
+    # ->> cannot use those indexes and makes worldwide lookups expensive.
+    # The combined view emits one row per geometry table, so a boundary
+    # relation appears as both its outline and its area; DISTINCT ON keeps the
+    # highest-dimension row. Fetching one past the cap tells a truncated
+    # result apart from an exact fit.
     sql_query = f"""
-    SELECT osm_id, tags, geom FROM postpass_pointlinepolygon
-    WHERE tags->>'wikidata' = '{wikidata_id}' AND geom && {bbox_clause}
+    SELECT DISTINCT ON (osm_type, osm_id) osm_id, osm_type, tags, geom
+    FROM postpass_pointlinepolygon
+    WHERE tags @> '{tag_filter}'::jsonb
+    ORDER BY osm_type, osm_id, ST_Dimension(geom) DESC
+    LIMIT {max_features + 1}
     """
 
     response = session.post(
@@ -432,12 +440,14 @@ def fetch_osm_features(
     response.raise_for_status()
 
     data = response.json()
-    features = data.get("features", [])
+    if "features" not in data:
+        raise ValueError(f"Postpass response for {wikidata_id} has no features key")
 
-    # Ensure osm_id is in properties
-    for feature in features:
-        if "osm_id" not in feature.get("properties", {}):
-            feature["properties"]["osm_id"] = feature["properties"].get("osm_id", 0)
+    features = data["features"]
+    if len(features) > max_features:
+        raise PostpassResultTruncated(
+            f"{wikidata_id} matches more than {max_features} OSM elements"
+        )
 
     return features
 

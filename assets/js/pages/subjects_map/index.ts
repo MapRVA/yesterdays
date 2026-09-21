@@ -36,6 +36,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const urls: SubjectsMapUrls = {
     imageTiles: toTileTemplate(wrapper.dataset.tilesUrl ?? ""),
     osmElementTiles: toTileTemplate(wrapper.dataset.osmElementsUrl ?? ""),
+    osmElementMinZoom: Number(wrapper.dataset.osmElementsMinZoom ?? 0),
   };
 
   const map = new maplibregl.Map({

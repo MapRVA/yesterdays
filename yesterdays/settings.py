@@ -456,10 +456,16 @@ METADATA_REFRESH_MAX_FAILURES = int(os.getenv("METADATA_REFRESH_MAX_FAILURES", "
 # Postpass API settings for OSM geometry fetching
 METADATA_REFRESH_POSTPASS_URL = os.getenv(
     "METADATA_REFRESH_POSTPASS_URL",
-    "https://postpass.geofabrik.de/api/0.2/interpreter",
+    "https://postpass.geofabrik.de/api/interpreter",
 )
 METADATA_REFRESH_POSTPASS_TIMEOUT = int(
     os.getenv("METADATA_REFRESH_POSTPASS_TIMEOUT", "60")
+)
+# Most OSM elements accepted for one Wikidata item. Larger matches are refused
+# outright rather than imported in part, since a partial result would make
+# the omitted elements look stale
+METADATA_REFRESH_POSTPASS_MAX_FEATURES = int(
+    os.getenv("METADATA_REFRESH_POSTPASS_MAX_FEATURES", "100")
 )
 
 # Memgraph property-graph store (Bolt) for the Wikidata subject mirror
@@ -468,6 +474,11 @@ MEMGRAPH_TIMEOUT = int(os.getenv("MEMGRAPH_TIMEOUT", "60"))
 
 # How long the subjects-map info panel's JSON responses may be cached.
 SUBJECT_MAP_INFO_CACHE_SECONDS = int(os.getenv("SUBJECT_MAP_INFO_CACHE_SECONDS", "300"))
+# Below this zoom the subjects map requests no OSM element tiles: outlines
+# aren't legible there, and a low-zoom tile would sweep the whole table.
+SUBJECT_MAP_MIN_ZOOM = int(os.getenv("SUBJECT_MAP_MIN_ZOOM", "6"))
+# Edge-cache lifetime for OSM element tiles; browsers always revalidate.
+SUBJECT_MAP_TILE_CACHE_SECONDS = int(os.getenv("SUBJECT_MAP_TILE_CACHE_SECONDS", "300"))
 
 # Languages whose literals the Wikidata mirror keeps (comma-separated BCP47
 # tags).

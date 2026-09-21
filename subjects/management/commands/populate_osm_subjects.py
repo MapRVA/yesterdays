@@ -1,17 +1,17 @@
-import json
 import time
 
 import requests
-from django.contrib.gis.geos import GEOSGeometry
 from django.core.management.base import BaseCommand
 from tqdm import tqdm
 
-from subjects.models import OsmElement, Subject
+from subjects.models import Subject
 from subjects.tasks import (
+    PostpassResultTruncated,
     create_request_session,
     fetch_osm_features,
     get_postpass_timeout,
     get_postpass_url,
+    sync_osm_elements,
 )
 
 
@@ -81,6 +81,10 @@ class Command(BaseCommand):
                 features = fetch_osm_features(
                     session, wikidata_id, postpass_url=postpass_url, timeout=timeout
                 )
+                created_count, updated_count, deleted_count = sync_osm_elements(
+                    subject, features
+                )
+                deleted += deleted_count
 
                 if not features:
                     tqdm.write(
@@ -88,78 +92,36 @@ class Command(BaseCommand):
                             f"  No OSM elements found for {subject.title} ({wikidata_id})"
                         )
                     )
-                    if refresh and subject.osm_elements.exists():
-                        # In refresh mode, delete OSM elements if no longer found in OSM
-                        old_osm_ids = list(
-                            subject.osm_elements.values_list("osm_id", flat=True)
-                        )
-                        delete_count = subject.osm_elements.count()
-                        subject.osm_elements.all().delete()
+                    if deleted_count:
                         tqdm.write(
                             self.style.SUCCESS(
-                                f"  Deleted {delete_count} OSM element(s) {old_osm_ids} (no longer found in OSM)"
+                                f"  Deleted {deleted_count} OSM element(s) (no longer found in OSM)"
                             )
                         )
-                        deleted += delete_count
                     else:
                         skipped += 1
                 else:
-                    # Get current OSM IDs for this subject
-                    current_osm_ids = set(
-                        subject.osm_elements.values_list("osm_id", flat=True)
-                    )
-                    new_osm_ids = {f["properties"]["osm_id"] for f in features}
-
-                    # In refresh mode, delete OSM elements that are no longer in the API response
-                    if refresh:
-                        stale_osm_ids = current_osm_ids - new_osm_ids
-                        if stale_osm_ids:
-                            stale_count = subject.osm_elements.filter(
-                                osm_id__in=stale_osm_ids
-                            ).delete()[0]
-                            tqdm.write(
-                                self.style.SUCCESS(
-                                    f"  Deleted {stale_count} stale OSM element(s) for {subject.title}"
-                                )
+                    if deleted_count:
+                        tqdm.write(
+                            self.style.SUCCESS(
+                                f"  Deleted {deleted_count} stale OSM element(s) for {subject.title}"
                             )
-                            deleted += stale_count
-
-                    # Create or update OsmElements for all features
-                    created_count = 0
-                    updated_count = 0
-                    for feature in features:
-                        osm_id = feature["properties"]["osm_id"]
-                        geometry = feature["geometry"]
-
-                        osm_element, created = OsmElement.objects.get_or_create(
-                            osm_id=osm_id,
-                            defaults={
-                                "subject": subject,
-                                "geometry": GEOSGeometry(json.dumps(geometry)),
-                            },
                         )
-                        if not created:
-                            # Update geometry and subject link if element already exists
-                            osm_element.subject = subject
-                            osm_element.geometry = GEOSGeometry(json.dumps(geometry))
-                            osm_element.save()
-                            updated_count += 1
-                        else:
-                            created_count += 1
-
                     if created_count > 0 or updated_count > 0:
                         tqdm.write(
                             self.style.SUCCESS(
                                 f"  {subject.title}: created {created_count}, updated {updated_count} OSM element(s)"
                             )
                         )
-
                     processed += 1
 
                 # Wait before next request to be respectful to the API
                 if i < subject_count - 1:
                     time.sleep(wait_time)
 
+            except PostpassResultTruncated as e:
+                tqdm.write(self.style.WARNING(f"  Skipping {subject.title}: {e}"))
+                skipped += 1
             except requests.Timeout:
                 tqdm.write(
                     self.style.WARNING(

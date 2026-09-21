@@ -40,6 +40,7 @@
      x-data="subjectsMapPanel()"
      data-tiles-url="{% url 'images:vector_tiles' v=tile_version z=0 x=0 y=0 %}"
      data-osm-elements-url="{% url 'images:osm_elements_tiles' z=0 x=0 y=0 %}"
+     data-osm-elements-min-zoom="{{ osm_element_min_zoom }}"
      data-info-url="{% url 'subjects:subject_map_info' subject_slug='__slug__' %}"
      data-subject-url="{% url 'subjects:subject_detail' subject_slug='__slug__' %}"
      @subjects-map:preview.window="preview($event.detail)"

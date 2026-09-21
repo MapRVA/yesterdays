@@ -801,12 +801,16 @@ def browse_subjects(request):
 def subjects_map(request):
     """Standalone interactive map of all subjects and their georeferenced images.
 
-    The map's data comes entirely from vector tiles fetched client-side, so no
-    per-request context is needed beyond the globally available
-    ``protomaps_api_key`` and ``tile_version`` (see
-    ``images.context_processors.site_settings``).
+    The map's data comes entirely from vector tiles fetched client-side, so the
+    only per-request context is the zoom below which the tile endpoint answers
+    empty; ``protomaps_api_key`` and ``tile_version`` come from
+    ``images.context_processors.site_settings``.
     """
-    return render(request, "subjects/subjects_map.html")
+    return render(
+        request,
+        "subjects/subjects_map.html",
+        {"osm_element_min_zoom": settings.SUBJECT_MAP_MIN_ZOOM},
+    )
 
 
 @cache_control(public=True, max_age=settings.SUBJECT_MAP_INFO_CACHE_SECONDS)

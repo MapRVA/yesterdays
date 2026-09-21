@@ -113,22 +113,6 @@ class SiteSettings(models.Model):
         default=37.60954,
         help_text="Northernmost latitude for the default search bounding box",
     )
-    default_subject_bbox_west = models.FloatField(
-        default=-84.72,
-        help_text="Westernmost longitude for the default subject bounding box (used when refreshing OSM metadata for subjects)",
-    )
-    default_subject_bbox_south = models.FloatField(
-        default=35.90,
-        help_text="Southernmost latitude for the default subject bounding box",
-    )
-    default_subject_bbox_east = models.FloatField(
-        default=-74.97,
-        help_text="Easternmost longitude for the default subject bounding box",
-    )
-    default_subject_bbox_north = models.FloatField(
-        default=39.71,
-        help_text="Northernmost latitude for the default subject bounding box",
-    )
     home_feed_item_count = models.PositiveSmallIntegerField(
         default=5,
         help_text="Number of recent activity items to show in the homepage feed embed",

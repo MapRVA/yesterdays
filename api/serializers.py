@@ -203,10 +203,13 @@ class SubjectSerializer(serializers.ModelSerializer):
 class OsmElementGeoSerializer(GeoFeatureModelSerializer):
     """OSM geometry for a subject as a GeoJSON Feature."""
 
+    # None until the element's type has been recorded; see OsmElement.osm_type.
+    osm_ref = serializers.CharField(read_only=True, allow_null=True)
+
     class Meta:
         model = OsmElement
         geo_field = "geometry"
-        fields = ["osm_id"]
+        fields = ["osm_id", "osm_type", "osm_ref"]
 
 
 # ---------------------------------------------------------------------------

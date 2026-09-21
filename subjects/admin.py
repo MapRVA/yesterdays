@@ -225,8 +225,8 @@ class OccupationAdmin(admin.ModelAdmin):
 class OsmElementInline(admin.TabularInline):
     model = OsmElement
     extra = 0
-    fields = ("osm_id", "geometry_area", "updated_at")
-    readonly_fields = ("osm_id", "geometry_area", "updated_at")
+    fields = ("osm_type", "osm_id", "geometry_area", "updated_at")
+    readonly_fields = ("osm_type", "osm_id", "geometry_area", "updated_at")
     can_delete = False
     show_change_link = True
 
@@ -236,8 +236,15 @@ class OsmElementInline(admin.TabularInline):
 
 @admin.register(OsmElement)
 class OsmElementAdmin(admin.ModelAdmin):
-    list_display = ("osm_id", "subject", "geometry_area", "updated_at", "created_at")
-    list_filter = ("updated_at", "created_at")
+    list_display = (
+        "osm_type",
+        "osm_id",
+        "subject",
+        "geometry_area",
+        "updated_at",
+        "created_at",
+    )
+    list_filter = ("osm_type", "updated_at", "created_at")
     search_fields = ("osm_id", "subject__title")
     readonly_fields = ("created_at", "updated_at", "geometry_area")
     autocomplete_fields = ["subject"]

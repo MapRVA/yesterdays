@@ -358,7 +358,22 @@ class WikidataItem(models.Model):
 class OsmElement(models.Model):
     """OpenStreetMap element with cached geometry"""
 
-    osm_id = models.BigIntegerField(unique=True, help_text="OpenStreetMap element ID")
+    class OsmType(models.TextChoices):
+        NODE = "N", "node"
+        WAY = "W", "way"
+        RELATION = "R", "relation"
+
+    # Nodes, ways and relations each number from 1, so the id alone is
+    # ambiguous. Rows imported before the type was recorded carry NULL until
+    # the refresh rotation next sees their subject; new rows are always typed.
+    osm_type = models.CharField(
+        max_length=1,
+        choices=OsmType.choices,
+        null=True,
+        blank=True,
+        help_text="OpenStreetMap element type",
+    )
+    osm_id = models.BigIntegerField(help_text="OpenStreetMap element ID")
     subject = models.ForeignKey(
         "Subject",
         on_delete=models.CASCADE,
@@ -387,7 +402,19 @@ class OsmElement(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"OSM Element {self.osm_id}"
+        return f"OSM Element {self.osm_ref or self.osm_id}"
+
+    @property
+    def osm_ref(self):
+        """``way/113023444``-style reference, or None until the type is known."""
+        if not self.osm_type:
+            return None
+        return f"{self.OsmType(self.osm_type).label}/{self.osm_id}"
+
+    @property
+    def osm_url(self):
+        ref = self.osm_ref
+        return f"https://www.openstreetmap.org/{ref}" if ref else None
 
     def save(self, *args, **kwargs):
         """Calculate geometry area and centroid before saving"""
@@ -397,7 +424,20 @@ class OsmElement(models.Model):
         super().save(*args, **kwargs)
 
     class Meta:
-        ordering = ["osm_id"]
+        ordering = ["osm_type", "osm_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["osm_type", "osm_id"],
+                name="subjects_osmelement_unique_type_id",
+            ),
+            # Untyped rows keep the bare-id uniqueness they were imported
+            # under, so they can't multiply while they wait to be retyped.
+            models.UniqueConstraint(
+                fields=["osm_id"],
+                condition=models.Q(osm_type__isnull=True),
+                name="subjects_osmelement_unique_untyped_id",
+            ),
+        ]
 
 
 class Person(models.Model):

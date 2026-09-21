@@ -1,6 +1,7 @@
 import hashlib
 import json
 
+from django.conf import settings
 from django.contrib.gis.geos import Point
 from django.db import connection
 from django.http import HttpResponse, JsonResponse
@@ -511,14 +512,31 @@ def _generate_tile(
             return b""
 
 
+def _osm_tile_response(mvt_data: bytes) -> HttpResponse:
+    """OSM element tiles change whenever the refresh rotation runs, so browsers
+    always revalidate and only the edge holds them, briefly."""
+    response = HttpResponse(mvt_data, content_type="application/x-protobuf")
+    response["Cache-Control"] = (
+        f"public, max-age=0, s-maxage={settings.SUBJECT_MAP_TILE_CACHE_SECONDS}"
+    )
+    response["ETag"] = f'"{hashlib.md5(mvt_data).hexdigest()}"'
+    return response
+
+
 def osm_elements_vector_tiles_endpoint(request, z, x, y):
     """Return MVT vector tiles of OSM elements (mixed geometries: points, lines, polygons)"""
+
+    # Subject outlines aren't legible this far out, and elements now span the
+    # globe, so a low-zoom tile would transform every geometry in the table.
+    if z < settings.SUBJECT_MAP_MIN_ZOOM:
+        return _osm_tile_response(b"")
 
     sql = """
         SELECT ST_AsMVT(mvtgeoms.*, 'osm_elements') as mvt FROM (
             SELECT
                 ST_AsMVTGeom(ST_Transform(oe.geometry, 3857), ST_TileEnvelope(%s, %s, %s)) AS geom,
                 oe.osm_id as osm_id,
+                oe.osm_type as osm_type,
                 ST_GeometryType(oe.geometry) as geom_type,
                 s.title as subject_name,
                 s.slug as subject_slug,
@@ -531,7 +549,7 @@ def osm_elements_vector_tiles_endpoint(request, z, x, y):
             LEFT JOIN subjects_subject s ON s.id = oe.subject_id
             INNER JOIN images_subjectmapping sm ON s.id = sm.subject_id
             WHERE ST_Intersects(oe.geometry, ST_Transform(ST_TileEnvelope(%s, %s, %s), 4326))
-            GROUP BY oe.id, s.id, oe.osm_id, oe.geometry, s.title, s.slug, oe.geometry_area
+            GROUP BY oe.id, s.id, oe.osm_id, oe.osm_type, oe.geometry, s.title, s.slug, oe.geometry_area
             ORDER BY
                 CASE
                     WHEN ST_GeometryType(oe.geometry) IN ('ST_Polygon', 'ST_MultiPolygon') THEN oe.geometry_area
@@ -547,9 +565,4 @@ def osm_elements_vector_tiles_endpoint(request, z, x, y):
         cursor.execute(sql, query_params)
         result = cursor.fetchone()
 
-        if result and result[0]:
-            mvt_data = bytes(result[0])
-            response = HttpResponse(mvt_data, content_type="application/x-protobuf")
-            return response
-        else:
-            return HttpResponse(b"", content_type="application/x-protobuf")
+    return _osm_tile_response(bytes(result[0]) if result and result[0] else b"")

@@ -56,7 +56,7 @@ export function addCustomLayers(
   map.addSource("osm-elements", {
     type: "vector",
     tiles: [urls.osmElementTiles],
-    minzoom: 0,
+    minzoom: urls.osmElementMinZoom,
     maxzoom: 14,
     scheme: "xyz",
     attribution: "Subject geometries © OpenStreetMap Contributors",
