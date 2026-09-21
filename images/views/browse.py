@@ -173,6 +173,7 @@ def browse_sources(request):
     stats = _browse_sources_stats(region)
     if region is not None:
         sources = sources.filter(pk__in=stats["by_source"])
+    sources = list(sources)
 
     for source in sources:
         row = stats["by_source"].get(source.id)
@@ -186,6 +187,11 @@ def browse_sources(request):
             - source.georeferenced_images
             - source.will_not_georef_images
         )
+
+    # Largest archives first — in the selected region when there is one, since
+    # total_images is regional then. Python's stable sort keeps the alphabetical
+    # ordering from the queryset for sources with equal image counts.
+    sources.sort(key=lambda source: -source.total_images)
 
     overall_stats = stats["overall"]
 

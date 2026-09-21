@@ -2003,6 +2003,45 @@ class SourceBrowseRegionFilteringTests(StatsEventsMixin, TestCase):
     def test_without_a_selected_region_keeps_the_sitewide_source_list(self):
         self.assertEqual(self.source_slugs(), {"city", "empty", "other", "state"})
 
+    def test_sources_are_ordered_by_sitewide_image_count(self):
+        Source.objects.create(
+            name="Alpha Empty",
+            slug="alpha-empty",
+            url="https://example.com",
+            description="",
+        )
+        self.img("City second", collection=self.city_collection)
+        self.img("City third", collection=self.city_collection)
+
+        response = self.client.get(reverse("images:browse_sources"))
+
+        self.assertEqual(
+            [source.slug for source in response.context["sources"]],
+            ["city", "other", "state", "alpha-empty", "empty"],
+        )
+
+    def test_sources_are_ordered_by_regional_image_count(self):
+        self.img("City outside first", collection=self.city_collection, region=self.other)
+        self.img("City outside second", collection=self.city_collection, region=self.other)
+        self.img("City outside third", collection=self.city_collection, region=self.other)
+        self.img("State in city first", collection=self.state_collection, region=self.city)
+        self.img("State in city second", collection=self.state_collection, region=self.city)
+
+        sitewide_response = self.client.get(reverse("images:browse_sources"))
+        self.assertEqual(
+            [source.slug for source in sitewide_response.context["sources"]],
+            ["city", "state", "other", "empty"],
+        )
+
+        self.client.cookies[REGION_COOKIE_NAME] = self.city.slug
+
+        response = self.client.get(reverse("images:browse_sources"))
+
+        self.assertEqual(
+            [source.slug for source in response.context["sources"]],
+            ["state", "city"],
+        )
+
     def test_source_cards_and_overall_stats_are_regional(self):
         self.img("Outside override", collection=self.city_collection, region=self.other)
         self.img("Skipped", collection=self.city_collection, will_not_georef=True)
