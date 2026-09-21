@@ -27,6 +27,7 @@ from django.utils import timezone
 from images.models import (
     Collection,
     CollectionEmbeddingStats,
+    Georeference,
     Image,
     Source,
     SubjectMapping,
@@ -35,6 +36,8 @@ from images.tasks import (
     refresh_collection_embedding_stats,
     refresh_next_collection_embedding_stats,
 )
+from regions.context_processors import REGION_COOKIE_NAME
+from regions.models import Region, RegionAncestor
 
 from .admin import SubjectAdmin
 from .models import (
@@ -1400,6 +1403,178 @@ class BrowseSubjectsTests(TestCase):
             {self.building.pk, self.landmark.pk},
         )
         self.assertEqual(response.context["overall_stats"]["total_subjects"], 2)
+
+
+class BrowseSubjectsRegionTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        (
+            virginia_item,
+            richmond_item,
+            maryland_item,
+            empty_item,
+            alpha_item,
+            beta_item,
+            gamma_item,
+        ) = WikidataItem.objects.bulk_create(
+            [
+                WikidataItem(wikidata_id="Q2001", title="Virginia"),
+                WikidataItem(wikidata_id="Q2002", title="Richmond"),
+                WikidataItem(wikidata_id="Q2003", title="Maryland"),
+                WikidataItem(wikidata_id="Q2004", title="Empty Region"),
+                WikidataItem(wikidata_id="Q2011", title="Alpha Subject"),
+                WikidataItem(wikidata_id="Q2012", title="Beta Subject"),
+                WikidataItem(wikidata_id="Q2013", title="Gamma Subject"),
+            ]
+        )
+        point = Point(-77.44, 37.54, srid=4326)
+        cls.virginia = Region.objects.create(
+            short_name="Virginia",
+            long_name="Virginia",
+            slug="virginia",
+            wikidata_item=virginia_item,
+            wikidata_coordinate_location=point,
+        )
+        cls.richmond = Region.objects.create(
+            short_name="Richmond",
+            long_name="Richmond, Virginia",
+            slug="richmond",
+            wikidata_item=richmond_item,
+            wikidata_coordinate_location=point,
+        )
+        cls.maryland = Region.objects.create(
+            short_name="Maryland",
+            long_name="Maryland",
+            slug="maryland",
+            wikidata_item=maryland_item,
+            wikidata_coordinate_location=point,
+        )
+        cls.empty_region = Region.objects.create(
+            short_name="Empty Region",
+            long_name="Empty Region",
+            slug="empty-region",
+            wikidata_item=empty_item,
+            wikidata_coordinate_location=point,
+        )
+        RegionAncestor.objects.create(
+            region=cls.richmond,
+            ancestor=virginia_item,
+        )
+
+        cls.alpha = Subject.objects.create(
+            title="Alpha Subject", wikidata_item=alpha_item
+        )
+        cls.beta = Subject.objects.create(
+            title="Beta Subject", wikidata_item=beta_item
+        )
+        cls.gamma = Subject.objects.create(
+            title="Gamma Subject", wikidata_item=gamma_item
+        )
+
+        virginia_source = Source.objects.create(
+            name="Virginia archive",
+            slug="virginia-archive",
+            url="https://example.com/virginia",
+            description="",
+            region=cls.virginia,
+        )
+        virginia_collection = Collection.objects.create(
+            source=virginia_source,
+            name="Virginia photographs",
+            slug="virginia-photographs",
+        )
+        maryland_source = Source.objects.create(
+            name="Maryland archive",
+            slug="maryland-archive",
+            url="https://example.com/maryland",
+            description="",
+            region=cls.maryland,
+        )
+        maryland_collection = Collection.objects.create(
+            source=maryland_source,
+            name="Maryland photographs",
+            slug="maryland-photographs",
+        )
+
+        cls.alpha_richmond = cls._image(
+            virginia_collection, "Alpha in Richmond", cls.alpha, cls.richmond
+        )
+        cls._image(
+            virginia_collection, "More Alpha in Richmond", cls.alpha, cls.richmond
+        )
+        # An image-level assignment overrides the Virginia source and must not
+        # leak into Virginia's count.
+        cls._image(
+            virginia_collection, "Alpha in Maryland", cls.alpha, cls.maryland
+        )
+        # No image or collection assignment: this resolves through the source.
+        cls._image(virginia_collection, "Beta in Virginia", cls.beta)
+        cls._image(maryland_collection, "Gamma in Maryland", cls.gamma)
+
+        Georeference.objects.create(
+            image=cls.alpha_richmond,
+            point=Point(-77.43, 37.55, srid=4326),
+        )
+        Georeference.objects.create(
+            image=cls.alpha_richmond,
+            point=Point(-77.42, 37.56, srid=4326),
+        )
+
+    @staticmethod
+    def _image(collection, title, subject, region=None):
+        image = Image.objects.create(
+            collection=collection,
+            title=title,
+            permalink=f"https://example.com/{title}.jpg",
+            region=region,
+        )
+        SubjectMapping.objects.create(image=image, subject=subject)
+        return image
+
+    def setUp(self):
+        self.client.cookies[REGION_COOKIE_NAME] = "Q2001"
+
+    def test_selected_region_counts_images_in_descendant_regions(self):
+        response = self.client.get(reverse("subjects:browse_subjects"))
+
+        subjects = list(response.context["subjects"])
+        self.assertEqual(
+            [subject.pk for subject in subjects],
+            [self.alpha.pk, self.beta.pk],
+        )
+        self.assertEqual(subjects[0].total_images, 2)
+        self.assertEqual(subjects[0].georeferenced_images, 1)
+        self.assertEqual(subjects[1].total_images, 1)
+        self.assertEqual(response.context["browse_region"], self.virginia)
+        self.assertFalse(response.context["region_fallback"])
+        self.assertContains(response, "Showing subjects with images in Virginia")
+        self.assertNotContains(response, "Gamma Subject")
+
+    def test_ajax_search_remains_scoped_to_selected_region(self):
+        response = self.client.get(
+            reverse("subjects:browse_subjects"),
+            {"filter": "Gamma"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Gamma Subject")
+        self.assertNotContains(response, "subject-card-wrapper")
+
+    def test_region_with_no_subject_images_falls_back_to_global_directory(self):
+        self.client.cookies[REGION_COOKIE_NAME] = "Q2004"
+        response = self.client.get(reverse("subjects:browse_subjects"))
+
+        self.assertIsNone(response.context["browse_region"])
+        self.assertTrue(response.context["region_fallback"])
+        self.assertEqual(
+            {subject.pk for subject in response.context["subjects"]},
+            {self.alpha.pk, self.beta.pk, self.gamma.pk},
+        )
+        self.assertContains(
+            response,
+            "No subjects have images in Empty Region. Showing all subjects.",
+        )
 
 
 class SubjectAutocompleteTests(TestCase):

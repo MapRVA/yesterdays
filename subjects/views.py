@@ -41,6 +41,7 @@ from images.policies import (
     representable_images,
 )
 from images.validation import InvalidInput, parse_json_body, validate_text
+from regions.context_processors import get_current_region
 
 from .memgraph import GRAPH_ERRORS, MemgraphClient
 from .models import Subject, SubjectAncestor, WikidataItem
@@ -663,22 +664,31 @@ def reorder_subjects(request, image_id):
     )
 
 
-def _public_image_count_annotations():
+def _public_image_count_annotations(region=None):
     """Annotations counting a subject's publicly visible images.
 
     Shared by the browse page and the subjects-map info panel so both report
     the same numbers: originals only (no duplicates), from public collections
-    of public sources.
+    of public sources. When ``region`` is supplied, count images assigned to
+    that region or any region inside it using Image.effective_region semantics.
     """
     public_images = Q(
         image_mappings__image__duplicate_of__isnull=True,
         image_mappings__image__collection__public=True,
         image_mappings__image__collection__source__public=True,
     )
+    if region is not None:
+        regional_image_ids = Image.objects.in_region(region).values("pk")
+        public_images &= Q(image_mappings__image_id__in=regional_image_ids)
+
     return {
-        "total_images": models.Count("image_mappings", filter=public_images),
+        "total_images": models.Count(
+            "image_mappings__image",
+            filter=public_images,
+            distinct=True,
+        ),
         "georeferenced_images": models.Count(
-            "image_mappings",
+            "image_mappings__image",
             filter=public_images
             & Q(image_mappings__image__georeferences__isnull=False),
             distinct=True,
@@ -686,14 +696,12 @@ def _public_image_count_annotations():
     }
 
 
-def browse_subjects(request):
-    """Browse all subjects with search and load-more support."""
-    PER_PAGE = 100
-
-    subjects = (
+def _browse_subject_queryset(region=None):
+    """Subjects eligible for the browse grid, optionally scoped by region."""
+    return (
         Subject.objects.all()
         .select_related("wikidata_item", "representative_image")
-        .annotate(**_public_image_count_annotations())
+        .annotate(**_public_image_count_annotations(region))
         # A city (or other broad subject) that is an ancestor of a more
         # specific Subject is represented by its descendants in this grid.
         .annotate(
@@ -707,6 +715,22 @@ def browse_subjects(request):
         .filter(has_descendant_subject=False)
         .order_by("-total_images", "title")
     )
+
+
+def browse_subjects(request):
+    """Browse subjects in the selected region, with search and load more."""
+    PER_PAGE = 100
+
+    browse_region = get_current_region(request)
+    region_fallback = False
+    subjects = _browse_subject_queryset(browse_region)
+    # Decide the fallback against the unsearched directory. A title or
+    # category with no matches should stay an empty regional search rather
+    # than unexpectedly replacing the directory with global results.
+    if browse_region is not None and not subjects.exists():
+        browse_region = None
+        region_fallback = True
+        subjects = _browse_subject_queryset()
 
     is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
@@ -794,6 +818,8 @@ def browse_subjects(request):
         "per_page": PER_PAGE,
         "overall_stats": overall_stats,
         "selected_category": selected_category,
+        "browse_region": browse_region,
+        "region_fallback": region_fallback,
     }
     return render(request, "subjects/browse_subjects.html", context)
 
