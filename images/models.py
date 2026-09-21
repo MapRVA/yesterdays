@@ -162,6 +162,17 @@ class SiteSettings(models.Model):
             "no subjects, and while it sits in a private collection or source."
         ),
     )
+    home_subjects_order = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "Subject ids in the order the homepage's subjects band reads its "
+            "labels. Empty means it follows the order curators gave the "
+            "subjects on the image page. Cleared whenever the photograph "
+            "above changes, since an order is only ever curated against one "
+            "photograph's subjects."
+        ),
+    )
 
     class Meta:
         verbose_name = "Site Settings"
@@ -185,9 +196,49 @@ class SiteSettings(models.Model):
         }
         return {key for key, on in enabled.items() if on}
 
+    def sort_home_subjects(self, mappings):
+        """The subjects band's labels in the order it should read them.
+
+        An admin's manual order (home_subjects_order) when there is one,
+        otherwise the order curators gave the subjects on the image page —
+        and subjects tagged since the ordering was set fall in behind it,
+        in the image page's order, rather than disappearing.
+        """
+        positions = {
+            subject_id: index
+            for index, subject_id in enumerate(self.home_subjects_order or [])
+        }
+        # sorted() is stable, so everything unplaced keeps the order the
+        # caller handed it over in.
+        return sorted(
+            mappings,
+            key=lambda mapping: positions.get(mapping.subject_id, len(positions)),
+        )
+
     def save(self, *args, **kwargs):
         # Ensure only one instance can exist
         self.pk = 1
+        # A manual label order is curated against one photograph's subjects,
+        # so it means nothing once a different photograph is chosen: drop it
+        # rather than leave a stale list to half-apply to the new one. Read
+        # back from the database rather than tracked on the instance so it
+        # holds however the change arrives — admin, shell, or script.
+        if self.home_subjects_order:
+            # A list, not .first(): "no settings row yet" and "a row with no
+            # photograph" both come back as None, and only the second is a
+            # change worth clearing an order for.
+            previous = list(
+                type(self)
+                .objects.filter(pk=1)
+                .values_list("home_subjects_image_id", flat=True)[:1]
+            )
+            if previous and previous[0] != self.home_subjects_image_id:
+                self.home_subjects_order = []
+                # update_or_create() saves with update_fields, which would
+                # otherwise leave the cleared list unwritten.
+                update_fields = kwargs.get("update_fields")
+                if update_fields is not None:
+                    kwargs["update_fields"] = {*update_fields, "home_subjects_order"}
         super().save(*args, **kwargs)
         # Invalidate cache so all processes pick up the new settings
         cache.delete("site_settings")

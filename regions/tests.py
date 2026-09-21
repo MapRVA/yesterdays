@@ -1760,9 +1760,13 @@ class GlobalHomeSubjectsTests(TestCase):
             for subject in feature["subjects_before"] + feature["subjects_after"]
         ]
 
-    def _feature(self, image):
+    def _feature(self, image, order=None):
         SiteSettings.objects.update_or_create(
-            pk=1, defaults={"home_subjects_image": image}
+            pk=1,
+            defaults={
+                "home_subjects_image": image,
+                "home_subjects_order": order or [],
+            },
         )
         response = self.client.get(reverse("home"))
         self.assertTemplateUsed(response, "home_no_region.html")
@@ -1841,6 +1845,67 @@ class GlobalHomeSubjectsTests(TestCase):
         duplicate = self._image("Duplicate", duplicate_of=original)
         self._tag(duplicate, "Main Street Station", "Q1")
         self.assertIsNone(self._feature(duplicate))
+
+    def test_manual_order_overrides_the_curated_one(self):
+        # Which labels flank which side of the photograph is a composition
+        # decision, so an admin can set it for the band alone.
+        image = self._image()
+        station = self._tag(image, "Main Street Station", "Q1", order=0)
+        hall = self._tag(image, "Old City Hall", "Q2", order=1)
+        feature = self._feature(image, order=[hall.subject_id, station.subject_id])
+        self.assertEqual(
+            self._titles(feature), ["Old City Hall", "Main Street Station"]
+        )
+
+    def test_subjects_tagged_since_the_ordering_fall_in_behind_it(self):
+        # Curators keep tagging while an order stands; the new labels join
+        # the end in the image page's order rather than vanishing.
+        image = self._image()
+        station = self._tag(image, "Main Street Station", "Q1", order=0)
+        self._tag(image, "Old City Hall", "Q2", order=1)
+        self._tag(image, "Broad Street", "Q3", order=2)
+        feature = self._feature(image, order=[station.subject_id])
+        self.assertEqual(
+            self._titles(feature),
+            ["Main Street Station", "Old City Hall", "Broad Street"],
+        )
+
+    def test_untagged_subjects_drop_out_of_a_standing_order(self):
+        image = self._image()
+        station = self._tag(image, "Main Street Station", "Q1", order=0)
+        hall = self._tag(image, "Old City Hall", "Q2", order=1)
+        order = [hall.subject_id, station.subject_id]
+        hall.subject.delete()
+        self.assertEqual(
+            self._titles(self._feature(image, order=order)), ["Main Street Station"]
+        )
+
+    def test_choosing_another_photograph_clears_the_manual_order(self):
+        # An order is curated against one photograph's subjects and means
+        # nothing for the next one's.
+        image = self._image()
+        station = self._tag(image, "Main Street Station", "Q1", order=0)
+        hall = self._tag(image, "Old City Hall", "Q2", order=1)
+        self._feature(image, order=[hall.subject_id, station.subject_id])
+
+        replacement = self._image("Capitol Square")
+        self._tag(replacement, "Capitol", "Q3", order=0)
+        settings_row = SiteSettings.objects.get(pk=1)
+        settings_row.home_subjects_image = replacement
+        settings_row.save()
+        self.assertEqual(SiteSettings.objects.get(pk=1).home_subjects_order, [])
+
+    def test_saving_other_settings_leaves_the_manual_order_alone(self):
+        image = self._image()
+        station = self._tag(image, "Main Street Station", "Q1", order=0)
+        hall = self._tag(image, "Old City Hall", "Q2", order=1)
+        order = [hall.subject_id, station.subject_id]
+        self._feature(image, order=order)
+
+        settings_row = SiteSettings.objects.get(pk=1)
+        settings_row.site_subtitle = "Unrelated edit"
+        settings_row.save()
+        self.assertEqual(SiteSettings.objects.get(pk=1).home_subjects_order, order)
 
     def test_surplus_labels_are_counted_rather_than_dropped(self):
         image = self._image()

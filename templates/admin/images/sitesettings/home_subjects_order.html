@@ -1,0 +1,299 @@
+{% comment %}
+Widget for SiteSettings.home_subjects_order (see HomeSubjectsOrderWidget in
+images/admin.py): the chosen photograph's subjects as a list an admin can
+drag, with markers showing where the band splits the labels around the
+picture and where the overflow link swallows the rest.
+
+The hidden input stays empty until something is actually moved, so merely
+saving the settings page doesn't pin an order the image page would
+otherwise keep supplying.
+{% endcomment %}
+<div class="home-subjects-order">
+    {% if subjects %}
+    <input type="hidden" name="{{ name }}" value="{{ value }}" data-order-input>
+    <ul class="home-subjects-order-list"
+        data-order-list
+        data-limit="{{ limit }}"
+        data-curated-order="{{ curated_order }}">
+        {% for subject in subjects %}
+        {% if forloop.counter0 == photo_marker_at %}
+        <li class="home-subjects-order-marker" data-marker-index="{{ photo_marker_at }}">
+            the photograph &mdash; labels above sit before it, below sit after
+        </li>
+        {% endif %}
+        {% if forloop.counter0 == overflow_marker_at %}
+        <li class="home-subjects-order-marker home-subjects-order-marker-overflow"
+            data-marker-index="{{ overflow_marker_at }}">
+            everything below folds into &ldquo;+{{ overflow_count }} more in this photograph&rdquo;
+        </li>
+        {% endif %}
+        <li class="home-subjects-order-item" draggable="true" data-subject-id="{{ subject.id }}">
+            <span class="home-subjects-order-grip" aria-hidden="true">&#8942;&#8942;</span>
+            <span class="home-subjects-order-title">{{ subject.title }}</span>
+            <span class="home-subjects-order-moves">
+                <button type="button" data-move="-1" aria-label="Move {{ subject.title }} earlier">&uarr;</button>
+                <button type="button" data-move="1" aria-label="Move {{ subject.title }} later">&darr;</button>
+            </span>
+        </li>
+        {% endfor %}
+    </ul>
+    <p class="home-subjects-order-status" data-order-status>
+        {% if value %}
+        Ordered by hand. This resets to the order below whenever the photograph changes.
+        {% else %}
+        Following the order curators gave these subjects on the image page.
+        {% endif %}
+    </p>
+    <button type="button" class="home-subjects-order-reset" data-order-reset>
+        Follow the image page&rsquo;s order again
+    </button>
+    {% else %}
+    <p class="home-subjects-order-empty">
+        {% if has_image %}
+        This photograph has no subjects tagged in it yet, so there is nothing to order &mdash;
+        and the band stays hidden until it has some.
+        {% else %}
+        Pick a photograph above and save; its subjects will appear here to order.
+        {% endif %}
+    </p>
+    {% endif %}
+</div>
+
+<style>
+    .home-subjects-order-list {
+        list-style: none;
+        margin: 0 0 8px;
+        padding: 0;
+        max-width: 480px;
+    }
+
+    .home-subjects-order-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        margin-bottom: 4px;
+        border: 1px solid var(--border-color, #ccc);
+        border-radius: 4px;
+        background: var(--body-bg, #fff);
+        cursor: grab;
+    }
+
+    .home-subjects-order-item.is-dragging {
+        opacity: 0.4;
+    }
+
+    /* Past the band's label limit: still orderable, but folded into the
+       overflow link rather than shown. */
+    .home-subjects-order-item.is-overflow {
+        opacity: 0.55;
+    }
+
+    .home-subjects-order-grip {
+        color: var(--body-quiet-color, #666);
+        letter-spacing: -2px;
+    }
+
+    .home-subjects-order-title {
+        flex: 1;
+    }
+
+    .home-subjects-order-moves button {
+        border: 0;
+        background: none;
+        color: var(--link-fg, #417690);
+        cursor: pointer;
+        padding: 0 4px;
+        font-size: 14px;
+    }
+
+    .home-subjects-order-moves button[disabled] {
+        color: var(--body-quiet-color, #999);
+        cursor: default;
+    }
+
+    .home-subjects-order-marker {
+        margin: 6px 0;
+        padding: 2px 0;
+        border-top: 1px dashed var(--border-color, #ccc);
+        color: var(--body-quiet-color, #666);
+        font-size: 11px;
+        font-style: italic;
+        text-transform: lowercase;
+    }
+
+    .home-subjects-order-status,
+    .home-subjects-order-empty {
+        color: var(--body-quiet-color, #666);
+        font-size: 11px;
+        margin: 0 0 6px;
+        max-width: 480px;
+    }
+
+    .home-subjects-order-reset {
+        border: 0;
+        background: none;
+        padding: 0;
+        color: var(--link-fg, #417690);
+        cursor: pointer;
+        font-size: 11px;
+        text-decoration: underline;
+    }
+</style>
+
+<script>
+    (function () {
+        document.querySelectorAll(".home-subjects-order").forEach(function (root) {
+            var list = root.querySelector("[data-order-list]");
+            var input = root.querySelector("[data-order-input]");
+            if (!list || !input || list.dataset.wired) {
+                return;
+            }
+            list.dataset.wired = "1";
+
+            var limit = Number(list.dataset.limit);
+            // Fixed positions: how many labels the band shows and where it
+            // splits them depends on the subject count, which no amount of
+            // dragging changes. So the markers stay put and the items move
+            // around them.
+            var markers = Array.prototype.map.call(
+                list.querySelectorAll("[data-marker-index]"),
+                function (element) {
+                    return { index: Number(element.dataset.markerIndex), element: element };
+                }
+            );
+
+            function items() {
+                return Array.prototype.slice.call(list.querySelectorAll("[data-subject-id]"));
+            }
+
+            function refresh(moved) {
+                var ordered = items();
+                markers.forEach(function (marker) {
+                    marker.element.remove();
+                    var before = ordered[marker.index];
+                    if (before) {
+                        list.insertBefore(marker.element, before);
+                    } else {
+                        list.appendChild(marker.element);
+                    }
+                });
+                ordered.forEach(function (item, index) {
+                    item.classList.toggle("is-overflow", index >= limit);
+                    item.querySelector('[data-move="-1"]').disabled = index === 0;
+                    item.querySelector('[data-move="1"]').disabled = index === ordered.length - 1;
+                });
+                if (moved) {
+                    input.value = ordered
+                        .map(function (item) {
+                            return item.dataset.subjectId;
+                        })
+                        .join(",");
+                    var status = root.querySelector("[data-order-status]");
+                    if (status) {
+                        status.textContent =
+                            "Ordered by hand. This resets to the image page's order " +
+                            "whenever the photograph changes.";
+                    }
+                }
+            }
+
+            list.addEventListener("click", function (event) {
+                var button = event.target.closest("[data-move]");
+                if (!button) {
+                    return;
+                }
+                var item = button.closest("[data-subject-id]");
+                var ordered = items();
+                var from = ordered.indexOf(item);
+                var to = from + Number(button.dataset.move);
+                if (to < 0 || to >= ordered.length) {
+                    return;
+                }
+                if (to > from) {
+                    ordered[to].after(item);
+                } else {
+                    ordered[to].before(item);
+                }
+                refresh(true);
+                // Keep the keyboard on the row that moved, not on a button
+                // that may have just been disabled at the end of the list.
+                var landed = item.querySelector('[data-move="' + button.dataset.move + '"]');
+                (landed && !landed.disabled ? landed : item.querySelector("button:not([disabled])")).focus();
+            });
+
+            var dragged = null;
+
+            list.addEventListener("dragstart", function (event) {
+                var item = event.target.closest("[data-subject-id]");
+                if (!item) {
+                    return;
+                }
+                dragged = item;
+                item.classList.add("is-dragging");
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", item.dataset.subjectId);
+            });
+
+            list.addEventListener("dragover", function (event) {
+                if (!dragged) {
+                    return;
+                }
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                var over = event.target.closest("[data-subject-id]");
+                if (!over || over === dragged) {
+                    return;
+                }
+                var box = over.getBoundingClientRect();
+                if (event.clientY > box.top + box.height / 2) {
+                    over.after(dragged);
+                } else {
+                    over.before(dragged);
+                }
+            });
+
+            list.addEventListener("drop", function (event) {
+                event.preventDefault();
+            });
+
+            list.addEventListener("dragend", function () {
+                if (!dragged) {
+                    return;
+                }
+                dragged.classList.remove("is-dragging");
+                dragged = null;
+                refresh(true);
+            });
+
+            var reset = root.querySelector("[data-order-reset]");
+            if (reset) {
+                reset.addEventListener("click", function () {
+                    var byId = {};
+                    items().forEach(function (item) {
+                        byId[item.dataset.subjectId] = item;
+                    });
+                    (list.dataset.curatedOrder || "")
+                        .split(",")
+                        .filter(Boolean)
+                        .forEach(function (id) {
+                            if (byId[id]) {
+                                list.appendChild(byId[id]);
+                            }
+                        });
+                    refresh(false);
+                    // Empty, not the curated order spelled out: the band
+                    // should go on following the image page from here.
+                    input.value = "";
+                    var status = root.querySelector("[data-order-status]");
+                    if (status) {
+                        status.textContent =
+                            "Following the order curators gave these subjects on the image page.";
+                    }
+                });
+            }
+
+            refresh(false);
+        });
+    })();
+</script>

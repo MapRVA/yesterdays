@@ -5,11 +5,13 @@ from django.contrib import admin, messages
 from django.contrib.auth.models import User
 from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, render
+from django.template.loader import render_to_string
 from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
 from activity.models import CollectionIntroduction
+from yesterdays.views import HOME_SUBJECT_LABEL_LIMIT
 
 from .models import (
     AerialGeoreference,
@@ -1151,9 +1153,126 @@ class CommentAdmin(admin.ModelAdmin):
         return form
 
 
+class HomeSubjectsOrderWidget(forms.Widget):
+    """Drag-to-order list of the featured photograph's subjects.
+
+    Renders the subjects of whichever photograph the subjects band is
+    currently pointed at, in the order the band reads them, with markers for
+    the two places the arrangement matters: where the labels split around
+    the picture, and where the overflow link takes over. The hidden input
+    carries the result back as comma-separated subject ids.
+
+    The list follows the *saved* photograph, so choosing a different one in
+    the field above only repopulates it after a save — which is also when
+    the order resets (SiteSettings.save), so there is nothing stale to
+    carry over.
+    """
+
+    template_name = "admin/images/sitesettings/home_subjects_order.html"
+
+    def __init__(self, attrs=None):
+        super().__init__(attrs)
+        # Set by SiteSettingsAdminForm once it knows which photograph is
+        # featured: SubjectMappings in the image page's order.
+        self.mappings = []
+        self.has_image = False
+
+    def render(self, name, value, attrs=None, renderer=None):
+        # render_to_string rather than the form renderer, so the template
+        # can live in the project templates directory with the rest of them.
+        order = [int(subject_id) for subject_id in value or []]
+        positions = {subject_id: index for index, subject_id in enumerate(order)}
+        mappings = sorted(
+            self.mappings,
+            key=lambda mapping: positions.get(mapping.subject_id, len(positions)),
+        )
+        shown = min(len(mappings), HOME_SUBJECT_LABEL_LIMIT)
+        return render_to_string(
+            self.template_name,
+            {
+                "name": name,
+                # Empty unless an order has actually been set: a settings
+                # save shouldn't quietly pin the image page's order in place.
+                "value": ",".join(str(subject_id) for subject_id in order),
+                "subjects": [
+                    {"id": mapping.subject_id, "title": mapping.subject.title}
+                    for mapping in mappings
+                ],
+                "curated_order": ",".join(
+                    str(mapping.subject_id) for mapping in self.mappings
+                ),
+                "has_image": self.has_image,
+                "limit": HOME_SUBJECT_LABEL_LIMIT,
+                # The band gives the odd label out to the first half; see
+                # get_subjects_feature. One label has nothing to split.
+                "photo_marker_at": (shown + 1) // 2 if shown > 1 else None,
+                "overflow_marker_at": (
+                    HOME_SUBJECT_LABEL_LIMIT
+                    if len(mappings) > HOME_SUBJECT_LABEL_LIMIT
+                    else None
+                ),
+                "overflow_count": max(0, len(mappings) - HOME_SUBJECT_LABEL_LIMIT),
+            },
+        )
+
+    def value_from_datadict(self, data, files, name):
+        # Anything unrecognizable is dropped rather than raising: a bad id
+        # in the list only means that label falls back to its curated place.
+        raw = data.get(name) or ""
+        return [int(part) for part in raw.split(",") if part.strip().isdigit()]
+
+
+class SiteSettingsAdminForm(forms.ModelForm):
+    """Settings form that can order the homepage subjects band by hand."""
+
+    # A plain Field, not forms.JSONField: the widget hands over a list of ids
+    # already, and JSONField would json.dumps() it back into a string on the
+    # way to the widget and json.loads() it on the way back.
+    home_subjects_order = forms.Field(
+        required=False,
+        widget=HomeSubjectsOrderWidget,
+        label="Label order",
+        help_text=(
+            "Drag the labels into the order the band should read them in. "
+            "Resets to the image page's order whenever the photograph above "
+            "changes."
+        ),
+    )
+
+    class Meta:
+        model = SiteSettings
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        widget = self.fields["home_subjects_order"].widget
+        image_id = self.instance.home_subjects_image_id
+        widget.has_image = image_id is not None
+        if image_id is not None:
+            widget.mappings = list(
+                SubjectMapping.objects.filter(image_id=image_id)
+                .select_related("subject")
+                .order_by("order", "subject__title")
+            )
+
+    def clean_home_subjects_order(self):
+        # Only ids the featured photograph actually carries: a subject
+        # untagged since the ordering was set would otherwise sit in the
+        # list forever, and the band has no label to hang on it.
+        widget = self.fields["home_subjects_order"].widget
+        tagged = {mapping.subject_id for mapping in widget.mappings}
+        return [
+            subject_id
+            for subject_id in self.cleaned_data["home_subjects_order"] or []
+            if subject_id in tagged
+        ]
+
+
 @admin.register(SiteSettings)
 class SiteSettingsAdmin(admin.ModelAdmin):
     """Admin configuration for SiteSettings singleton model"""
+
+    form = SiteSettingsAdminForm
 
     def has_add_permission(self, request):
         # Prevent adding multiple instances
@@ -1239,7 +1358,7 @@ class SiteSettingsAdmin(admin.ModelAdmin):
         (
             "Homepage Subjects Band",
             {
-                "fields": ("home_subjects_image",),
+                "fields": ("home_subjects_image", "home_subjects_order"),
                 "description": 'The photograph labelled in the homepage\'s "The Rabbithole Goes Deep" band, shown with the subjects tagged in it. Leave empty to hide the band.',
             },
         ),

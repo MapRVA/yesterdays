@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
 from django.contrib.gis.geos import Point, Polygon
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, connection, transaction
@@ -31,6 +32,7 @@ from images.management.commands.detect_addresses import (
     Command as DetectAddressesCommand,
 )
 from images import policies
+from images.admin import SiteSettingsAdminForm
 from images.models import (
     AerialGeoreference,
     Album,
@@ -43,6 +45,7 @@ from images.models import (
     GeoreferenceValidation,
     Image,
     ImageOfTheDay,
+    SiteSettings,
     Source,
     SubjectMapping,
 )
@@ -4530,3 +4533,120 @@ class InViewSearchPageTests(TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         self.assertNotIn("search-result-points", resp.content.decode())
+
+
+class HomeSubjectsOrderAdminFormTests(TestCase):
+    """The settings form that orders the homepage subjects band by hand.
+
+    The widget (images.admin.HomeSubjectsOrderWidget) lists the featured
+    photograph's subjects in the order the band reads them and posts the
+    result back as comma-separated subject ids.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        source = Source.objects.create(name="Src", slug="ord-src", public=True)
+        collection = Collection.objects.create(
+            name="Coll", slug="ord-coll", source=source, public=True
+        )
+        cls.image = Image.objects.create(
+            collection=collection,
+            title="Broad Street",
+            permalink="https://img.example.com/broad.jpg",
+            thumbnail="https://img.example.com/broad-thumb.jpg",
+        )
+        # bulk_create, because WikidataItem.save() fetches the item's
+        # metadata from Wikidata and a test has no business on the network.
+        items = WikidataItem.objects.bulk_create(
+            [
+                WikidataItem(wikidata_id="Q901", title="Main Street Station"),
+                WikidataItem(wikidata_id="Q902", title="Old City Hall"),
+            ]
+        )
+        cls.station, cls.hall = (
+            SubjectMapping.objects.create(
+                image=cls.image,
+                subject=Subject.objects.create(title=item.title, wikidata_item=item),
+                order=order,
+            )
+            for order, item in enumerate(items)
+        )
+
+    def setUp(self):
+        # SiteSettings.load() memoizes the row in the process-local cache,
+        # which outlives any one test and is not rolled back with the
+        # database.
+        cache.clear()
+        self.addCleanup(cache.clear)
+
+    def _settings(self, **fields):
+        fields.setdefault("home_subjects_image", self.image)
+        obj, _ = SiteSettings.objects.update_or_create(pk=1, defaults=fields)
+        return obj
+
+    def test_widget_lists_the_featured_photographs_subjects(self):
+        form = SiteSettingsAdminForm(instance=self._settings())
+        rendered = str(form["home_subjects_order"])
+        self.assertIn("Main Street Station", rendered)
+        self.assertIn("Old City Hall", rendered)
+        # Nothing pinned yet, so the band goes on following the image page.
+        self.assertIn('value=""', rendered)
+
+    def test_widget_lists_them_in_a_standing_manual_order(self):
+        form = SiteSettingsAdminForm(
+            instance=self._settings(
+                home_subjects_order=[self.hall.subject_id, self.station.subject_id]
+            )
+        )
+        rendered = str(form["home_subjects_order"])
+        self.assertLess(
+            rendered.index("Old City Hall"), rendered.index("Main Street Station")
+        )
+
+    def test_widget_explains_itself_when_there_is_nothing_to_order(self):
+        rendered = str(
+            SiteSettingsAdminForm(instance=self._settings(home_subjects_image=None))[
+                "home_subjects_order"
+            ]
+        )
+        self.assertIn("Pick a photograph above", rendered)
+        # No input either: an omitted value leaves the stored order alone.
+        self.assertNotIn("home_subjects_order", rendered)
+
+    def test_posted_order_is_saved(self):
+        settings_row = self._settings()
+        form = SiteSettingsAdminForm(
+            instance=settings_row,
+            data={
+                "site_title": "Yesterdays",
+                "site_subtitle": "A community effort",
+                "footer_content": "<p>Footer</p>",
+                "admin_email": "admin@example.com",
+                "default_map_longitude": -77.4,
+                "default_map_latitude": 37.5,
+                "default_map_zoom": 12,
+                "default_search_bbox_west": -78,
+                "default_search_bbox_south": 37,
+                "default_search_bbox_east": -77,
+                "default_search_bbox_north": 38,
+                "home_feed_item_count": 5,
+                "home_subjects_image": self.image.pk,
+                "home_subjects_order": f"{self.hall.subject_id},{self.station.subject_id}",
+            },
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        form.save()
+        self.assertEqual(
+            SiteSettings.objects.get(pk=1).home_subjects_order,
+            [self.hall.subject_id, self.station.subject_id],
+        )
+
+    def test_ids_the_photograph_does_not_carry_are_discarded(self):
+        form = SiteSettingsAdminForm(
+            instance=self._settings(),
+            data={"home_subjects_order": f"{self.station.subject_id},999999,oops"},
+        )
+        form.is_valid()
+        self.assertEqual(
+            form.cleaned_data["home_subjects_order"], [self.station.subject_id]
+        )

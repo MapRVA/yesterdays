@@ -287,12 +287,15 @@ def get_subjects_feature(site_settings):
     if image is None:
         return None
 
-    # The order curators put them in on the image page, which is the order
-    # the labels should read in here too.
-    mappings = (
-        image.subject_mappings.select_related("subject")
-        .order_by("order", "subject__title")
-        .all()
+    # The order curators put them in on the image page, unless an admin has
+    # dragged this band's labels into an order of their own — which half of
+    # the picture a label sits beside, and which labels make the cut before
+    # the overflow link, is a composition decision the image page knows
+    # nothing about.
+    mappings = site_settings.sort_home_subjects(
+        image.subject_mappings.select_related("subject").order_by(
+            "order", "subject__title"
+        )
     )
     subjects = [
         {
