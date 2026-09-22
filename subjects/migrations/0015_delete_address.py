@@ -4,14 +4,13 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('directories', '0003_address_delete_entryaddresslink_and_more'),
-        ('subjects', '0014_wikidataitem_title_trgm'),
+        ("directories", "0003_address_delete_entryaddresslink_and_more"),
+        ("subjects", "0014_wikidataitem_title_trgm"),
     ]
 
     operations = [
         migrations.DeleteModel(
-            name='Address',
+            name="Address",
         ),
     ]

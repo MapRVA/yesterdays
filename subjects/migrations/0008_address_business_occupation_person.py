@@ -6,68 +6,117 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('subjects', '0007_subject_representative_image'),
+        ("subjects", "0007_subject_representative_image"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Address',
+            name="Address",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('uuid', models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
-                ('housenumber', models.CharField(blank=True, max_length=255)),
-                ('street', models.CharField(blank=True, max_length=255)),
-                ('city', models.CharField(blank=True, max_length=255)),
-                ('postcode', models.CharField(blank=True, max_length=255)),
-                ('district', models.CharField(blank=True, max_length=255)),
-                ('state', models.CharField(blank=True, max_length=255)),
-                ('place', models.CharField(blank=True, max_length=255)),
-                ('neighbourhood', models.CharField(blank=True, max_length=255)),
-                ('suburb', models.CharField(blank=True, max_length=255)),
-                ('hamlet', models.CharField(blank=True, max_length=255)),
-                ('province', models.CharField(blank=True, max_length=255)),
-                ('floor', models.CharField(blank=True, max_length=255)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "uuid",
+                    models.UUIDField(default=uuid.uuid4, editable=False, unique=True),
+                ),
+                ("housenumber", models.CharField(blank=True, max_length=255)),
+                ("street", models.CharField(blank=True, max_length=255)),
+                ("city", models.CharField(blank=True, max_length=255)),
+                ("postcode", models.CharField(blank=True, max_length=255)),
+                ("district", models.CharField(blank=True, max_length=255)),
+                ("state", models.CharField(blank=True, max_length=255)),
+                ("place", models.CharField(blank=True, max_length=255)),
+                ("neighbourhood", models.CharField(blank=True, max_length=255)),
+                ("suburb", models.CharField(blank=True, max_length=255)),
+                ("hamlet", models.CharField(blank=True, max_length=255)),
+                ("province", models.CharField(blank=True, max_length=255)),
+                ("floor", models.CharField(blank=True, max_length=255)),
             ],
             options={
-                'verbose_name_plural': 'addresses',
+                "verbose_name_plural": "addresses",
             },
         ),
         migrations.CreateModel(
-            name='Business',
+            name="Business",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=500)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("name", models.CharField(max_length=500)),
             ],
             options={
-                'verbose_name_plural': 'businesses',
-                'ordering': ['name'],
+                "verbose_name_plural": "businesses",
+                "ordering": ["name"],
             },
         ),
         migrations.CreateModel(
-            name='Occupation',
+            name="Occupation",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=500)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("name", models.CharField(max_length=500)),
             ],
             options={
-                'ordering': ['name'],
+                "ordering": ["name"],
             },
         ),
         migrations.CreateModel(
-            name='Person',
+            name="Person",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('first_name', models.CharField(blank=True, max_length=200)),
-                ('middle_name', models.CharField(blank=True, max_length=200)),
-                ('last_name', models.CharField(blank=True, max_length=200)),
-                ('birth_date', models.CharField(blank=True, help_text='Birth date as EDTF string', max_length=50)),
-                ('merged_into', models.ForeignKey(blank=True, help_text='If set, this person has been merged into another record', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='merged_from', to='subjects.person')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("first_name", models.CharField(blank=True, max_length=200)),
+                ("middle_name", models.CharField(blank=True, max_length=200)),
+                ("last_name", models.CharField(blank=True, max_length=200)),
+                (
+                    "birth_date",
+                    models.CharField(
+                        blank=True, help_text="Birth date as EDTF string", max_length=50
+                    ),
+                ),
+                (
+                    "merged_into",
+                    models.ForeignKey(
+                        blank=True,
+                        help_text="If set, this person has been merged into another record",
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="merged_from",
+                        to="subjects.person",
+                    ),
+                ),
             ],
             options={
-                'verbose_name_plural': 'people',
-                'ordering': ['last_name', 'first_name'],
+                "verbose_name_plural": "people",
+                "ordering": ["last_name", "first_name"],
             },
         ),
     ]

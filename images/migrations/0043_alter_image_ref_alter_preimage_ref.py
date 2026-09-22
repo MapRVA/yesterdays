@@ -4,20 +4,23 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('images', '0042_image_mirror_image_rotation_and_more'),
+        ("images", "0042_image_mirror_image_rotation_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='image',
-            name='ref',
-            field=models.CharField(help_text='Source-specific reference', max_length=100, null=True),
+            model_name="image",
+            name="ref",
+            field=models.CharField(
+                help_text="Source-specific reference", max_length=100, null=True
+            ),
         ),
         migrations.AlterField(
-            model_name='preimage',
-            name='ref',
-            field=models.CharField(help_text='Source-specific reference', max_length=100, null=True),
+            model_name="preimage",
+            name="ref",
+            field=models.CharField(
+                help_text="Source-specific reference", max_length=100, null=True
+            ),
         ),
     ]

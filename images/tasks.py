@@ -40,9 +40,7 @@ EMPTY_REGION_STATS_TTL = timedelta(days=1)
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60, ignore_result=True)
-def process_image(
-    self, image_id: int, quality: int = 85, force: bool = False
-):
+def process_image(self, image_id: int, quality: int = 85, force: bool = False):
     """
     Ensure an image has the correct transformed/plain assets on R2.
 

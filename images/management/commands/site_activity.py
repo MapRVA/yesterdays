@@ -37,9 +37,7 @@ class Command(BaseCommand):
         aerial_qs = AerialGeoreference.objects.filter(
             georeferenced_at__gte=start, georeferenced_at__lt=end
         )
-        comment_qs = Comment.objects.filter(
-            created_at__gte=start, created_at__lt=end
-        )
+        comment_qs = Comment.objects.filter(created_at__gte=start, created_at__lt=end)
 
         point_count = point_qs.count()
         aerial_count = aerial_qs.count()

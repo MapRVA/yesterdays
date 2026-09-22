@@ -4,15 +4,18 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('subjects', '0018_subject_title_trgm'),
+        ("subjects", "0018_subject_title_trgm"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='wikidataitem',
-            name='demolished',
-            field=models.DateField(blank=True, help_text='Date of demolition/dissolution (Wikidata P576)', null=True),
+            model_name="wikidataitem",
+            name="demolished",
+            field=models.DateField(
+                blank=True,
+                help_text="Date of demolition/dissolution (Wikidata P576)",
+                null=True,
+            ),
         ),
     ]

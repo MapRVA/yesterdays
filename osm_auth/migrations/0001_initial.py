@@ -6,7 +6,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
@@ -15,12 +14,44 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='UserPreferences',
+            name="UserPreferences",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('georef_show_centerline', models.BooleanField(default=False, verbose_name='show centerline by default')),
-                ('georef_context_images', models.CharField(choices=[('hidden', 'Hidden'), ('ghost', 'Ghost'), ('clickable', 'Clickable with popups')], default='ghost', max_length=16, verbose_name='context image display')),
-                ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='preferences', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "georef_show_centerline",
+                    models.BooleanField(
+                        default=False, verbose_name="show centerline by default"
+                    ),
+                ),
+                (
+                    "georef_context_images",
+                    models.CharField(
+                        choices=[
+                            ("hidden", "Hidden"),
+                            ("ghost", "Ghost"),
+                            ("clickable", "Clickable with popups"),
+                        ],
+                        default="ghost",
+                        max_length=16,
+                        verbose_name="context image display",
+                    ),
+                ),
+                (
+                    "user",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="preferences",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
         ),
     ]

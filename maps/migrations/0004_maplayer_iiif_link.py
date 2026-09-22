@@ -4,15 +4,16 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('maps', '0003_remove_layercollection_unique_layercollection_slug_and_more'),
+        ("maps", "0003_remove_layercollection_unique_layercollection_slug_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='maplayer',
-            name='iiif_link',
-            field=models.URLField(blank=True, help_text='Optional URL to the IIIF manifest'),
+            model_name="maplayer",
+            name="iiif_link",
+            field=models.URLField(
+                blank=True, help_text="Optional URL to the IIIF manifest"
+            ),
         ),
     ]

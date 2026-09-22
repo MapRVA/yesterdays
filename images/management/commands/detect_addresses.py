@@ -332,7 +332,7 @@ class Command(BaseCommand):
                 self.stderr.write(
                     self.style.ERROR("Please enter a valid number or 'q' to quit")
                 )
-            except (KeyboardInterrupt, EOFError):
+            except KeyboardInterrupt, EOFError:
                 self.stdout.write("\nCancelled.")
                 return None
 

@@ -4,50 +4,72 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('images', '0054_imageoftheday_note_imageoftheday_user'),
+        ("images", "0054_imageoftheday_note_imageoftheday_user"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='sitesettings',
-            name='home_feed_item_count',
-            field=models.PositiveSmallIntegerField(default=5, help_text='Number of recent activity items to show in the homepage feed embed'),
+            model_name="sitesettings",
+            name="home_feed_item_count",
+            field=models.PositiveSmallIntegerField(
+                default=5,
+                help_text="Number of recent activity items to show in the homepage feed embed",
+            ),
         ),
         migrations.AddField(
-            model_name='sitesettings',
-            name='home_feed_show_comments',
-            field=models.BooleanField(default=True, help_text='Show comments in the homepage feed embed'),
+            model_name="sitesettings",
+            name="home_feed_show_comments",
+            field=models.BooleanField(
+                default=True, help_text="Show comments in the homepage feed embed"
+            ),
         ),
         migrations.AddField(
-            model_name='sitesettings',
-            name='home_feed_show_georeferences',
-            field=models.BooleanField(default=True, help_text='Show georeference activity in the homepage feed embed'),
+            model_name="sitesettings",
+            name="home_feed_show_georeferences",
+            field=models.BooleanField(
+                default=True,
+                help_text="Show georeference activity in the homepage feed embed",
+            ),
         ),
         migrations.AddField(
-            model_name='sitesettings',
-            name='home_feed_show_new_subjects',
-            field=models.BooleanField(default=True, help_text='Show new subject introductions in the homepage feed embed'),
+            model_name="sitesettings",
+            name="home_feed_show_new_subjects",
+            field=models.BooleanField(
+                default=True,
+                help_text="Show new subject introductions in the homepage feed embed",
+            ),
         ),
         migrations.AddField(
-            model_name='sitesettings',
-            name='home_feed_show_site_milestones',
-            field=models.BooleanField(default=True, help_text='Show sitewide milestones in the homepage feed embed'),
+            model_name="sitesettings",
+            name="home_feed_show_site_milestones",
+            field=models.BooleanField(
+                default=True,
+                help_text="Show sitewide milestones in the homepage feed embed",
+            ),
         ),
         migrations.AddField(
-            model_name='sitesettings',
-            name='home_feed_show_subjects',
-            field=models.BooleanField(default=False, help_text='Show subject mapping activity in the homepage feed embed'),
+            model_name="sitesettings",
+            name="home_feed_show_subjects",
+            field=models.BooleanField(
+                default=False,
+                help_text="Show subject mapping activity in the homepage feed embed",
+            ),
         ),
         migrations.AddField(
-            model_name='sitesettings',
-            name='home_feed_show_user_milestones',
-            field=models.BooleanField(default=True, help_text='Show user milestones in the homepage feed embed'),
+            model_name="sitesettings",
+            name="home_feed_show_user_milestones",
+            field=models.BooleanField(
+                default=True,
+                help_text="Show user milestones in the homepage feed embed",
+            ),
         ),
         migrations.AddField(
-            model_name='sitesettings',
-            name='home_feed_show_validations',
-            field=models.BooleanField(default=False, help_text='Show georeference validations in the homepage feed embed'),
+            model_name="sitesettings",
+            name="home_feed_show_validations",
+            field=models.BooleanField(
+                default=False,
+                help_text="Show georeference validations in the homepage feed embed",
+            ),
         ),
     ]

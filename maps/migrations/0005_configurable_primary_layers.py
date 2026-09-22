@@ -5,46 +5,74 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('maps', '0004_maplayer_iiif_link'),
+        ("maps", "0004_maplayer_iiif_link"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='maplayer',
-            options={'ordering': ['order', 'name']},
+            name="maplayer",
+            options={"ordering": ["order", "name"]},
         ),
         migrations.AlterUniqueTogether(
-            name='maplayer',
+            name="maplayer",
             unique_together=set(),
         ),
         migrations.AddField(
-            model_name='maplayer',
-            name='is_default',
-            field=models.BooleanField(default=False, help_text='Whether this is the default base layer (only applies to primary layers)'),
+            model_name="maplayer",
+            name="is_default",
+            field=models.BooleanField(
+                default=False,
+                help_text="Whether this is the default base layer (only applies to primary layers)",
+            ),
         ),
         migrations.AlterField(
-            model_name='maplayer',
-            name='collection',
-            field=models.ForeignKey(blank=True, help_text='Collection this layer belongs to (leave empty for primary/base layers)', null=True, on_delete=django.db.models.deletion.CASCADE, related_name='layers', to='maps.layercollection'),
+            model_name="maplayer",
+            name="collection",
+            field=models.ForeignKey(
+                blank=True,
+                help_text="Collection this layer belongs to (leave empty for primary/base layers)",
+                null=True,
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="layers",
+                to="maps.layercollection",
+            ),
         ),
         migrations.AlterField(
-            model_name='maplayer',
-            name='order',
-            field=models.PositiveIntegerField(default=0, help_text='Display order (lower numbers first)'),
+            model_name="maplayer",
+            name="order",
+            field=models.PositiveIntegerField(
+                default=0, help_text="Display order (lower numbers first)"
+            ),
         ),
         migrations.AlterField(
-            model_name='maplayer',
-            name='type',
-            field=models.CharField(choices=[('pmtiles', 'PMTiles'), ('xyz', 'XYZ Tiles'), ('style', 'MapLibre Style')], default='pmtiles', help_text='Type of map layer (PMTiles or XYZ)', max_length=10),
+            model_name="maplayer",
+            name="type",
+            field=models.CharField(
+                choices=[
+                    ("pmtiles", "PMTiles"),
+                    ("xyz", "XYZ Tiles"),
+                    ("style", "MapLibre Style"),
+                ],
+                default="pmtiles",
+                help_text="Type of map layer (PMTiles or XYZ)",
+                max_length=10,
+            ),
         ),
         migrations.AddConstraint(
-            model_name='maplayer',
-            constraint=models.UniqueConstraint(condition=models.Q(('collection__isnull', False)), fields=('collection', 'slug'), name='unique_layer_slug_per_collection'),
+            model_name="maplayer",
+            constraint=models.UniqueConstraint(
+                condition=models.Q(("collection__isnull", False)),
+                fields=("collection", "slug"),
+                name="unique_layer_slug_per_collection",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='maplayer',
-            constraint=models.UniqueConstraint(condition=models.Q(('collection__isnull', True)), fields=('slug',), name='unique_primary_layer_slug'),
+            model_name="maplayer",
+            constraint=models.UniqueConstraint(
+                condition=models.Q(("collection__isnull", True)),
+                fields=("slug",),
+                name="unique_primary_layer_slug",
+            ),
         ),
     ]

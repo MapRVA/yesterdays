@@ -4,15 +4,17 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('images', '0045_importslot'),
+        ("images", "0045_importslot"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='image',
-            name='tile_generation',
-            field=models.PositiveIntegerField(default=0, help_text='Incremented each time IIIF tiles are regenerated; used as a path segment to bypass CDN caching'),
+            model_name="image",
+            name="tile_generation",
+            field=models.PositiveIntegerField(
+                default=0,
+                help_text="Incremented each time IIIF tiles are regenerated; used as a path segment to bypass CDN caching",
+            ),
         ),
     ]

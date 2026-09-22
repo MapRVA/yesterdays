@@ -5,16 +5,22 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('images', '0042_image_mirror_image_rotation_and_more'),
-        ('subjects', '0006_remove_osmelement_metadata_fields'),
+        ("images", "0042_image_mirror_image_rotation_and_more"),
+        ("subjects", "0006_remove_osmelement_metadata_fields"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='subject',
-            name='representative_image',
-            field=models.ForeignKey(blank=True, help_text='User-chosen representative image for this subject', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to='images.image'),
+            model_name="subject",
+            name="representative_image",
+            field=models.ForeignKey(
+                blank=True,
+                help_text="User-chosen representative image for this subject",
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="+",
+                to="images.image",
+            ),
         ),
     ]

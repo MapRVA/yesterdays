@@ -131,9 +131,7 @@ def duplicate_pair_detail(request, pair_uuid):
         image.hard_blockers = _resolve_blockers(image)
         image.point_georef_count = image.georeferences.count()
         image.aerial_georef_count = image.aerial_georeferences.count()
-        image.total_georef_count = (
-            image.point_georef_count + image.aerial_georef_count
-        )
+        image.total_georef_count = image.point_georef_count + image.aerial_georef_count
 
     context = {
         "image_a": image_a,

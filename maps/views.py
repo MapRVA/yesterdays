@@ -21,9 +21,7 @@ from .models import LayerCollection, MapLayer
 def layer_extent_tile(request, z, x, y):
     """Cacheable discovery polygons; high-zoom visibility is filtered locally."""
     if not (
-        0 <= z <= settings.MAP_LAYER_TILE_MAX_ZOOM
-        and 0 <= x < 2**z
-        and 0 <= y < 2**z
+        0 <= z <= settings.MAP_LAYER_TILE_MAX_ZOOM and 0 <= x < 2**z and 0 <= y < 2**z
     ):
         return HttpResponse(status=404)
 

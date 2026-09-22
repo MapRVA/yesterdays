@@ -151,7 +151,7 @@ class Command(BaseCommand):
                         f"Please enter a number between 1 and {len(collection_data)}"
                     )
 
-            except (ValueError, EOFError, KeyboardInterrupt):
+            except ValueError, EOFError, KeyboardInterrupt:
                 self.stdout.write("\nInvalid input. Please enter a number.")
 
     def create_collection_from_pre_collection(self, pre_collection):

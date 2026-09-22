@@ -90,9 +90,7 @@ def validation_queue(request):
             # whose latest vote was "correct". No validations counts as neutral.
             last_validation_value=Coalesce(
                 Subquery(
-                    GeoreferenceValidation.objects.filter(
-                        georeference=OuterRef("pk")
-                    )
+                    GeoreferenceValidation.objects.filter(georeference=OuterRef("pk"))
                     .order_by("-validated_at", "-id")
                     .annotate(
                         value=Case(

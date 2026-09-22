@@ -6,28 +6,64 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('images', '0052_backfill_subject_mapping_activity_groups'),
+        ("images", "0052_backfill_subject_mapping_activity_groups"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='ImageOfTheDay',
+            name="ImageOfTheDay",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('day', models.DateField(help_text="Calendar day (in the site's timezone) this image is featured on")),
-                ('locked', models.BooleanField(default=False, help_text='When locked, this image is pinned to its day: it will not slide when the queue is reordered, and its day is claimed until unlocked.')),
-                ('created', models.DateTimeField(auto_now_add=True)),
-                ('updated', models.DateTimeField(auto_now=True)),
-                ('image', models.ForeignKey(help_text='The image to feature. An image may be reused on other days.', on_delete=django.db.models.deletion.CASCADE, related_name='featured_days', to='images.image')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "day",
+                    models.DateField(
+                        help_text="Calendar day (in the site's timezone) this image is featured on"
+                    ),
+                ),
+                (
+                    "locked",
+                    models.BooleanField(
+                        default=False,
+                        help_text="When locked, this image is pinned to its day: it will not slide when the queue is reordered, and its day is claimed until unlocked.",
+                    ),
+                ),
+                ("created", models.DateTimeField(auto_now_add=True)),
+                ("updated", models.DateTimeField(auto_now=True)),
+                (
+                    "image",
+                    models.ForeignKey(
+                        help_text="The image to feature. An image may be reused on other days.",
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="featured_days",
+                        to="images.image",
+                    ),
+                ),
             ],
             options={
-                'verbose_name': 'Image of the Day',
-                'verbose_name_plural': 'Images of the Day',
-                'ordering': ['day'],
-                'indexes': [models.Index(fields=['locked'], name='images_imag_locked_5fed40_idx')],
-                'constraints': [models.UniqueConstraint(deferrable=django.db.models.constraints.Deferrable['DEFERRED'], fields=('day',), name='unique_image_of_the_day')],
+                "verbose_name": "Image of the Day",
+                "verbose_name_plural": "Images of the Day",
+                "ordering": ["day"],
+                "indexes": [
+                    models.Index(
+                        fields=["locked"], name="images_imag_locked_5fed40_idx"
+                    )
+                ],
+                "constraints": [
+                    models.UniqueConstraint(
+                        deferrable=django.db.models.constraints.Deferrable["DEFERRED"],
+                        fields=("day",),
+                        name="unique_image_of_the_day",
+                    )
+                ],
             },
         ),
     ]

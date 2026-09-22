@@ -6,21 +6,32 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('images', '0053_imageoftheday'),
+        ("images", "0053_imageoftheday"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='imageoftheday',
-            name='note',
-            field=models.CharField(blank=True, help_text='Optional note about this queue entry', max_length=500, null=True),
+            model_name="imageoftheday",
+            name="note",
+            field=models.CharField(
+                blank=True,
+                help_text="Optional note about this queue entry",
+                max_length=500,
+                null=True,
+            ),
         ),
         migrations.AddField(
-            model_name='imageoftheday',
-            name='user',
-            field=models.ForeignKey(blank=True, help_text='Optional user associated with this queue entry', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='image_of_the_day_entries', to=settings.AUTH_USER_MODEL),
+            model_name="imageoftheday",
+            name="user",
+            field=models.ForeignKey(
+                blank=True,
+                help_text="Optional user associated with this queue entry",
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="image_of_the_day_entries",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
     ]

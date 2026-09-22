@@ -19,8 +19,7 @@ class Region(models.Model):
     long_name = models.CharField(
         max_length=500,
         help_text=(
-            "Full, disambiguated name shown in region lists "
-            "(e.g. Richmond, Virginia)"
+            "Full, disambiguated name shown in region lists (e.g. Richmond, Virginia)"
         ),
     )
     subtitle = models.CharField(

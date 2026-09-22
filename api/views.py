@@ -544,7 +544,7 @@ def import_upload_url_view(request):
 
     try:
         collection = Collection.objects.get(pk=int(collection_id))
-    except (Collection.DoesNotExist, ValueError):
+    except Collection.DoesNotExist, ValueError:
         return Response(
             {"error": "Collection not found."},
             status=status.HTTP_404_NOT_FOUND,
@@ -1051,7 +1051,7 @@ def activity_view(request):
             before = datetime.fromisoformat(before_param)
             if timezone.is_naive(before):
                 before = timezone.make_aware(before)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return Response({"error": "Invalid 'before' timestamp"}, status=400)
 
     types_param = request.query_params.get("types", "")
@@ -1067,7 +1067,7 @@ def activity_view(request):
 
     try:
         limit = max(min(int(request.query_params.get("limit", 20)), 100), 1)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return Response(
             {"error": "Invalid 'limit' parameter. Must be an integer."},
             status=400,
@@ -1216,13 +1216,22 @@ def _parse_search_filters(params, table_ref="images_image"):
                 ).format(t=t)
             )
         except ValueError:
-            return [], {}, Response({"error": "source must be integers separated by commas."}, status=400)
+            return (
+                [],
+                {},
+                Response(
+                    {"error": "source must be integers separated by commas."},
+                    status=400,
+                ),
+            )
 
     # Collection filtering (supports comma-separated IDs)
     collection = params.get("collection")
     if collection is not None:
         try:
-            collection_ids = [int(c.strip()) for c in collection.split(",") if c.strip()]
+            collection_ids = [
+                int(c.strip()) for c in collection.split(",") if c.strip()
+            ]
             where_params["collection_ids"] = collection_ids
             where_conditions.append(
                 sql.SQL("{t}.collection_id = ANY(%(collection_ids)s)").format(t=t)
@@ -1231,7 +1240,10 @@ def _parse_search_filters(params, table_ref="images_image"):
             return (
                 [],
                 {},
-                Response({"error": "collection must be integers separated by commas."}, status=400),
+                Response(
+                    {"error": "collection must be integers separated by commas."},
+                    status=400,
+                ),
             )
 
     return where_conditions, where_params, None

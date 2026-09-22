@@ -54,7 +54,7 @@ def _download_with_resume(
         except retryable as e:
             if attempt + 1 >= max_attempts:
                 raise
-            delay = min(2 ** attempt, 30)
+            delay = min(2**attempt, 30)
             logger.warning(
                 "IIIF download failed at byte %d (attempt %d/%d, retrying in %ds): %s",
                 written,
@@ -111,9 +111,7 @@ def generate_and_upload_iiif_tiles(source_url, r2_tiles_prefix):
                 rel_path = os.path.relpath(local_path, tile_dir)
                 key = f"{r2_tiles_prefix}/{rel_path}"
                 file_ext = os.path.splitext(fname)[1].lower()
-                content_type = CONTENT_TYPES.get(
-                    file_ext, "application/octet-stream"
-                )
+                content_type = CONTENT_TYPES.get(file_ext, "application/octet-stream")
 
                 with open(local_path, "rb") as f:
                     uploader.upload_file_content(

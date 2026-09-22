@@ -80,9 +80,9 @@ _FACING_ORIGIN = sql.SQL(
     " <= %(direction_half_sweep)s)"
 ).format(origin=_ORIGIN)
 
-_WITHIN_RADIUS = sql.SQL(
-    "ST_DWithin(g.point::geography, {origin}, %(radius)s)"
-).format(origin=_ORIGIN)
+_WITHIN_RADIUS = sql.SQL("ST_DWithin(g.point::geography, {origin}, %(radius)s)").format(
+    origin=_ORIGIN
+)
 
 _FROM = sql.SQL(
     "FROM images_georeference g JOIN images_image i ON i.id = g.image_id WHERE {where}"
@@ -132,7 +132,7 @@ def parse_radius(data, key="radius"):
 
     try:
         radius = float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         raise InvalidInput(f"'{key}' must be a number of metres")
 
     if not math.isfinite(radius) or radius <= 0:

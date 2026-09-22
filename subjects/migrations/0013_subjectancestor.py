@@ -5,22 +5,52 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('subjects', '0012_alter_subject_wikidata_item'),
+        ("subjects", "0012_alter_subject_wikidata_item"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='SubjectAncestor',
+            name="SubjectAncestor",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('ancestor', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='+', to='subjects.wikidataitem')),
-                ('subject', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='ancestors', to='subjects.subject')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "ancestor",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="+",
+                        to="subjects.wikidataitem",
+                    ),
+                ),
+                (
+                    "subject",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="ancestors",
+                        to="subjects.subject",
+                    ),
+                ),
             ],
             options={
-                'indexes': [models.Index(fields=['ancestor'], name='subjects_su_ancesto_246c3a_idx')],
-                'constraints': [models.UniqueConstraint(fields=('subject', 'ancestor'), name='subjectancestor_unique_pair')],
+                "indexes": [
+                    models.Index(
+                        fields=["ancestor"], name="subjects_su_ancesto_246c3a_idx"
+                    )
+                ],
+                "constraints": [
+                    models.UniqueConstraint(
+                        fields=("subject", "ancestor"),
+                        name="subjectancestor_unique_pair",
+                    )
+                ],
             },
         ),
     ]

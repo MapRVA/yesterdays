@@ -521,7 +521,7 @@ def _parse_closure_date(literal):
     """
     try:
         return datetime.strptime(literal.value[:10], "%Y-%m-%d").date()
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 
@@ -783,9 +783,7 @@ def build_graph_payload(groups):
             obj = triple.object
 
             if triple.subject.value.startswith(WIKIDATA_STATEMENT_IRI_BASE):
-                stmt_id = triple.subject.value.removeprefix(
-                    WIKIDATA_STATEMENT_IRI_BASE
-                )
+                stmt_id = triple.subject.value.removeprefix(WIKIDATA_STATEMENT_IRI_BASE)
                 _apply_statement_triple(
                     touch_statement(stmt_id, owner), pred, obj, add_statement_edge
                 )
@@ -1028,9 +1026,7 @@ def commit_closure_to_memgraph(
     # write sparql_last_loaded_at in the same INSERT/UPDATE.
     refresh_qids = [q for q in existing_qids if q != seed_qid]
     if refresh_qids:
-        refresh_items = list(
-            WikidataItem.objects.filter(wikidata_id__in=refresh_qids)
-        )
+        refresh_items = list(WikidataItem.objects.filter(wikidata_id__in=refresh_qids))
         for item in refresh_items:
             if item.wikidata_id in labels:
                 item.title = labels[item.wikidata_id]
@@ -1042,9 +1038,7 @@ def commit_closure_to_memgraph(
         )
 
     new_qids = [
-        q
-        for q in qids
-        if q not in existing_qids and q != seed_qid and q in labels
+        q for q in qids if q not in existing_qids and q != seed_qid and q in labels
     ]
     new_items = [
         WikidataItem(

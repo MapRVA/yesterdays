@@ -295,10 +295,8 @@ def remove_image_from_album(request):
         deleted_count, _ = AlbumImage.objects.filter(
             album=album, image_id=int(image_id)
         ).delete()
-    except (TypeError, ValueError):
-        return JsonResponse(
-            {"success": False, "error": "Invalid image_id"}, status=400
-        )
+    except TypeError, ValueError:
+        return JsonResponse({"success": False, "error": "Invalid image_id"}, status=400)
 
     if not deleted_count:
         return JsonResponse(
@@ -404,9 +402,7 @@ def bulk_add_to_album(request):
 
     album_id = data.get("album_id")
     if not album_id:
-        return JsonResponse(
-            {"success": False, "error": "Missing album_id"}, status=400
-        )
+        return JsonResponse({"success": False, "error": "Missing album_id"}, status=400)
 
     album = album_for_owner_or_404(request.user, album_id)
 

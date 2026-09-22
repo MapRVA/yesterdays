@@ -205,10 +205,16 @@ class SyncOsmElementsTests(TestCase):
 
     def test_updates_geometry_and_deletes_stale(self):
         OsmElement.objects.create(
-            osm_type="N", osm_id=1, subject=self.subject, geometry=Point(0, 0, srid=4326)
+            osm_type="N",
+            osm_id=1,
+            subject=self.subject,
+            geometry=Point(0, 0, srid=4326),
         )
         OsmElement.objects.create(
-            osm_type="W", osm_id=9, subject=self.subject, geometry=Point(0, 0, srid=4326)
+            osm_type="W",
+            osm_id=9,
+            subject=self.subject,
+            geometry=Point(0, 0, srid=4326),
         )
 
         counts = sync_osm_elements(self.subject, [_feature("N", 1)])
@@ -221,7 +227,10 @@ class SyncOsmElementsTests(TestCase):
     def test_empty_response_deletes_everything(self):
         self._legacy(1)
         OsmElement.objects.create(
-            osm_type="W", osm_id=2, subject=self.subject, geometry=Point(0, 0, srid=4326)
+            osm_type="W",
+            osm_id=2,
+            subject=self.subject,
+            geometry=Point(0, 0, srid=4326),
         )
 
         self.assertEqual(sync_osm_elements(self.subject, []), (0, 0, 2))
@@ -302,7 +311,9 @@ class OsmTypeMigrationSqlTests(TestCase):
     """The data statements in 0021, run against rows shaped like the legacy ones."""
 
     def test_points_become_nodes_and_subjects_go_to_the_front_of_the_rotation(self):
-        migration = importlib.import_module("subjects.migrations.0021_osmelement_osm_type")
+        migration = importlib.import_module(
+            "subjects.migrations.0021_osmelement_osm_type"
+        )
         subject = _subject("Fontana", "fontana", "Q491128")
         subject.osm_last_checked = timezone.now()
         subject.save(update_fields=["osm_last_checked"])
@@ -800,9 +811,7 @@ class RegionClosureQueryTests(SimpleTestCase):
         return set(self.store.query(closure_query(qid, **kwargs)))
 
     def test_default_variant_unchanged(self):
-        self.assertEqual(
-            closure_query("Q42"), closure_query("Q42", include_p131=False)
-        )
+        self.assertEqual(closure_query("Q42"), closure_query("Q42", include_p131=False))
         self.assertNotIn("P131+", closure_query("Q42"))
 
     def test_region_query_structure(self):
@@ -926,9 +935,7 @@ wd:Q202 rdfs:label "Default override"@mul, "English name"@en .
     def test_legacy_lowercase_statements_keep_their_owner(self):
         payload = build_graph_payload(self.groups)
         owners = {s["id"]: s["owner"] for s in payload["statements"]}
-        self.assertEqual(
-            owners, {"Q100-aaaa-bbbb": "Q100", "q100-cccc-dddd": "Q100"}
-        )
+        self.assertEqual(owners, {"Q100-aaaa-bbbb": "Q100", "q100-cccc-dddd": "Q100"})
 
 
 class MalformedClosureTests(SimpleTestCase):
@@ -1234,9 +1241,7 @@ wd:Q200 wdt:P625 "Point(-77.436111 37.540833)"^^geo:wktLiteral .
     def test_coordinate_location_rejects_out_of_range_and_non_points(self):
         for literal in ('"Point(-200 37.5)"', '"Polygon((0 0, 1 1, 1 0, 0 0))"'):
             with self.subTest(literal=literal):
-                meta = self._extract(
-                    f"wd:Q100 wdt:P625 {literal}^^geo:wktLiteral .\n"
-                )
+                meta = self._extract(f"wd:Q100 wdt:P625 {literal}^^geo:wktLiteral .\n")
                 self.assertIsNone(meta["coordinate_location"])
 
 
@@ -1371,9 +1376,7 @@ class BrowseSubjectsTests(TestCase):
                 WikidataItem(wikidata_id="Q1003", title="Example Landmark"),
             ]
         )
-        cls.city = Subject.objects.create(
-            title="Example City", wikidata_item=city_item
-        )
+        cls.city = Subject.objects.create(title="Example City", wikidata_item=city_item)
         cls.building = Subject.objects.create(
             title="Example Building", wikidata_item=building_item
         )
@@ -1464,9 +1467,7 @@ class BrowseSubjectsRegionTests(TestCase):
         cls.alpha = Subject.objects.create(
             title="Alpha Subject", wikidata_item=alpha_item
         )
-        cls.beta = Subject.objects.create(
-            title="Beta Subject", wikidata_item=beta_item
-        )
+        cls.beta = Subject.objects.create(title="Beta Subject", wikidata_item=beta_item)
         cls.gamma = Subject.objects.create(
             title="Gamma Subject", wikidata_item=gamma_item
         )
@@ -1504,9 +1505,7 @@ class BrowseSubjectsRegionTests(TestCase):
         )
         # An image-level assignment overrides the Virginia source and must not
         # leak into Virginia's count.
-        cls._image(
-            virginia_collection, "Alpha in Maryland", cls.alpha, cls.maryland
-        )
+        cls._image(virginia_collection, "Alpha in Maryland", cls.alpha, cls.maryland)
         # No image or collection assignment: this resolves through the source.
         cls._image(virginia_collection, "Beta in Virginia", cls.beta)
         cls._image(maryland_collection, "Gamma in Maryland", cls.gamma)
@@ -1738,9 +1737,7 @@ class SubjectAdminWikidataLinkTests(TestCase):
         self.assertNotIn("wikidata_item_display", fields)
 
     def test_change_form_shows_a_read_only_link_instead(self):
-        fields = flatten_fieldsets(
-            self.admin.get_fieldsets(self.request, self.subject)
-        )
+        fields = flatten_fieldsets(self.admin.get_fieldsets(self.request, self.subject))
 
         self.assertNotIn("wikidata_item", fields)
         self.assertIn("wikidata_item_display", fields)
@@ -1833,9 +1830,7 @@ class SubjectMutationAuthorizationTests(TestCase):
         )
 
     def map_subject(self, image):
-        return SubjectMapping.objects.create(
-            image=image, subject=self.subject, order=1
-        )
+        return SubjectMapping.objects.create(image=image, subject=self.subject, order=1)
 
     def test_add_subject_rejects_inaccessible_images(self):
         self.client.force_login(self.user)
@@ -1889,9 +1884,7 @@ class SubjectMutationAuthorizationTests(TestCase):
         self.client.force_login(self.user)
 
         response = self.post_json(
-            reverse(
-                "subjects:remove_subject_from_image", args=[hidden_mapping.id]
-            )
+            reverse("subjects:remove_subject_from_image", args=[hidden_mapping.id])
         )
         self.assertEqual(response.status_code, 404)
         self.assertTrue(SubjectMapping.objects.filter(id=hidden_mapping.id).exists())

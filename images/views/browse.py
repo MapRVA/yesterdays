@@ -137,18 +137,13 @@ def _browse_sources_stats(region=None):
     rows = _public_collection_stats(region)
     if region is not None:
         rows = rows.filter(total_images__gt=0)
-    per_source = (
-        rows.values("collection__source")
-        .annotate(
-            collections=Count("collection"),
-            total=Sum("total_images"),
-            georeferenced=Sum(
-                F("georeferenced_low")
-                + F("georeferenced_medium")
-                + F("georeferenced_high")
-            ),
-            will_not_georef=Sum("will_not_georef_images"),
-        )
+    per_source = rows.values("collection__source").annotate(
+        collections=Count("collection"),
+        total=Sum("total_images"),
+        georeferenced=Sum(
+            F("georeferenced_low") + F("georeferenced_medium") + F("georeferenced_high")
+        ),
+        will_not_georef=Sum("will_not_georef_images"),
     )
     return {
         "by_source": {row["collection__source"]: row for row in per_source},
@@ -200,10 +195,9 @@ def browse_sources(request):
         top_rated_entries = top_rated_entries.filter(
             image_id__in=Image.objects.in_region(region).values("pk")
         )
-    top_rated_entry = (
-        top_rated_entries.order_by("-sort_value", "-avg_rating", "-vote_count", "image_id")
-        .first()
-    )
+    top_rated_entry = top_rated_entries.order_by(
+        "-sort_value", "-avg_rating", "-vote_count", "image_id"
+    ).first()
     top_rated_image = None
     if top_rated_entry:
         top_rated_image = Image.objects.select_related("collection__source").get(
@@ -528,7 +522,7 @@ def top_rated_images(request):
         page_number = int(page_number)
         if page_number < 1:
             page_number = 1
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         page_number = 1
 
     # Start with all view entries
@@ -661,7 +655,7 @@ def browse_aerials(request):
                 aerials = aerials.filter(id__in=filtered_image_ids)
                 is_filtered = True
 
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             # Invalid coordinates, ignore filtering
             pass
 

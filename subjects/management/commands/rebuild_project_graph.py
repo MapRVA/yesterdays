@@ -14,7 +14,5 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         count = rebuild_project_graph()
         self.stdout.write(
-            self.style.SUCCESS(
-                f"Project graph rebuilt with {count} subject marker(s)"
-            )
+            self.style.SUCCESS(f"Project graph rebuilt with {count} subject marker(s)")
         )

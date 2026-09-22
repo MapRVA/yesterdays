@@ -102,11 +102,12 @@ class RegionProtectTests(TestCase):
         item = WikidataItem.objects.bulk_create(
             [WikidataItem(wikidata_id="Q950", title="Test Region")]
         )[0]
-        region = make_region(
-            short_name="Test Region", slug="test", wikidata_item=item
-        )
+        region = make_region(short_name="Test Region", slug="test", wikidata_item=item)
         Source.objects.create(
-            name="Src", slug="src", url="https://example.com", description="",
+            name="Src",
+            slug="src",
+            url="https://example.com",
+            description="",
             region=region,
         )
         with self.assertRaises(ProtectedError):
@@ -166,7 +167,9 @@ class RegionManageViewTests(TestCase):
         for url in self._urls():
             with self.subTest(url=url):
                 self.assertEqual(self.client.get(url).status_code, 200)
-        response = self.client.get(reverse("regions:region_edit", args=[self.region.pk]))
+        response = self.client.get(
+            reverse("regions:region_edit", args=[self.region.pk])
+        )
         self.assertContains(response, "region-map-bounds-map")
         self.assertContains(response, "region-geocoder-bounds-map")
         self.assertContains(response, "Use the rectangle tool")
@@ -364,9 +367,7 @@ class RegionAdminFormTests(TestCase):
         region = make_region(
             short_name="Virginia", slug="virginia", wikidata_item=self.existing_item
         )
-        form = self._form(
-            instance=region, wikidata_id="Q1370", slug="virginia"
-        )
+        form = self._form(instance=region, wikidata_id="Q1370", slug="virginia")
         self.assertTrue(form.is_valid(), form.errors)
         check.assert_not_called()
         saved = form.save()
@@ -652,6 +653,7 @@ class RegionBoundsResolutionTests(SimpleTestCase):
         self.assertIsNone(region.map_bbox)
         self.assertIsNone(region.search_bbox)
 
+
 class RegionSaveHydrationTests(TestCase):
     """Region.save() re-hydrates already-mirrored items (for P131)."""
 
@@ -671,9 +673,7 @@ class RegionSaveHydrationTests(TestCase):
     def test_attach_to_hydrated_item_enqueues_rehydration(self):
         with mock.patch("subjects.tasks.hydrate_wikidata_item.delay") as delay:
             with self.captureOnCommitCallbacks(execute=True):
-                make_region(
-                    short_name="R", slug="r1", wikidata_item=self.hydrated
-                )
+                make_region(short_name="R", slug="r1", wikidata_item=self.hydrated)
         delay.assert_called_once_with("Q9001")
 
     def test_attach_to_unhydrated_item_does_not_enqueue(self):
@@ -685,9 +685,7 @@ class RegionSaveHydrationTests(TestCase):
         delay.assert_not_called()
 
     def test_qid_change_on_edit_enqueues_rehydration(self):
-        region = make_region(
-            short_name="R", slug="r3", wikidata_item=self.fresh
-        )
+        region = make_region(short_name="R", slug="r3", wikidata_item=self.fresh)
         with mock.patch("subjects.tasks.hydrate_wikidata_item.delay") as delay:
             with self.captureOnCommitCallbacks(execute=True):
                 region.wikidata_item = self.hydrated
@@ -697,9 +695,7 @@ class RegionSaveHydrationTests(TestCase):
     def test_name_only_edit_does_not_enqueue(self):
         # Created outside captureOnCommitCallbacks, so the creation's own
         # on_commit callback is never executed.
-        region = make_region(
-            short_name="R", slug="r4", wikidata_item=self.hydrated
-        )
+        region = make_region(short_name="R", slug="r4", wikidata_item=self.hydrated)
         with mock.patch("subjects.tasks.hydrate_wikidata_item.delay") as delay:
             with self.captureOnCommitCallbacks(execute=True):
                 region.short_name = "Renamed"
@@ -842,9 +838,7 @@ class CheckRegionResponseTests(SimpleTestCase):
         self.assertIsNone(result.coordinate)
 
     def test_row_with_coordinate(self):
-        result = self._check(
-            [{"coord": {"value": "Point(-77.4366667 37.5408333)"}}]
-        )
+        result = self._check([{"coord": {"value": "Point(-77.4366667 37.5408333)"}}])
         self.assertTrue(result.eligible)
         self.assertAlmostEqual(result.coordinate.x, -77.4366667)
         self.assertAlmostEqual(result.coordinate.y, 37.5408333)
@@ -921,7 +915,9 @@ class RefreshTaskRegionTests(TestCase):
     ):
         fetch.return_value = {
             **self._SEED_DATA,
-            "metadata": {"coordinate_location": Point(-77.436111, 37.540833, srid=4326)},
+            "metadata": {
+                "coordinate_location": Point(-77.436111, 37.540833, srid=4326)
+            },
         }
         result = _do_refresh_wikidata_item(self.region_item)
         self.assertEqual(result["status"], "success")
@@ -1201,22 +1197,16 @@ class CurrentRegionContextProcessorTests(TestCase):
         self.assertIsNone(self._context()["current_region"])
 
     def test_valid_qid_resolves_region(self):
-        self.assertEqual(
-            self._context("Q920")["current_region"], self.region
-        )
+        self.assertEqual(self._context("Q920")["current_region"], self.region)
 
     def test_legacy_slug_still_resolves_region(self):
-        self.assertEqual(
-            self._context("richmond")["current_region"], self.region
-        )
+        self.assertEqual(self._context("richmond")["current_region"], self.region)
 
     def test_unknown_identifier_returns_none_without_error(self):
         self.assertIsNone(self._context("Q999999999")["current_region"])
 
     def test_cookie_name_exposed_in_context(self):
-        self.assertEqual(
-            self._context()["region_cookie_name"], REGION_COOKIE_NAME
-        )
+        self.assertEqual(self._context()["region_cookie_name"], REGION_COOKIE_NAME)
 
     def test_region_map_configuration_is_exposed(self):
         map_bounds = Polygon.from_bbox((-77.7, 37.3, -77.2, 37.8))
@@ -1275,9 +1265,7 @@ class HomeRegionBranchTests(TestCase):
         self.assertTemplateUsed(response, "home_no_region.html")
 
     def test_region_subtitle_shown(self):
-        Region.objects.filter(pk=self.region.pk).update(
-            subtitle="Old Richmond, mapped"
-        )
+        Region.objects.filter(pk=self.region.pk).update(subtitle="Old Richmond, mapped")
         self.client.cookies[REGION_COOKIE_NAME] = "richmond"
         response = self.client.get(reverse("home"))
         self.assertContains(response, "Old Richmond, mapped")
@@ -1288,9 +1276,7 @@ class HomeRegionBranchTests(TestCase):
         site_settings.save()
         self.client.cookies[REGION_COOKIE_NAME] = "richmond"
         response = self.client.get(reverse("home"))
-        self.assertContains(
-            response, "Place historical images of Richmond on the map!"
-        )
+        self.assertContains(response, "Place historical images of Richmond on the map!")
         self.assertNotContains(response, "Sitewide tagline")
 
 
@@ -1663,9 +1649,7 @@ class RegionDirectoryTests(TestCase):
 
     def test_card_leads_with_the_representative_photograph(self):
         source = Source.objects.create(name="Src", slug="src")
-        collection = Collection.objects.create(
-            name="Coll", slug="coll", source=source
-        )
+        collection = Collection.objects.create(name="Coll", slug="coll", source=source)
         self.richmond.representative_image = Image.objects.create(
             collection=collection,
             title="Richmond's pick",
@@ -1794,9 +1778,7 @@ class GlobalHomeSubjectsTests(TestCase):
         self.assertEqual(
             [len(feature["subjects_before"]), len(feature["subjects_after"])], [2, 1]
         )
-        self.assertEqual(
-            self._titles(feature), ["Subject 0", "Subject 1", "Subject 2"]
-        )
+        self.assertEqual(self._titles(feature), ["Subject 0", "Subject 1", "Subject 2"])
 
     def test_band_renders_the_labels_as_links(self):
         image = self._image()
@@ -1968,7 +1950,9 @@ class MapDisplayCenterTests(TestCase):
         bounds.srid = 4326
         Region.objects.filter(pk=self.region.pk).update(map_bounds=bounds)
         self.client.cookies[REGION_COOKIE_NAME] = self.region.slug
-        resp = self.client.get(self.url, {"center_lng": "-77.44", "center_lat": "37.53"})
+        resp = self.client.get(
+            self.url, {"center_lng": "-77.44", "center_lat": "37.53"}
+        )
         self.assertContains(resp, "const mapCenter = [-77.44, 37.53];")
         self.assertContains(resp, "const mapBounds = null;")
 

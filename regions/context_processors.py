@@ -19,12 +19,14 @@ def get_current_region(request):
     if not identifier:
         return None
     if identifier.startswith("Q") and identifier[1:].isdigit():
-        return Region.objects.select_related("wikidata_item").filter(
-            wikidata_item__wikidata_id=identifier
-        ).first()
-    return Region.objects.select_related("wikidata_item").filter(
-        slug=identifier
-    ).first()
+        return (
+            Region.objects.select_related("wikidata_item")
+            .filter(wikidata_item__wikidata_id=identifier)
+            .first()
+        )
+    return (
+        Region.objects.select_related("wikidata_item").filter(slug=identifier).first()
+    )
 
 
 def current_region(request):

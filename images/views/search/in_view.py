@@ -42,8 +42,7 @@ def _in_view_filters(request):
         params["end_year"] = int(end_year)
         conditions.append(
             sql.SQL(
-                "(i.end_decdate <= %(end_year)s"
-                " OR i.fuzzy_end_decdate <= %(end_year)s)"
+                "(i.end_decdate <= %(end_year)s OR i.fuzzy_end_decdate <= %(end_year)s)"
             )
         )
 

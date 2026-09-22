@@ -4,15 +4,18 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('regions', '0002_region_advertise'),
+        ("regions", "0002_region_advertise"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='region',
-            name='subtitle',
-            field=models.CharField(blank=True, help_text='Tagline shown under the region homepage title; falls back to a generic line naming the region when blank', max_length=500),
+            model_name="region",
+            name="subtitle",
+            field=models.CharField(
+                blank=True,
+                help_text="Tagline shown under the region homepage title; falls back to a generic line naming the region when blank",
+                max_length=500,
+            ),
         ),
     ]

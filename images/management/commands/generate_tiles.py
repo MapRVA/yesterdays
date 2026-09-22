@@ -68,13 +68,17 @@ class Command(BaseCommand):
         image_ids = list(qs.values_list("id", flat=True))
 
         if options["dry_run"]:
-            self.stdout.write(f"Would queue {len(image_ids)} image(s) for tile generation.")
+            self.stdout.write(
+                f"Would queue {len(image_ids)} image(s) for tile generation."
+            )
             return
 
         for image_id in image_ids:
             generate_iiif_tiles.delay(image_id)
 
-        self.stdout.write(self.style.SUCCESS(f"Queued {len(image_ids)} image(s) for tile generation."))
+        self.stdout.write(
+            self.style.SUCCESS(f"Queued {len(image_ids)} image(s) for tile generation.")
+        )
 
     def _handle_migrate(self, options):
         uploader = R2Uploader()

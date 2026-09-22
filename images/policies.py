@@ -109,7 +109,7 @@ def get_image_or_404(queryset, image_id):
     """
     try:
         return queryset.get(pk=int(image_id))
-    except (Image.DoesNotExist, OverflowError, TypeError, ValueError):
+    except Image.DoesNotExist, OverflowError, TypeError, ValueError:
         raise Http404("Image not found")
 
 
@@ -136,7 +136,7 @@ def parse_image_ids(raw_ids, *, limit=None):
             raise ValueError("invalid image ID")
         try:
             seen.setdefault(int(raw_id), None)
-        except (OverflowError, TypeError, ValueError):
+        except OverflowError, TypeError, ValueError:
             # OverflowError covers float infinities, which int() refuses.
             raise ValueError("invalid image ID")
 
@@ -199,5 +199,5 @@ def album_for_owner_or_404(user, album_id):
         raise Http404("Album not found")
     try:
         return Album.objects.get(pk=album_id, owner=user)
-    except (Album.DoesNotExist, ValidationError, TypeError, ValueError):
+    except Album.DoesNotExist, ValidationError, TypeError, ValueError:
         raise Http404("Album not found")

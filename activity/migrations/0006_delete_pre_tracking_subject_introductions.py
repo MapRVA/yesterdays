@@ -35,7 +35,6 @@ def noop_reverse(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("activity", "0005_subjectintroduction"),
         ("images", "0052_backfill_subject_mapping_activity_groups"),

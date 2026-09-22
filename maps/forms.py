@@ -35,9 +35,7 @@ class MapLayerForm(forms.ModelForm):
         min_value=0,
         max_value=24,
         widget=forms.HiddenInput,
-        help_text=(
-            "Zoom OUT to the first level where this layer should be available."
-        ),
+        help_text=("Zoom OUT to the first level where this layer should be available."),
     )
 
     FIELD_GROUPS = (

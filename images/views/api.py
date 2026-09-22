@@ -243,7 +243,7 @@ def polygonal_georeferences_at_point(request):
     try:
         lat = float(request.GET.get("lat"))
         lon = float(request.GET.get("lon"))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return JsonResponse(
             {"error": "Invalid or missing lat/lon parameters"}, status=400
         )
@@ -347,8 +347,13 @@ def vector_tiles_endpoint(request, z, x, y, v=None):
     )
     is_filtered = any(
         [
-            image_id, collection_id, source_id, subject_id,
-            album_id, georeferenced_by, region,
+            image_id,
+            collection_id,
+            source_id,
+            subject_id,
+            album_id,
+            georeferenced_by,
+            region,
         ]
     )
 

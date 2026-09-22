@@ -5,40 +5,63 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('directories', '0002_alter_directory_ocr_prompt'),
+        ("directories", "0002_alter_directory_ocr_prompt"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Address',
+            name="Address",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('type', models.CharField(blank=True, help_text='Free-text role label, e.g. "home", "work"', max_length=50)),
-                ('housenumber', models.CharField(blank=True, max_length=255)),
-                ('street', models.CharField(blank=True, max_length=255)),
-                ('city', models.CharField(blank=True, max_length=255)),
-                ('postcode', models.CharField(blank=True, max_length=255)),
-                ('district', models.CharField(blank=True, max_length=255)),
-                ('state', models.CharField(blank=True, max_length=255)),
-                ('place', models.CharField(blank=True, max_length=255)),
-                ('neighbourhood', models.CharField(blank=True, max_length=255)),
-                ('suburb', models.CharField(blank=True, max_length=255)),
-                ('hamlet', models.CharField(blank=True, max_length=255)),
-                ('province', models.CharField(blank=True, max_length=255)),
-                ('floor', models.CharField(blank=True, max_length=255)),
-                ('entry', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='addresses', to='directories.entry')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "type",
+                    models.CharField(
+                        blank=True,
+                        help_text='Free-text role label, e.g. "home", "work"',
+                        max_length=50,
+                    ),
+                ),
+                ("housenumber", models.CharField(blank=True, max_length=255)),
+                ("street", models.CharField(blank=True, max_length=255)),
+                ("city", models.CharField(blank=True, max_length=255)),
+                ("postcode", models.CharField(blank=True, max_length=255)),
+                ("district", models.CharField(blank=True, max_length=255)),
+                ("state", models.CharField(blank=True, max_length=255)),
+                ("place", models.CharField(blank=True, max_length=255)),
+                ("neighbourhood", models.CharField(blank=True, max_length=255)),
+                ("suburb", models.CharField(blank=True, max_length=255)),
+                ("hamlet", models.CharField(blank=True, max_length=255)),
+                ("province", models.CharField(blank=True, max_length=255)),
+                ("floor", models.CharField(blank=True, max_length=255)),
+                (
+                    "entry",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="addresses",
+                        to="directories.entry",
+                    ),
+                ),
             ],
             options={
-                'verbose_name_plural': 'addresses',
+                "verbose_name_plural": "addresses",
             },
         ),
         migrations.DeleteModel(
-            name='EntryAddressLink',
+            name="EntryAddressLink",
         ),
         migrations.AddIndex(
-            model_name='address',
-            index=models.Index(fields=['street', 'housenumber'], name='directories_street_01b900_idx'),
+            model_name="address",
+            index=models.Index(
+                fields=["street", "housenumber"], name="directories_street_01b900_idx"
+            ),
         ),
     ]

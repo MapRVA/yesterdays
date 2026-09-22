@@ -184,7 +184,9 @@ def ensure_schema(client=None):
                 session.run(
                     f"CREATE CONSTRAINT ON (n:{label}) ASSERT n.{prop} IS UNIQUE"
                 ).consume()
-                logger.info("Created Memgraph unique constraint on :%s(%s)", label, prop)
+                logger.info(
+                    "Created Memgraph unique constraint on :%s(%s)", label, prop
+                )
 
         for row in session.run("SHOW STORAGE INFO").data():
             if (

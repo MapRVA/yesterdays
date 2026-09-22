@@ -4,35 +4,38 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('images', '0043_alter_image_ref_alter_preimage_ref'),
+        ("images", "0043_alter_image_ref_alter_preimage_ref"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='image',
-            name='height',
+            model_name="image",
+            name="height",
             field=models.PositiveIntegerField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='image',
-            name='iiif_url',
-            field=models.URLField(blank=True, help_text='Base URL for the IIIF Image Service (set when tiles are generated)', null=True),
+            model_name="image",
+            name="iiif_url",
+            field=models.URLField(
+                blank=True,
+                help_text="Base URL for the IIIF Image Service (set when tiles are generated)",
+                null=True,
+            ),
         ),
         migrations.AddField(
-            model_name='image',
-            name='tile_error',
+            model_name="image",
+            name="tile_error",
             field=models.TextField(blank=True),
         ),
         migrations.AddField(
-            model_name='image',
-            name='tile_status',
-            field=models.CharField(blank=True, default='', max_length=20),
+            model_name="image",
+            name="tile_status",
+            field=models.CharField(blank=True, default="", max_length=20),
         ),
         migrations.AddField(
-            model_name='image',
-            name='width',
+            model_name="image",
+            name="width",
             field=models.PositiveIntegerField(blank=True, null=True),
         ),
     ]

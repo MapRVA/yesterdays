@@ -5,15 +5,22 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('subjects', '0011_rename_subjects_wi_sparql__7c93ab_idx_subjects_wi_sparql__5019b7_idx'),
+        (
+            "subjects",
+            "0011_rename_subjects_wi_sparql__7c93ab_idx_subjects_wi_sparql__5019b7_idx",
+        ),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='subject',
-            name='wikidata_item',
-            field=models.OneToOneField(help_text='Linked Wikidata item', on_delete=django.db.models.deletion.CASCADE, related_name='subject', to='subjects.wikidataitem'),
+            model_name="subject",
+            name="wikidata_item",
+            field=models.OneToOneField(
+                help_text="Linked Wikidata item",
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="subject",
+                to="subjects.wikidataitem",
+            ),
         ),
     ]

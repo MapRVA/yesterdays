@@ -4,15 +4,16 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('images', '0055_sitesettings_home_feed_item_count_and_more'),
+        ("images", "0055_sitesettings_home_feed_item_count_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='imageoftheday',
-            name='note_html',
-            field=models.TextField(blank=True, editable=False, help_text='Cached rendered HTML of note'),
+            model_name="imageoftheday",
+            name="note_html",
+            field=models.TextField(
+                blank=True, editable=False, help_text="Cached rendered HTML of note"
+            ),
         ),
     ]

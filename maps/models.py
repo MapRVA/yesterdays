@@ -181,9 +181,7 @@ class MapLayer(models.Model):
         self._normalize_collection_metadata()
         collection_errors = {}
         if self.collection_id is not None and self.polygon is None:
-            collection_errors["polygon"] = (
-                "Draw a polygon for this collection layer."
-            )
+            collection_errors["polygon"] = "Draw a polygon for this collection layer."
         if self.collection_id is not None and self.min_zoom is None:
             collection_errors["min_zoom"] = (
                 "Choose a minimum zoom for this collection layer."

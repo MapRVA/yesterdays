@@ -15,7 +15,6 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("subjects", "0013_subjectancestor"),
         ("images", "0035_enhance_search_vector"),

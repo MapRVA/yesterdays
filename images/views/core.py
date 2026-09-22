@@ -86,7 +86,7 @@ def _float_param(request, name):
     """
     try:
         value = float(request.GET[name])
-    except (KeyError, TypeError, ValueError):
+    except KeyError, TypeError, ValueError:
         return None
     return value if math.isfinite(value) else None
 
@@ -293,7 +293,7 @@ def _validate_rating(data):
 
     try:
         rating = int(rating)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         raise InvalidInput("Rating must be an integer")
 
     if not (1 <= rating <= 10):
@@ -400,7 +400,7 @@ def mark_scale(request, image_id):
             return JsonResponse(
                 {"success": False, "error": "Invalid scale value"}, status=400
             )
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return JsonResponse(
             {"success": False, "error": "Invalid scale value"}, status=400
         )
@@ -492,7 +492,7 @@ def _bulk_set_image_flag(request, field):
 
     try:
         image_ids = [int(image_id) for image_id in data.get("image_ids", [])]
-    except (AttributeError, TypeError, ValueError):
+    except AttributeError, TypeError, ValueError:
         return JsonResponse(
             {"success": False, "error": "Invalid image IDs"}, status=400
         )
@@ -621,7 +621,7 @@ def update_image_scale(request):
             return JsonResponse(
                 {"success": False, "error": "Invalid scale value"}, status=400
             )
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return JsonResponse(
             {"success": False, "error": "Invalid scale value"}, status=400
         )

@@ -585,9 +585,10 @@ class TestImageReplaceEndpoint(ApiFixturesMixin, TestCase):
         )
 
     def replace(self):
-        with patch("api.views.R2Uploader") as uploader_cls, patch(
-            "api.views.process_image.delay"
-        ) as delay:
+        with (
+            patch("api.views.R2Uploader") as uploader_cls,
+            patch("api.views.process_image.delay") as delay,
+        ):
             r2 = uploader_cls.return_value
             r2.head_object.return_value = {"ContentLength": 1024}
             r2.iter_keys.return_value = [f"images/{self.img1.pk}/original.jpg"]
@@ -892,7 +893,11 @@ class TestGeoreferenceContributorFilters(ApiFixturesMixin, TestCase):
         )
         cls.endpoints = [
             ("/api/v2/georeferences/", cls.georef1.pk, cls.georef2_new.pk),
-            ("/api/v2/from-above-georeferences/", alice_aerial.pk, cls.aerial_georef.pk),
+            (
+                "/api/v2/from-above-georeferences/",
+                alice_aerial.pk,
+                cls.aerial_georef.pk,
+            ),
         ]
 
     def test_single_and_multiple_contributors(self):
@@ -924,7 +929,8 @@ class TestGeoreferenceContributorFilters(ApiFixturesMixin, TestCase):
                     response = self.client.get(endpoint, {"georeferenced_by": value})
                     self.assertEqual(response.status_code, 200)
                     self.assertEqual(
-                        {f["id"] for f in response.json()["features"]}, expected,
+                        {f["id"] for f in response.json()["features"]},
+                        expected,
                     )
 
     def test_invalid_contributor_ids(self):
@@ -1418,12 +1424,8 @@ class TestInViewSearchEndpoint(ApiFixturesMixin, TestCase):
             public=True,
         )
 
-        cls.img_near = cls._make_image(
-            cls.collection, "Corner store 1950", 1950, 1950
-        )
-        cls.img_far_b = cls._make_image(
-            cls.collection_b, "Rooftops 1960", 1960, 1960
-        )
+        cls.img_near = cls._make_image(cls.collection, "Corner store 1950", 1950, 1950)
+        cls.img_far_b = cls._make_image(cls.collection_b, "Rooftops 1960", 1960, 1960)
         cls.img_other_source = cls._make_image(
             cls.collection_c, "Parade 1970", 1970, 1970
         )
@@ -1616,9 +1618,7 @@ class TestInViewSearchEndpoint(ApiFixturesMixin, TestCase):
         matched = []
         for offset in (0, 19, 21, 90, 180):
             img = self._make_image(self.collection, f"Sweep {offset}", 1935, 1935)
-            self._georeference(
-                img, ORIGIN_LON, 37.5450, direction=(180 + offset) % 360
-            )
+            self._georeference(img, ORIGIN_LON, 37.5450, direction=(180 + offset) % 360)
             if img.id in self._ids(page_size=100):
                 matched.append(offset)
         self.assertEqual(matched, [0, 19])
@@ -1667,15 +1667,11 @@ class TestInViewSearchEndpoint(ApiFixturesMixin, TestCase):
     def test_has_more_and_paging(self):
         first = self._search(page_size=2)
         self.assertTrue(first["has_more"])
-        self.assertEqual(
-            [r["id"] for r in first["results"]], self.expected_order[:2]
-        )
+        self.assertEqual([r["id"] for r in first["results"]], self.expected_order[:2])
 
         second = self._search(page=2, page_size=2)
         self.assertTrue(second["has_more"])
-        self.assertEqual(
-            [r["id"] for r in second["results"]], self.expected_order[2:4]
-        )
+        self.assertEqual([r["id"] for r in second["results"]], self.expected_order[2:4])
 
         third = self._search(page=3, page_size=2)
         self.assertFalse(third["has_more"])

@@ -28,11 +28,12 @@ def seed_primary_layers(apps, schema_editor):
 
 def remove_primary_layers(apps, schema_editor):
     MapLayer = apps.get_model("maps", "MapLayer")
-    MapLayer.objects.filter(collection__isnull=True, slug__in=["osm", "usgs-topo"]).delete()
+    MapLayer.objects.filter(
+        collection__isnull=True, slug__in=["osm", "usgs-topo"]
+    ).delete()
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("maps", "0005_configurable_primary_layers"),
     ]

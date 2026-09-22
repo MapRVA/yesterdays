@@ -395,7 +395,7 @@ class SubjectAdmin(admin.ModelAdmin):
             )
         return format_html(
             '<a class="default" href="{}" style="background: #417690; color: white; '
-            'padding: 8px 12px; text-decoration: none; border-radius: 4px; '
+            "padding: 8px 12px; text-decoration: none; border-radius: 4px; "
             'display: inline-block; margin: 5px 0; font-size: 12px;" '
             'title="Jump to the front of the background Wikidata refresh queue">'
             "Manually Queue for Update</a>",
@@ -407,9 +407,7 @@ class SubjectAdmin(admin.ModelAdmin):
     def description_truncated(self, obj):
         description = obj.get_description()
         if description:
-            return (
-                description[:100] + "..." if len(description) > 100 else description
-            )
+            return description[:100] + "..." if len(description) > 100 else description
         return ""
 
     description_truncated.short_description = "Description"

@@ -28,8 +28,7 @@ class Migration(migrations.Migration):
                     "short_name",
                     models.CharField(
                         help_text=(
-                            "Compact name shown in the navbar selector "
-                            "(e.g. Richmond)"
+                            "Compact name shown in the navbar selector (e.g. Richmond)"
                         ),
                         max_length=500,
                     ),
@@ -148,9 +147,7 @@ class Migration(migrations.Migration):
                 "ordering": ["short_name"],
                 "constraints": [
                     models.CheckConstraint(
-                        condition=models.Q(
-                            wikidata_coordinate_location__isnull=False
-                        )
+                        condition=models.Q(wikidata_coordinate_location__isnull=False)
                         | models.Q(custom_coordinate_location__isnull=False),
                         name="region_has_a_coordinate",
                     )

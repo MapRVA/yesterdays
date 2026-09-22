@@ -6,29 +6,97 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('images', '0049_sitesettings_default_search_bbox_east_and_more'),
-        ('subjects', '0009_person_suffix'),
+        ("images", "0049_sitesettings_default_search_bbox_east_and_more"),
+        ("subjects", "0009_person_suffix"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='SubjectMappingActivity',
+            name="SubjectMappingActivity",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('action', models.CharField(choices=[('added', 'Added'), ('removed', 'Removed'), ('reordered', 'Reordered')], max_length=20)),
-                ('previous_order', models.JSONField(blank=True, help_text='List of subject IDs in their order before a reorder (reorder only)', null=True)),
-                ('new_order', models.JSONField(blank=True, help_text='List of subject IDs in their order after a reorder (reorder only)', null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True, db_index=True)),
-                ('image', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='subject_mapping_activities', to='images.image')),
-                ('subject', models.ForeignKey(blank=True, help_text='Subject added or removed (null for reorder activities)', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='mapping_activities', to='subjects.subject')),
-                ('user', models.ForeignKey(help_text='User who made the change', on_delete=django.db.models.deletion.CASCADE, related_name='subject_mapping_activities', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "action",
+                    models.CharField(
+                        choices=[
+                            ("added", "Added"),
+                            ("removed", "Removed"),
+                            ("reordered", "Reordered"),
+                        ],
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "previous_order",
+                    models.JSONField(
+                        blank=True,
+                        help_text="List of subject IDs in their order before a reorder (reorder only)",
+                        null=True,
+                    ),
+                ),
+                (
+                    "new_order",
+                    models.JSONField(
+                        blank=True,
+                        help_text="List of subject IDs in their order after a reorder (reorder only)",
+                        null=True,
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True, db_index=True)),
+                (
+                    "image",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="subject_mapping_activities",
+                        to="images.image",
+                    ),
+                ),
+                (
+                    "subject",
+                    models.ForeignKey(
+                        blank=True,
+                        help_text="Subject added or removed (null for reorder activities)",
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="mapping_activities",
+                        to="subjects.subject",
+                    ),
+                ),
+                (
+                    "user",
+                    models.ForeignKey(
+                        help_text="User who made the change",
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="subject_mapping_activities",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-created_at'],
-                'indexes': [models.Index(fields=['-created_at'], name='images_subj_created_55eb06_idx'), models.Index(fields=['image', '-created_at'], name='images_subj_image_i_f991e3_idx'), models.Index(fields=['user', '-created_at'], name='images_subj_user_id_357653_idx')],
+                "ordering": ["-created_at"],
+                "indexes": [
+                    models.Index(
+                        fields=["-created_at"], name="images_subj_created_55eb06_idx"
+                    ),
+                    models.Index(
+                        fields=["image", "-created_at"],
+                        name="images_subj_image_i_f991e3_idx",
+                    ),
+                    models.Index(
+                        fields=["user", "-created_at"],
+                        name="images_subj_user_id_357653_idx",
+                    ),
+                ],
             },
         ),
     ]

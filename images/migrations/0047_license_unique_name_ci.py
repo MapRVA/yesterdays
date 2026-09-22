@@ -30,9 +30,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(
-            collapse_duplicate_licenses, migrations.RunPython.noop
-        ),
+        migrations.RunPython(collapse_duplicate_licenses, migrations.RunPython.noop),
         migrations.AddConstraint(
             model_name="license",
             constraint=models.UniqueConstraint(

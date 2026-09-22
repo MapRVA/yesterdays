@@ -302,9 +302,7 @@ def get_overall_stats(region=None):
         # A (collection, region) row lingers at zero for a while after its
         # last image leaves, so count only rows that still hold images.
         populated = rows.filter(total_images__gt=0)
-        total_sources = (
-            populated.values("collection__source").distinct().count()
-        )
+        total_sources = populated.values("collection__source").distinct().count()
         total_collections = populated.values("collection").distinct().count()
 
     georeferenced_percentage = (

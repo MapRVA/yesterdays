@@ -5,16 +5,22 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('activity', '0004_subjectmappingactivitygroup'),
-        ('images', '0050_subjectmappingactivity'),
+        ("activity", "0004_subjectmappingactivitygroup"),
+        ("images", "0050_subjectmappingactivity"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='subjectmappingactivity',
-            name='group',
-            field=models.ForeignKey(blank=True, help_text='The activity group this activity belongs to', null=True, on_delete=django.db.models.deletion.CASCADE, related_name='members', to='activity.subjectmappingactivitygroup'),
+            model_name="subjectmappingactivity",
+            name="group",
+            field=models.ForeignKey(
+                blank=True,
+                help_text="The activity group this activity belongs to",
+                null=True,
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="members",
+                to="activity.subjectmappingactivitygroup",
+            ),
         ),
     ]

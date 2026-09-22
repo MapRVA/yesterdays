@@ -4,15 +4,14 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('subjects', '0010_wikidataitem_sparql_mirror_fields'),
+        ("subjects", "0010_wikidataitem_sparql_mirror_fields"),
     ]
 
     operations = [
         migrations.RenameIndex(
-            model_name='wikidataitem',
-            new_name='subjects_wi_sparql__5019b7_idx',
-            old_name='subjects_wi_sparql__7c93ab_idx',
+            model_name="wikidataitem",
+            new_name="subjects_wi_sparql__5019b7_idx",
+            old_name="subjects_wi_sparql__7c93ab_idx",
         ),
     ]

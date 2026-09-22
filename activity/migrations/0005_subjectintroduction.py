@@ -6,26 +6,60 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('activity', '0004_subjectmappingactivitygroup'),
-        ('images', '0052_backfill_subject_mapping_activity_groups'),
-        ('subjects', '0009_person_suffix'),
+        ("activity", "0004_subjectmappingactivitygroup"),
+        ("images", "0052_backfill_subject_mapping_activity_groups"),
+        ("subjects", "0009_person_suffix"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='SubjectIntroduction',
+            name="SubjectIntroduction",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('created_at', models.DateTimeField(db_index=True)),
-                ('image', models.ForeignKey(blank=True, help_text='First image the subject was attached to', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='subject_introductions', to='images.image')),
-                ('subject', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='introduction', to='subjects.subject')),
-                ('user', models.ForeignKey(blank=True, help_text='User who introduced the subject (null for pre-tracking records)', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='subject_introductions', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("created_at", models.DateTimeField(db_index=True)),
+                (
+                    "image",
+                    models.ForeignKey(
+                        blank=True,
+                        help_text="First image the subject was attached to",
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="subject_introductions",
+                        to="images.image",
+                    ),
+                ),
+                (
+                    "subject",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="introduction",
+                        to="subjects.subject",
+                    ),
+                ),
+                (
+                    "user",
+                    models.ForeignKey(
+                        blank=True,
+                        help_text="User who introduced the subject (null for pre-tracking records)",
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="subject_introductions",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-created_at'],
+                "ordering": ["-created_at"],
             },
         ),
     ]

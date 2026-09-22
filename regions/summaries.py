@@ -48,9 +48,7 @@ def get_region_summaries(advertised_only=True):
             ),
         )
     }
-    regions = Region.objects.select_related(
-        "representative_image", "wikidata_item"
-    )
+    regions = Region.objects.select_related("representative_image", "wikidata_item")
     if advertised_only:
         regions = regions.filter(advertise=True)
 

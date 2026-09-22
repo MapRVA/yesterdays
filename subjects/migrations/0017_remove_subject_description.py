@@ -4,14 +4,13 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('subjects', '0016_backfill_representative_images'),
+        ("subjects", "0016_backfill_representative_images"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='subject',
-            name='description',
+            model_name="subject",
+            name="description",
         ),
     ]

@@ -72,7 +72,7 @@ def activity_feed(request):
             before = datetime.fromisoformat(before_param)
             if timezone.is_naive(before):
                 before = timezone.make_aware(before)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             if is_ajax:
                 raise Http404("Invalid timestamp")
             # For non-AJAX, just ignore invalid timestamp
@@ -251,18 +251,14 @@ def get_activity_events(
                 "feed_ended_at": F("ended_at"),
             }
         else:
-            subject_member_filter = Q(
-                members__image_id__in=regional_image_ids
-            )
+            subject_member_filter = Q(members__image_id__in=regional_image_ids)
             subject_annotations = {
                 "feed_count": Count("members", filter=subject_member_filter),
                 "feed_ended_at": Max(
                     "members__created_at", filter=subject_member_filter
                 ),
             }
-            subject_members = subject_members.filter(
-                image_id__in=regional_image_ids
-            )
+            subject_members = subject_members.filter(image_id__in=regional_image_ids)
 
         subject_groups = (
             SubjectMappingActivityGroup.objects.filter(**subject_filter)
@@ -307,11 +303,9 @@ def get_activity_events(
                     "collection__region_id", "collection__source__region_id"
                 )
             ).filter(effective_region_id__in=region_ids)
-        collection_intros = (
-            collection_intros
-            .select_related("collection", "collection__source")
-            .order_by("-created_at")[:limit]
-        )
+        collection_intros = collection_intros.select_related(
+            "collection", "collection__source"
+        ).order_by("-created_at")[:limit]
         events.extend(("new_collection", c, c.created_at) for c in collection_intros)
 
     # Sort by timestamp descending and take the requested limit

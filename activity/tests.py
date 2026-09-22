@@ -52,9 +52,7 @@ class ActivityRegionTests(TestCase):
     @classmethod
     def setUpTestData(cls):
         cls.user = User.objects.create_user(username="mapper", password="test")
-        cls.validator = User.objects.create_user(
-            username="validator", password="test"
-        )
+        cls.validator = User.objects.create_user(username="validator", password="test")
 
         state_item, city_item, other_item = WikidataItem.objects.bulk_create(
             [
@@ -402,10 +400,7 @@ class ActivityRegionTests(TestCase):
             [introductions[0].pk],
         )
         self.assertEqual(
-            {
-                event.pk
-                for event in self._objects("new_collection", self.state)
-            },
+            {event.pk for event in self._objects("new_collection", self.state)},
             city_collection_intros,
         )
         self.assertEqual(
@@ -421,12 +416,8 @@ class ActivityRegionTests(TestCase):
             count=100, reached_at=timezone.now()
         )
 
-        self.assertEqual(
-            self._objects("milestone", self.state), [user_milestone]
-        )
-        self.assertEqual(
-            self._objects("sitewide", self.state), [sitewide_milestone]
-        )
+        self.assertEqual(self._objects("milestone", self.state), [user_milestone])
+        self.assertEqual(self._objects("sitewide", self.state), [sitewide_milestone])
 
     def test_home_full_feed_and_ajax_use_the_region_cookie(self):
         self.addCleanup(cache.delete, "site_settings")
@@ -461,9 +452,7 @@ class ActivityRegionTests(TestCase):
         )
         self.assertContains(home_response, "Recent Activity in Virginia")
 
-        feed_response = self.client.get(
-            reverse("activity:feed"), {"types": "comment"}
-        )
+        feed_response = self.client.get(reverse("activity:feed"), {"types": "comment"})
         self.assertContains(feed_response, "Activity in Virginia")
         self.assertContains(feed_response, "Source Region Image")
         self.assertNotContains(feed_response, "Other Image")

@@ -810,9 +810,7 @@ class DuplicateImagePair(models.Model):
         return f"#{self.image_a_id} ~ #{self.image_b_id} (d={self.distance:.4f})"
 
     def get_absolute_url(self):
-        return reverse(
-            "images:duplicate_pair_detail", kwargs={"pair_uuid": self.uuid}
-        )
+        return reverse("images:duplicate_pair_detail", kwargs={"pair_uuid": self.uuid})
 
 
 class DismissedDuplicatePair(models.Model):

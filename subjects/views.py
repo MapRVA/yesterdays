@@ -441,9 +441,7 @@ def bulk_add_subject_to_images(request):
 
     with transaction.atomic():
         for image in images:
-            if _append_subject_mapping(
-                user=request.user, image=image, subject=subject
-            ):
+            if _append_subject_mapping(user=request.user, image=image, subject=subject):
                 added_count += 1
             else:
                 already_exists_count += 1
@@ -527,7 +525,7 @@ def remove_subject_from_image(request, subject_mapping_id):
             id=subject_mapping_id,
             image__in=editable_images_for(request.user),
         )
-    except (SubjectMapping.DoesNotExist, TypeError, ValueError):
+    except SubjectMapping.DoesNotExist, TypeError, ValueError:
         raise Http404("Subject mapping not found")
 
     subject_title = subject_relation.subject.title
@@ -706,9 +704,7 @@ def _browse_subject_queryset(region=None):
         # specific Subject is represented by its descendants in this grid.
         .annotate(
             has_descendant_subject=Exists(
-                SubjectAncestor.objects.filter(
-                    ancestor_id=OuterRef("wikidata_item_id")
-                )
+                SubjectAncestor.objects.filter(ancestor_id=OuterRef("wikidata_item_id"))
             )
         )
         .filter(total_images__gt=0)
@@ -798,7 +794,7 @@ def browse_subjects(request):
     # Offset-based pagination
     try:
         offset = max(0, int(request.GET.get("offset", 0)))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         offset = 0
 
     subject_list = list(subjects[offset : offset + PER_PAGE + 1])
@@ -1115,7 +1111,7 @@ def find_similar_images_to_subject(request, subject_slug):
         offset = int(request.GET.get("offset", 0))
         if offset < 0:
             offset = 0
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         offset = 0
 
     try:

@@ -4,50 +4,73 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('images', '0048_rename_tile_generation_asset_generation'),
+        ("images", "0048_rename_tile_generation_asset_generation"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='sitesettings',
-            name='default_search_bbox_east',
-            field=models.FloatField(default=-77.36673, help_text='Easternmost longitude for the default search bounding box'),
+            model_name="sitesettings",
+            name="default_search_bbox_east",
+            field=models.FloatField(
+                default=-77.36673,
+                help_text="Easternmost longitude for the default search bounding box",
+            ),
         ),
         migrations.AddField(
-            model_name='sitesettings',
-            name='default_search_bbox_north',
-            field=models.FloatField(default=37.60954, help_text='Northernmost latitude for the default search bounding box'),
+            model_name="sitesettings",
+            name="default_search_bbox_north",
+            field=models.FloatField(
+                default=37.60954,
+                help_text="Northernmost latitude for the default search bounding box",
+            ),
         ),
         migrations.AddField(
-            model_name='sitesettings',
-            name='default_search_bbox_south',
-            field=models.FloatField(default=37.44393, help_text='Southernmost latitude for the default search bounding box'),
+            model_name="sitesettings",
+            name="default_search_bbox_south",
+            field=models.FloatField(
+                default=37.44393,
+                help_text="Southernmost latitude for the default search bounding box",
+            ),
         ),
         migrations.AddField(
-            model_name='sitesettings',
-            name='default_search_bbox_west',
-            field=models.FloatField(default=-77.61976, help_text='Westernmost longitude for the default search bounding box (used by the geocoder and other location filters)'),
+            model_name="sitesettings",
+            name="default_search_bbox_west",
+            field=models.FloatField(
+                default=-77.61976,
+                help_text="Westernmost longitude for the default search bounding box (used by the geocoder and other location filters)",
+            ),
         ),
         migrations.AddField(
-            model_name='sitesettings',
-            name='default_subject_bbox_east',
-            field=models.FloatField(default=-74.97, help_text='Easternmost longitude for the default subject bounding box'),
+            model_name="sitesettings",
+            name="default_subject_bbox_east",
+            field=models.FloatField(
+                default=-74.97,
+                help_text="Easternmost longitude for the default subject bounding box",
+            ),
         ),
         migrations.AddField(
-            model_name='sitesettings',
-            name='default_subject_bbox_north',
-            field=models.FloatField(default=39.71, help_text='Northernmost latitude for the default subject bounding box'),
+            model_name="sitesettings",
+            name="default_subject_bbox_north",
+            field=models.FloatField(
+                default=39.71,
+                help_text="Northernmost latitude for the default subject bounding box",
+            ),
         ),
         migrations.AddField(
-            model_name='sitesettings',
-            name='default_subject_bbox_south',
-            field=models.FloatField(default=35.9, help_text='Southernmost latitude for the default subject bounding box'),
+            model_name="sitesettings",
+            name="default_subject_bbox_south",
+            field=models.FloatField(
+                default=35.9,
+                help_text="Southernmost latitude for the default subject bounding box",
+            ),
         ),
         migrations.AddField(
-            model_name='sitesettings',
-            name='default_subject_bbox_west',
-            field=models.FloatField(default=-84.72, help_text='Westernmost longitude for the default subject bounding box (used when refreshing OSM metadata for subjects)'),
+            model_name="sitesettings",
+            name="default_subject_bbox_west",
+            field=models.FloatField(
+                default=-84.72,
+                help_text="Westernmost longitude for the default subject bounding box (used when refreshing OSM metadata for subjects)",
+            ),
         ),
     ]

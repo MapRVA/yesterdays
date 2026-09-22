@@ -7,23 +7,50 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('images', '0044_image_height_image_iiif_url_image_tile_error_and_more'),
+        ("images", "0044_image_height_image_iiif_url_image_tile_error_and_more"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='ImportSlot',
+            name="ImportSlot",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('slot_id', models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
-                ('s3_key', models.CharField(max_length=500)),
-                ('content_type', models.CharField(default='image/jpeg', max_length=100)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('collection', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='import_slots', to='images.collection')),
-                ('created_by', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='import_slots', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "slot_id",
+                    models.UUIDField(default=uuid.uuid4, editable=False, unique=True),
+                ),
+                ("s3_key", models.CharField(max_length=500)),
+                (
+                    "content_type",
+                    models.CharField(default="image/jpeg", max_length=100),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "collection",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="import_slots",
+                        to="images.collection",
+                    ),
+                ),
+                (
+                    "created_by",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="import_slots",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
         ),
     ]

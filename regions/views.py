@@ -63,9 +63,7 @@ def _point_data(point):
 
 def _render_region_form(request, form, region=None):
     effective_point = region.coordinate_location if region is not None else None
-    wikidata_point = (
-        region.wikidata_coordinate_location if region is not None else None
-    )
+    wikidata_point = region.wikidata_coordinate_location if region is not None else None
     editor_config = {
         "protomapsApiKey": settings.PROTOMAPS_API_KEY or "",
         "effectiveCenter": _point_data(effective_point),
@@ -177,8 +175,7 @@ def region_autocomplete(request):
                     then=Value(0),
                 ),
                 When(
-                    Q(short_name__istartswith=query)
-                    | Q(long_name__istartswith=query),
+                    Q(short_name__istartswith=query) | Q(long_name__istartswith=query),
                     then=Value(1),
                 ),
                 When(literal, then=Value(2)),

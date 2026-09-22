@@ -72,7 +72,6 @@ def _get_image_embedding(sanitized_image):
     return clip_client.get_image_embedding(sanitized_image.read())
 
 
-
 @ratelimit(key="ip", rate="100/h", method=["POST"])  # Stricter for image processing
 @ratelimit(key="ip", rate="20/5m", method=["POST"])  # Lower burst
 @login_required

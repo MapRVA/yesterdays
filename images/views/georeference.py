@@ -46,13 +46,10 @@ POINT_CONFIDENCE_LEVELS = [value for value, _ in Georeference.CONFIDENCE_CHOICES
 POLYGON_CONFIDENCE_LEVELS = [
     value for value, _ in AerialGeoreference.CONFIDENCE_CHOICES
 ]
-VALIDATION_CHOICES = [
-    value for value, _ in GeoreferenceValidation.VALIDATION_CHOICES
-]
+VALIDATION_CHOICES = [value for value, _ in GeoreferenceValidation.VALIDATION_CHOICES]
 
 ANONYMOUS_ALREADY_GEOREFERENCED = (
-    "This image has already been georeferenced. "
-    "Please login to submit a correction."
+    "This image has already been georeferenced. Please login to submit a correction."
 )
 
 
@@ -90,7 +87,7 @@ def georeference_interface(request):
             # follow-up PermissionDenied check was dead code that would have
             # raised NameError (the name is never imported) rather than a 403.
             current_image = Image.objects.get(**query_params)
-        except (Image.DoesNotExist, ValueError):
+        except Image.DoesNotExist, ValueError:
             # If specific image not found or invalid, fall back to random selection
             pass
 
@@ -128,9 +125,7 @@ def georeference_interface(request):
     )
     region_qid = request.GET.get("region")
     if region_qid:
-        region = get_object_or_404(
-            Region, wikidata_item__wikidata_id=region_qid
-        )
+        region = get_object_or_404(Region, wikidata_item__wikidata_id=region_qid)
         images = images.in_region(region)
     elif not has_explicit_scope:
         region = get_current_region(request)
@@ -494,7 +489,7 @@ def validate_georeference(request, georeference_id):
             id=georeference_id,
             image__in=editable_images_for(request.user),
         )
-    except (Georeference.DoesNotExist, TypeError, ValueError):
+    except Georeference.DoesNotExist, TypeError, ValueError:
         raise Http404("Georeference not found")
 
     try:

@@ -249,7 +249,7 @@ class WikidataItem(models.Model):
                         parsed = datetime.strptime(
                             wikidata_info[field], "%Y-%m-%d"
                         ).date()
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         continue
                     setattr(self, field, parsed)
             return True

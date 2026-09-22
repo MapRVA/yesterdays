@@ -13,7 +13,9 @@ def backfill_groups(apps, schema_editor):
         "activity", "SubjectMappingActivityGroup"
     )
 
-    for activity in SubjectMappingActivity.objects.filter(group__isnull=True).iterator():
+    for activity in SubjectMappingActivity.objects.filter(
+        group__isnull=True
+    ).iterator():
         group = SubjectMappingActivityGroup.objects.create(
             user=activity.user,
             subject=activity.subject,
@@ -39,7 +41,6 @@ def noop_reverse(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("images", "0051_subjectmappingactivity_group"),
         ("activity", "0004_subjectmappingactivitygroup"),

@@ -73,7 +73,7 @@ def parse_json_body(request, *, max_bytes=None):
 
     try:
         data = json.loads(body, parse_constant=_reject_json_constant)
-    except (ValueError, UnicodeDecodeError):
+    except ValueError, UnicodeDecodeError:
         raise InvalidInput("Invalid JSON in request body")
 
     if not isinstance(data, dict):
@@ -125,7 +125,7 @@ def _finite_float(data, key):
 
     try:
         value = float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         raise InvalidInput(f"'{key}' must be a number")
 
     # Belt and braces: parse_json_body rejects bare NaN/Infinity literals, but
@@ -284,7 +284,7 @@ def build_polygon(value):
             json.dumps({"type": "Polygon", "coordinates": coordinates}),
             srid=WGS84_SRID,
         )
-    except (GEOSException, ValueError, TypeError):
+    except GEOSException, ValueError, TypeError:
         raise InvalidInput("Invalid polygon geometry")
 
     if not isinstance(polygon, Polygon):

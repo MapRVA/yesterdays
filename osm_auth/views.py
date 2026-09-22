@@ -101,7 +101,13 @@ def login(request):
             if parsed.path == georeference_path:
                 query_params = parse_qs(parsed.query)
                 # Check if there are queue context params
-                queue_params = {"source", "collection", "album", "subject", "difficulty"}
+                queue_params = {
+                    "source",
+                    "collection",
+                    "album",
+                    "subject",
+                    "difficulty",
+                }
                 has_queue_context = any(p in query_params for p in queue_params)
 
                 if has_queue_context:

@@ -101,9 +101,7 @@ class RegionsMigrationTests(TransactionTestCase):
         Region = new_apps.get_model("regions", "Region")
         Source = new_apps.get_model("images", "Source")
         ImageOfTheDay = new_apps.get_model("images", "ImageOfTheDay")
-        CollectionRegionStats = new_apps.get_model(
-            "images", "CollectionRegionStats"
-        )
+        CollectionRegionStats = new_apps.get_model("images", "CollectionRegionStats")
 
         region = Region.objects.get()
         self.assertEqual(region.slug, "richmond")
@@ -199,42 +197,32 @@ class ImageOfTheDayTests(TestCase):
 
     def test_next_available_day_empty_is_today(self):
         with patch.object(timezone, "localdate", return_value=self.d(1)):
-            self.assertEqual(
-                ImageOfTheDay.next_available_day(self.region), self.d(1)
-            )
+            self.assertEqual(ImageOfTheDay.next_available_day(self.region), self.d(1))
 
     def test_next_available_day_skips_taken_day(self):
         self.entry("A", 1)
         with patch.object(timezone, "localdate", return_value=self.d(1)):
-            self.assertEqual(
-                ImageOfTheDay.next_available_day(self.region), self.d(2)
-            )
+            self.assertEqual(ImageOfTheDay.next_available_day(self.region), self.d(2))
 
     def test_next_available_day_after_contiguous_run(self):
         for n in (1, 2, 3):
             self.entry(f"I{n}", n)
         with patch.object(timezone, "localdate", return_value=self.d(1)):
-            self.assertEqual(
-                ImageOfTheDay.next_available_day(self.region), self.d(4)
-            )
+            self.assertEqual(ImageOfTheDay.next_available_day(self.region), self.d(4))
 
     def test_next_available_day_fills_gap_left_by_lock(self):
         # Day 1 taken, day 3 locked, day 2 free -> day 2 is returned, not day 4.
         self.entry("A", 1)
         self.entry("L", 3, locked=True)
         with patch.object(timezone, "localdate", return_value=self.d(1)):
-            self.assertEqual(
-                ImageOfTheDay.next_available_day(self.region), self.d(2)
-            )
+            self.assertEqual(ImageOfTheDay.next_available_day(self.region), self.d(2))
 
     def test_next_available_day_ignores_other_regions(self):
         # A full week elsewhere doesn't push this region's queue along.
         for n in (1, 2, 3, 4, 5, 6, 7):
             self.entry(f"N{n}", n, region=self.elsewhere)
         with patch.object(timezone, "localdate", return_value=self.d(1)):
-            self.assertEqual(
-                ImageOfTheDay.next_available_day(self.region), self.d(1)
-            )
+            self.assertEqual(ImageOfTheDay.next_available_day(self.region), self.d(1))
 
     # -- timezone correctness ----------------------------------------------
 
@@ -431,9 +419,7 @@ class ImageOfTheDayTests(TestCase):
         a.delete()
 
         self.assertEqual(self.queue(), {self.d(1): "B"})
-        self.assertEqual(
-            self.queue(self.elsewhere), {self.d(1): "N1", self.d(2): "N2"}
-        )
+        self.assertEqual(self.queue(self.elsewhere), {self.d(1): "N1", self.d(2): "N2"})
 
     # -- clean: locked move guard ------------------------------------------
 
@@ -592,8 +578,7 @@ class ImageOfTheDayTests(TestCase):
         # The whole move rolls back: the entry is neither deleted nor moved.
         self.assertEqual(self.queue(), before)
         queued = {
-            e.day: e.locked
-            for e in ImageOfTheDay.objects.filter(region=self.region)
+            e.day: e.locked for e in ImageOfTheDay.objects.filter(region=self.region)
         }
         self.assertFalse(queued[self.d(1)])
         self.assertTrue(queued[self.d(2)])
@@ -692,9 +677,7 @@ class ImageOfTheDayTests(TestCase):
             ImageOfTheDay.unlock(anchor)
 
         self.assertEqual(self.queue(), {self.d(1): "A", self.d(2): "L"})
-        self.assertEqual(
-            self.queue(self.elsewhere), {self.d(1): "N1", self.d(3): "N3"}
-        )
+        self.assertEqual(self.queue(self.elsewhere), {self.d(1): "N1", self.d(3): "N3"})
 
 
 class FeaturedImageQueueViewTests(TestCase):
@@ -976,9 +959,7 @@ class GeoreferenceRegionQueueTests(TestCase):
         cls.subject = Subject.objects.create(
             title="Outside subject", slug="outside-subject", wikidata_item=items[3]
         )
-        SubjectMapping.objects.create(
-            image=cls.outside_image, subject=cls.subject
-        )
+        SubjectMapping.objects.create(image=cls.outside_image, subject=cls.subject)
 
         cls.url = reverse("images:georeference_interface")
 
@@ -1368,9 +1349,7 @@ class CollectionRegionStatsTests(StatsEventsMixin, TestCase):
         self.img("B", region=norfolk)
 
         # Each image reaches Virginia by exactly one path.
-        self.assertEqual(
-            self.rows(), {"richmond": 1, "norfolk": 1, "virginia": 2}
-        )
+        self.assertEqual(self.rows(), {"richmond": 1, "norfolk": 1, "virginia": 2})
 
     def test_reconcile_picks_up_a_new_ancestor_edge(self):
         RegionAncestor.objects.filter(region=self.city).delete()
@@ -1390,7 +1369,9 @@ class CollectionRegionStatsTests(StatsEventsMixin, TestCase):
             wikidata_id="Q49231", title="Norfolk"
         )
         norfolk = make_region(
-            short_name="Norfolk", long_name="Norfolk", slug="norfolk",
+            short_name="Norfolk",
+            long_name="Norfolk",
+            slug="norfolk",
             wikidata_item=norfolk_item,
         )
         self.set_region(self.collection, self.city)
@@ -1401,9 +1382,7 @@ class CollectionRegionStatsTests(StatsEventsMixin, TestCase):
 
         # Richmond and Virginia are emptied rather than deleted; the reconcile
         # collects them once they've aged out.
-        self.assertEqual(
-            self.rows(), {"richmond": 0, "virginia": 0, "norfolk": 1}
-        )
+        self.assertEqual(self.rows(), {"richmond": 0, "virginia": 0, "norfolk": 1})
 
     def test_source_region_change_leaves_overriding_collections_alone(self):
         overriding = Collection.objects.create(
@@ -1422,7 +1401,9 @@ class CollectionRegionStatsTests(StatsEventsMixin, TestCase):
             wikidata_id="Q49231", title="Norfolk"
         )
         norfolk = make_region(
-            short_name="Norfolk", long_name="Norfolk", slug="norfolk",
+            short_name="Norfolk",
+            long_name="Norfolk",
+            slug="norfolk",
             wikidata_item=norfolk_item,
         )
         self.set_region(self.source, norfolk)
@@ -1519,7 +1500,9 @@ class CollectionRegionStatsTests(StatsEventsMixin, TestCase):
         ):
             item = WikidataItem.objects.create(wikidata_id="Q49231", title="Norfolk")
             make_region(
-                short_name="Norfolk", long_name="Norfolk", slug="norfolk",
+                short_name="Norfolk",
+                long_name="Norfolk",
+                slug="norfolk",
                 wikidata_item=item,
             )
         reconcile.assert_called_once()
@@ -1649,8 +1632,10 @@ class SourceDetailRegionOrderingTests(StatsEventsMixin, TestCase):
         self.assertEqual(by_name["Small"].total_images, 2)
         self.assertEqual(response.context["total_images"], 3)
         self.assertEqual(response.context["pending_images"], 3)
-        self.assertIn(response.context["top_rated_image"].pk,
-                      Image.objects.in_region(self.region).values_list("pk", flat=True))
+        self.assertIn(
+            response.context["top_rated_image"].pk,
+            Image.objects.in_region(self.region).values_list("pk", flat=True),
+        )
         self.assertContains(response, "&region=Q43421")
         self.assertNotContains(response, "Showing 2 of 2 collections")
 
@@ -1664,7 +1649,10 @@ class SourceDetailRegionOrderingTests(StatsEventsMixin, TestCase):
         self.assertTrue(response.context["region_fallback"])
         self.assertIsNone(response.context["browse_region"])
         self.assertEqual(response.context["current_region"], self.region)
-        self.assertContains(response, "Src has no images in your selected region. Showing all images from Src.")
+        self.assertContains(
+            response,
+            "Src has no images in your selected region. Showing all images from Src.",
+        )
         self.assertNotContains(response, "&region=Q43421")
 
     def test_collection_count_still_renders(self):
@@ -1789,8 +1777,10 @@ class CollectionDetailRegionFilterTests(TestCase):
             with self.subTest(slug=slug):
                 self.client.cookies[REGION_COOKIE_NAME] = slug
                 response = self.client.get(self.collection.get_absolute_url())
-                self.assertEqual(self.page_image_ids(response),
-                                 {self.city_image.pk, self.state_image.pk, self.other_image.pk})
+                self.assertEqual(
+                    self.page_image_ids(response),
+                    {self.city_image.pk, self.state_image.pk, self.other_image.pk},
+                )
                 self.assertEqual(response.context["total_images"], 3)
                 self.assertFalse(response.context["region_fallback"])
                 self.assertNotContains(response, "Showing 3 of 3 images")
@@ -1804,7 +1794,10 @@ class CollectionDetailRegionFilterTests(TestCase):
         self.assertIsNone(response.context["browse_region"])
         self.assertEqual(response.context["current_region"], self.empty)
         self.assertNotIn("region=", response.context["georeference_url"])
-        self.assertContains(response, "Collection has no images in your selected region. Showing all images from Collection.")
+        self.assertContains(
+            response,
+            "Collection has no images in your selected region. Showing all images from Collection.",
+        )
 
     def test_empty_collection_keeps_empty_state_and_banner(self):
         self.collection.images.all().delete()
@@ -1818,8 +1811,11 @@ class CollectionDetailRegionFilterTests(TestCase):
 
     def test_grid_filters_do_not_broaden_or_change_header_counts(self):
         self.client.cookies[REGION_COOKIE_NAME] = self.state.slug
-        for params in ({"start_year": "1900"}, {"georeference_status": "georeferenced"},
-                       {"with_subjects": "999999"}):
+        for params in (
+            {"start_year": "1900"},
+            {"georeference_status": "georeferenced"},
+            {"with_subjects": "999999"},
+        ):
             with self.subTest(params=params):
                 response = self.client.get(self.collection.get_absolute_url(), params)
                 self.assertEqual(self.page_image_ids(response), set())
@@ -1829,15 +1825,27 @@ class CollectionDetailRegionFilterTests(TestCase):
     def test_inheritance_overrides_duplicates_and_unassigned_images(self):
         self.source.region = self.city
         self.source.save()
-        inherited, duplicate = Image.objects.bulk_create([
-            Image(collection=self.collection, title="Inherited", permalink="https://example.com/inherited"),
-            Image(collection=self.collection, title="Duplicate", permalink="https://example.com/duplicate",
-                  duplicate_of=self.city_image),
-        ])
+        inherited, duplicate = Image.objects.bulk_create(
+            [
+                Image(
+                    collection=self.collection,
+                    title="Inherited",
+                    permalink="https://example.com/inherited",
+                ),
+                Image(
+                    collection=self.collection,
+                    title="Duplicate",
+                    permalink="https://example.com/duplicate",
+                    duplicate_of=self.city_image,
+                ),
+            ]
+        )
         self.refresh_stats()
         self.client.cookies[REGION_COOKIE_NAME] = self.city.slug
         response = self.client.get(self.collection.get_absolute_url())
-        self.assertEqual(self.page_image_ids(response), {self.city_image.pk, inherited.pk})
+        self.assertEqual(
+            self.page_image_ids(response), {self.city_image.pk, inherited.pk}
+        )
         self.assertEqual(response.context["total_images"], 2)
         self.collection.region = self.other
         self.collection.save()
@@ -1853,7 +1861,9 @@ class CollectionDetailRegionFilterTests(TestCase):
         self.assertEqual(self.page_image_ids(response), {self.city_image.pk})
 
     def test_statistics_progress_and_map_use_the_same_region(self):
-        Georeference.objects.create(image=self.city_image, point=Point(-77.43, 37.54), confidence="high")
+        Georeference.objects.create(
+            image=self.city_image, point=Point(-77.43, 37.54), confidence="high"
+        )
         Image.objects.filter(pk=self.state_image.pk).update(will_not_georef=True)
         self.refresh_stats()
         self.client.cookies[REGION_COOKIE_NAME] = self.state.slug
@@ -1871,18 +1881,27 @@ class CollectionDetailRegionFilterTests(TestCase):
         self.assertNotContains(response, "urlParams.append('region'")
 
     def test_pagination_stays_in_region(self):
-        Image.objects.bulk_create([
-            Image(collection=self.collection, title=f"Additional state image {index}",
-                  permalink=f"https://img.example.com/state-{index}.jpg", region=self.state)
-            for index in range(23)
-        ])
+        Image.objects.bulk_create(
+            [
+                Image(
+                    collection=self.collection,
+                    title=f"Additional state image {index}",
+                    permalink=f"https://img.example.com/state-{index}.jpg",
+                    region=self.state,
+                )
+                for index in range(23)
+            ]
+        )
         self.refresh_stats()
         self.client.cookies[REGION_COOKIE_NAME] = self.state.slug
         first = self.client.get(self.collection.get_absolute_url())
         second = self.client.get(self.collection.get_absolute_url(), {"page": 2})
         self.assertTrue(first.context["page_obj"].has_next())
         self.assertEqual(second.context["page_obj"].paginator.count, 25)
-        self.assertNotIn(self.other_image.pk, self.page_image_ids(first) | self.page_image_ids(second))
+        self.assertNotIn(
+            self.other_image.pk,
+            self.page_image_ids(first) | self.page_image_ids(second),
+        )
 
     def test_regional_tiles_filter_by_inherited_region_and_ancestry(self):
         # Keep all points identical: only the metadata region may distinguish them.
@@ -1890,7 +1909,9 @@ class CollectionDetailRegionFilterTests(TestCase):
         self.source.save()
         Image.objects.filter(pk=self.city_image.pk).update(region=None)
         for image in (self.city_image, self.state_image, self.other_image):
-            Georeference.objects.create(image=image, point=Point(-77.43, 37.54), confidence="high")
+            Georeference.objects.create(
+                image=image, point=Point(-77.43, 37.54), confidence="high"
+            )
         with connection.cursor() as cursor:
             cursor.execute("REFRESH MATERIALIZED VIEW public_georeferences_mvt")
         url = reverse("images:vector_tiles", kwargs={"v": 1, "z": 0, "x": 0, "y": 0})
@@ -1909,20 +1930,29 @@ class CollectionDetailRegionFilterTests(TestCase):
         self.assertEqual(city_tile["Cache-Control"], "public, max-age=0, s-maxage=300")
         self.client.cookies[REGION_COOKIE_NAME] = self.city.slug
         self.assertEqual(self.client.get(url, params).content, global_tile.content)
-        self.assertEqual(self.client.get(url, {"region": "deleted-region"}).status_code, 404)
+        self.assertEqual(
+            self.client.get(url, {"region": "deleted-region"}).status_code, 404
+        )
 
     def test_georeference_queue_combines_region_collection_and_difficulty(self):
         Image.objects.filter(pk=self.city_image.pk).update(difficulty="easy")
         url = reverse("images:georeference_interface")
-        params = {"source": self.source.slug, "collection": self.collection.slug,
-                  "region": "Q1370", "difficulty": "easy"}
+        params = {
+            "source": self.source.slug,
+            "collection": self.collection.slug,
+            "region": "Q1370",
+            "difficulty": "easy",
+        }
         response = self.client.get(url, params)
         self.assertEqual(response.context["current_image"], self.city_image)
         self.assertEqual(response.context["remaining_count"], 1)
         response = self.client.get(url, {**params, "region": "Q61"})
         self.assertIsNone(response.context["current_image"])
         self.assertEqual(response.context["remaining_count"], 0)
-        self.assertEqual(self.client.get(url, {**params, "region": "deleted-region"}).status_code, 404)
+        self.assertEqual(
+            self.client.get(url, {**params, "region": "deleted-region"}).status_code,
+            404,
+        )
         response = self.client.get(url, {**params, "image": self.other_image.pk})
         self.assertEqual(response.context["current_image"], self.other_image)
 
@@ -2021,11 +2051,21 @@ class SourceBrowseRegionFilteringTests(StatsEventsMixin, TestCase):
         )
 
     def test_sources_are_ordered_by_regional_image_count(self):
-        self.img("City outside first", collection=self.city_collection, region=self.other)
-        self.img("City outside second", collection=self.city_collection, region=self.other)
-        self.img("City outside third", collection=self.city_collection, region=self.other)
-        self.img("State in city first", collection=self.state_collection, region=self.city)
-        self.img("State in city second", collection=self.state_collection, region=self.city)
+        self.img(
+            "City outside first", collection=self.city_collection, region=self.other
+        )
+        self.img(
+            "City outside second", collection=self.city_collection, region=self.other
+        )
+        self.img(
+            "City outside third", collection=self.city_collection, region=self.other
+        )
+        self.img(
+            "State in city first", collection=self.state_collection, region=self.city
+        )
+        self.img(
+            "State in city second", collection=self.state_collection, region=self.city
+        )
 
         sitewide_response = self.client.get(reverse("images:browse_sources"))
         self.assertEqual(
@@ -2045,15 +2085,22 @@ class SourceBrowseRegionFilteringTests(StatsEventsMixin, TestCase):
     def test_source_cards_and_overall_stats_are_regional(self):
         self.img("Outside override", collection=self.city_collection, region=self.other)
         self.img("Skipped", collection=self.city_collection, will_not_georef=True)
-        self.img("Duplicate", collection=self.city_collection,
-                 duplicate_of=self.city_collection.images.first())
+        self.img(
+            "Duplicate",
+            collection=self.city_collection,
+            duplicate_of=self.city_collection.images.first(),
+        )
         georeferenced = self.img("Georeferenced", collection=self.city_collection)
         with self.stats_events():
-            Georeference.objects.create(image=georeferenced, point=Point(-77.43, 37.54), confidence="high")
-        Collection.objects.create(source=self.city_collection.source, name="Empty collection", slug="empty")
+            Georeference.objects.create(
+                image=georeferenced, point=Point(-77.43, 37.54), confidence="high"
+            )
+        Collection.objects.create(
+            source=self.city_collection.source, name="Empty collection", slug="empty"
+        )
         self.client.cookies[REGION_COOKIE_NAME] = self.city.slug
         response = self.client.get(reverse("images:browse_sources"))
-        source, = response.context["sources"]
+        (source,) = response.context["sources"]
         self.assertEqual(source.public_collections_count, 1)
         self.assertEqual(source.total_images, 3)
         self.assertEqual(source.georeferenced_images, 1)
@@ -2065,8 +2112,10 @@ class SourceBrowseRegionFilteringTests(StatsEventsMixin, TestCase):
         self.assertEqual(overall["total_images"], 2)
         self.assertEqual(overall["total_georeferenced"], 1)
         self.assertContains(response, "Showing 1 of 4 sources with images in Richmond")
-        self.assertIn(response.context["top_rated_image"].pk,
-                      Image.objects.in_region(self.city).values_list("pk", flat=True))
+        self.assertIn(
+            response.context["top_rated_image"].pk,
+            Image.objects.in_region(self.city).values_list("pk", flat=True),
+        )
         self.assertContains(response, "&region=Q43421")
         detail = self.client.get(self.city_collection.source.get_absolute_url())
         self.assertEqual(detail.context["total_images"], 3)
@@ -2078,7 +2127,9 @@ class SourceBrowseRegionFilteringTests(StatsEventsMixin, TestCase):
         self.img("Private", collection=self.other_collection, region=self.city)
         self.other_collection.source.public = False
         self.other_collection.source.save()
-        CollectionRegionStats.objects.create(collection=self.state_collection, region=self.city, total_images=0)
+        CollectionRegionStats.objects.create(
+            collection=self.state_collection, region=self.city, total_images=0
+        )
         self.client.cookies[REGION_COOKIE_NAME] = self.city.slug
         response = self.client.get(reverse("images:browse_sources"))
         self.assertEqual(list(response.context["sources"]), [])
@@ -2098,7 +2149,6 @@ class SourceBrowseRegionFilteringTests(StatsEventsMixin, TestCase):
         response = self.client.get(reverse("images:browse_sources"))
         self.assertEqual(len(response.context["sources"]), 4)
         self.assertEqual(response.context["overall_stats"]["total_images"], 3)
-
 
 
 class FavoritesRegionTests(StatsEventsMixin, TestCase):
@@ -2175,9 +2225,7 @@ class FavoritesRegionTests(StatsEventsMixin, TestCase):
     def test_selected_region_rolls_up_descendants(self):
         self.client.cookies[REGION_COOKIE_NAME] = "virginia"
         response = self.favorites()
-        self.assertEqual(
-            self.ids(response), {self.city_image.id, self.state_image.id}
-        )
+        self.assertEqual(self.ids(response), {self.city_image.id, self.state_image.id})
 
     def test_child_region_excludes_its_ancestors(self):
         self.client.cookies[REGION_COOKIE_NAME] = "richmond"
@@ -2418,9 +2466,7 @@ class StatsPageRegionTests(StatsEventsMixin, TestCase):
         self.assertEqual(json.loads(response.context["daily_counts"]), [2])
         # Bob's georeference in the private collection is invisible; his
         # validation of Alice's public one is not.
-        self.assertEqual(
-            self.contributors(response), {"alice": (1, 0), "bob": (1, 1)}
-        )
+        self.assertEqual(self.contributors(response), {"alice": (1, 0), "bob": (1, 1)})
 
     def test_region_scopes_every_figure(self):
         response = self.stats("richmond")
@@ -2890,14 +2936,14 @@ class SearchRegionFilterTests(TestCase):
         cls.img_city_via_image = cls._make_image(
             "City by image", cls.plain_coll, region=cls.city
         )
-        cls.img_city_via_collection = cls._make_image("City by collection", cls.city_coll)
+        cls.img_city_via_collection = cls._make_image(
+            "City by collection", cls.city_coll
+        )
         cls.img_state_via_source = cls._make_image("State by source", cls.inherit_coll)
         cls.img_no_region = cls._make_image("No region", cls.plain_coll)
         # Its collection says city, but the image itself says state: precedence
         # means this image depicts the state, and must NOT appear under city.
-        cls.img_override = cls._make_image(
-            "Override", cls.city_coll, region=cls.state
-        )
+        cls.img_override = cls._make_image("Override", cls.city_coll, region=cls.state)
 
         cls.all_ids = {
             cls.img_city_via_image.id,
@@ -3023,7 +3069,9 @@ class SearchRegionFilterTests(TestCase):
         # the region condition is a separate insertion and needs its own test.
         buf = BytesIO()
         PILImage.new("RGB", (2, 2)).save(buf, format="PNG")
-        upload = SimpleUploadedFile("query.png", buf.getvalue(), content_type="image/png")
+        upload = SimpleUploadedFile(
+            "query.png", buf.getvalue(), content_type="image/png"
+        )
         with patch(
             "images.views.search.reverse_image._get_image_embedding",
             return_value=[0.1] * 768,
@@ -3633,8 +3681,10 @@ class CommunityWriteAuthorizationTests(CommunityWriteFixtureMixin, TestCase):
     def test_will_not_georef_images_reject_point_submissions_and_skips(self):
         self.login()
         for name, payload in (
-            ("images:georeference_image", {"latitude": 37.5, "longitude": -77.4,
-                                           "confidence": "high"}),
+            (
+                "images:georeference_image",
+                {"latitude": 37.5, "longitude": -77.4, "confidence": "high"},
+            ),
             ("images:skip_image", {}),
         ):
             with self.subTest(route=name):
@@ -3663,18 +3713,14 @@ class CommunityWriteAuthorizationTests(CommunityWriteFixtureMixin, TestCase):
     def test_polygon_submission_requires_an_aerial_image_even_for_staff(self):
         self.login(self.staff)
         response = self.post_json(
-            reverse(
-                "images:aerial_georeference_image", args=[self.public_image.id]
-            ),
+            reverse("images:aerial_georeference_image", args=[self.public_image.id]),
             {"polygon": _polygon(), "confidence": "high"},
         )
         self.assertEqual(response.status_code, 404)
 
     def test_polygon_submission_requires_authentication(self):
         response = self.post_json(
-            reverse(
-                "images:aerial_georeference_image", args=[self.aerial_image.id]
-            ),
+            reverse("images:aerial_georeference_image", args=[self.aerial_image.id]),
             {"polygon": _polygon(), "confidence": "high"},
         )
         self.assertEqual(response.status_code, 401)
@@ -3682,14 +3728,13 @@ class CommunityWriteAuthorizationTests(CommunityWriteFixtureMixin, TestCase):
     def test_polygon_submission_on_an_eligible_aerial_succeeds(self):
         self.login()
         response = self.post_json(
-            reverse(
-                "images:aerial_georeference_image", args=[self.aerial_image.id]
-            ),
+            reverse("images:aerial_georeference_image", args=[self.aerial_image.id]),
             {"polygon": _polygon(), "confidence": "high"},
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(AerialGeoreference.objects.filter(
-            image=self.aerial_image).count(), 1)
+        self.assertEqual(
+            AerialGeoreference.objects.filter(image=self.aerial_image).count(), 1
+        )
 
     def test_validation_resolves_through_the_related_image(self):
         hidden = Georeference.objects.create(
@@ -3759,7 +3804,8 @@ class CommunityWriteAuthorizationTests(CommunityWriteFixtureMixin, TestCase):
         for name in ("images:add_comment", "images:submit_rating"):
             with self.subTest(route=name):
                 response = self.post_json(
-                    reverse(name, args=[self.public_image.id]), {"text": "x", "rating": 3}
+                    reverse(name, args=[self.public_image.id]),
+                    {"text": "x", "rating": 3},
                 )
                 self.assertEqual(response.status_code, 401)
 
@@ -3909,9 +3955,7 @@ class GeoreferenceInputValidationTests(CommunityWriteFixtureMixin, TestCase):
     def test_direction_zero_is_preserved(self):
         response = self.submit(direction=0)
         self.assertEqual(response.status_code, 200)
-        georeference = Georeference.objects.get(
-            id=response.json()["georeference_id"]
-        )
+        georeference = Georeference.objects.get(id=response.json()["georeference_id"])
         self.assertEqual(georeference.direction, 0)
 
     def test_invalid_directions_are_rejected(self):
@@ -3921,9 +3965,7 @@ class GeoreferenceInputValidationTests(CommunityWriteFixtureMixin, TestCase):
 
     def test_omitted_direction_stays_null(self):
         response = self.submit()
-        georeference = Georeference.objects.get(
-            id=response.json()["georeference_id"]
-        )
+        georeference = Georeference.objects.get(id=response.json()["georeference_id"])
         self.assertIsNone(georeference.direction)
 
     def test_unknown_confidence_is_rejected(self):
@@ -3972,11 +4014,15 @@ class GeoreferenceInputValidationTests(CommunityWriteFixtureMixin, TestCase):
         )
         url = reverse("images:validate_georeference", args=[georeference.id])
         self.assertEqual(
-            self.post_json(url, {"validation": "correct", "notes": "123456"}).status_code,
+            self.post_json(
+                url, {"validation": "correct", "notes": "123456"}
+            ).status_code,
             400,
         )
         self.assertEqual(
-            self.post_json(url, {"validation": "correct", "notes": "12345"}).status_code,
+            self.post_json(
+                url, {"validation": "correct", "notes": "12345"}
+            ).status_code,
             200,
         )
 
@@ -4090,9 +4136,7 @@ class PolygonValidationTests(CommunityWriteFixtureMixin, TestCase):
     def test_too_many_vertices_per_ring_are_rejected(self):
         dense = _ring(-77.5, 37.5)
         dense.insert(1, [-77.495, 37.5])
-        self.assert_rejected(
-            {"type": "Polygon", "coordinates": [dense]}, "dense ring"
-        )
+        self.assert_rejected({"type": "Polygon", "coordinates": [dense]}, "dense ring")
 
     @override_settings(POLYGON_MAX_TOTAL_VERTICES=5)
     def test_total_vertex_budget_is_enforced_across_rings(self):
@@ -4180,9 +4224,7 @@ class AlbumWriteAuthorizationTests(CommunityWriteFixtureMixin, TestCase):
     def setUp(self):
         self.login()
         self.album = Album.objects.create(owner=self.user, title="Mine")
-        self.foreign_album = Album.objects.create(
-            owner=self.other_user, title="Theirs"
-        )
+        self.foreign_album = Album.objects.create(owner=self.other_user, title="Theirs")
 
     def test_cannot_add_to_someone_elses_album(self):
         response = self.post_json(
@@ -4295,9 +4337,7 @@ class AlbumWriteAuthorizationTests(CommunityWriteFixtureMixin, TestCase):
         self.assertFalse(staff_album.public)
 
     def test_public_album_of_public_images_is_allowed(self):
-        AlbumImage.objects.create(
-            album=self.album, image=self.public_image, order=1
-        )
+        AlbumImage.objects.create(album=self.album, image=self.public_image, order=1)
         response = self.post_json(
             reverse("images:toggle_album_public", args=[self.album.id]),
             {"public": True},
@@ -4567,9 +4607,7 @@ class InViewSearchPageTests(TestCase):
 
     def test_text_search_html_embeds_no_geometry(self):
         # The partial is shared; only modes that plot their results send points.
-        resp = self.client.get(
-            "/api/v1/search/text/", {"q": "photo", "format": "html"}
-        )
+        resp = self.client.get("/api/v1/search/text/", {"q": "photo", "format": "html"})
         self.assertEqual(resp.status_code, 200)
         self.assertNotIn("search-result-points", resp.content.decode())
 

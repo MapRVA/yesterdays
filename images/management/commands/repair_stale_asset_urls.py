@@ -31,15 +31,19 @@ class Command(BaseCommand):
             queryset = queryset.filter(collection_id=options["collection_id"])
 
         affected = []
-        for image_id, generation, thumbnail, transformed, iiif_url in (
-            queryset.values_list(
-                "id",
-                "asset_generation",
-                "thumbnail",
-                "transformed_permalink",
-                "iiif_url",
-            ).iterator()
-        ):
+        for (
+            image_id,
+            generation,
+            thumbnail,
+            transformed,
+            iiif_url,
+        ) in queryset.values_list(
+            "id",
+            "asset_generation",
+            "thumbnail",
+            "transformed_permalink",
+            "iiif_url",
+        ).iterator():
             prefix = f"/images/{image_id}/{generation}/"
             stale_fields = []
             if thumbnail and not thumbnail.endswith(f"{prefix}thumbnail.webp"):

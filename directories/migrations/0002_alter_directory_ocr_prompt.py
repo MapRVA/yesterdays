@@ -4,15 +4,17 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('directories', '0001_initial'),
+        ("directories", "0001_initial"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='directory',
-            name='ocr_prompt',
-            field=models.TextField(blank=True, help_text='Cached LLM prompt to alongside page images for OCR extraction'),
+            model_name="directory",
+            name="ocr_prompt",
+            field=models.TextField(
+                blank=True,
+                help_text="Cached LLM prompt to alongside page images for OCR extraction",
+            ),
         ),
     ]

@@ -45,10 +45,16 @@ def make_region(wikidata_id, short_name, slug, long_name=None):
 
 class LayerExtentTileTests(TestCase):
     def setUp(self):
-        self.collection = LayerCollection.objects.create(name="Local maps", slug="local")
+        self.collection = LayerCollection.objects.create(
+            name="Local maps", slug="local"
+        )
         self.layer = MapLayer.objects.create(
-            name="Local sheet", slug="local", url=PMTILES_URL,
-            collection=self.collection, polygon=example_polygon(), min_zoom=10,
+            name="Local sheet",
+            slug="local",
+            url=PMTILES_URL,
+            collection=self.collection,
+            polygon=example_polygon(),
+            min_zoom=10,
         )
 
     def tile(self, z=9, x=145, y=198, **headers):
@@ -82,7 +88,9 @@ class LayerExtentTileTests(TestCase):
         self.assertEqual(self.tile().content, b"")
 
     def test_tiny_polygons_are_retained_for_discovery(self):
-        self.layer.polygon = Polygon.from_bbox((-77.440001, 37.540001, -77.44, 37.540002))
+        self.layer.polygon = Polygon.from_bbox(
+            (-77.440001, 37.540001, -77.44, 37.540002)
+        )
         self.layer.save()
         self.assertIn(b"Local sheet", self.tile().content)
 
@@ -91,7 +99,9 @@ class LayerExtentTileTests(TestCase):
         response = self.tile()
         self.assertIn("public", response["Cache-Control"])
         self.assertIn("max-age=600", response["Cache-Control"])
-        self.assertEqual(self.tile(HTTP_IF_NONE_MATCH=response["ETag"]).status_code, 304)
+        self.assertEqual(
+            self.tile(HTTP_IF_NONE_MATCH=response["ETag"]).status_code, 304
+        )
         self.layer.name = "Renamed sheet"
         self.layer.save()
         changed = self.tile(HTTP_IF_NONE_MATCH=response["ETag"])
@@ -104,9 +114,13 @@ class LayerExtentTileTests(TestCase):
         with self.assertNumQueries(1):
             data = _build_map_layers_data()
         self.assertNotIn("collections", data)
-        self.assertEqual(data["overlay_tiles"], {
-            "url": "/layers/tiles/{z}/{x}/{y}.mvt", "maxzoom": 9,
-        })
+        self.assertEqual(
+            data["overlay_tiles"],
+            {
+                "url": "/layers/tiles/{z}/{x}/{y}.mvt",
+                "maxzoom": 9,
+            },
+        )
         self.assertNotIn(
             self.layer.name, [layer["name"] for layer in data["primary_layers"]]
         )
@@ -115,9 +129,12 @@ class LayerExtentTileTests(TestCase):
         for z, x, y in ((10, 0, 0), (0, 1, 0), (9, 512, 0), (9, 0, 512), (999, 0, 0)):
             with self.subTest(z=z, x=x, y=y):
                 self.assertEqual(self.tile(z, x, y).status_code, 404)
-        self.assertEqual(self.client.post(
-            reverse("maps:layer_extent_tile", args=[9, 145, 198])
-        ).status_code, 405)
+        self.assertEqual(
+            self.client.post(
+                reverse("maps:layer_extent_tile", args=[9, 145, 198])
+            ).status_code,
+            405,
+        )
 
 
 class MapLayerExtentMigrationTests(TransactionTestCase):
@@ -154,9 +171,7 @@ class MapLayerExtentMigrationTests(TransactionTestCase):
             )
             self.assertIsNone(new_model.objects.get(pk=global_layer.pk).polygon)
         finally:
-            MigrationExecutor(connection).migrate(
-                [("maps", "0009_maplayer_region")]
-            )
+            MigrationExecutor(connection).migrate([("maps", "0009_maplayer_region")])
 
 
 class MapLayerMinZoomMigrationTests(TransactionTestCase):
@@ -191,9 +206,7 @@ class MapLayerMinZoomMigrationTests(TransactionTestCase):
             self.assertEqual(new_model.objects.get(pk=local.pk).min_zoom, MIN_ZOOM)
             self.assertIsNone(new_model.objects.get(pk=global_layer.pk).min_zoom)
         finally:
-            MigrationExecutor(connection).migrate(
-                [("maps", "0009_maplayer_region")]
-            )
+            MigrationExecutor(connection).migrate([("maps", "0009_maplayer_region")])
 
 
 class MapLayerRegionMigrationTests(TransactionTestCase):
@@ -226,9 +239,9 @@ class MapLayerRegionMigrationTests(TransactionTestCase):
                 wikidata_item=wikidata_item,
                 wikidata_coordinate_location=TEST_POINT,
             )
-            collection = old_apps.get_model(
-                "maps", "LayerCollection"
-            ).objects.create(name="Sanborn", slug="sanborn")
+            collection = old_apps.get_model("maps", "LayerCollection").objects.create(
+                name="Sanborn", slug="sanborn"
+            )
             layer_model = old_apps.get_model("maps", "MapLayer")
             collection_layer = layer_model.objects.create(
                 name="1886",
@@ -250,18 +263,16 @@ class MapLayerRegionMigrationTests(TransactionTestCase):
                 new_layer_model.objects.get(pk=collection_layer.pk).region.slug,
                 "richmond",
             )
-            self.assertIsNone(
-                new_layer_model.objects.get(pk=global_layer.pk).region_id
-            )
+            self.assertIsNone(new_layer_model.objects.get(pk=global_layer.pk).region_id)
         finally:
             MigrationExecutor(connection).migrate(self.after)
 
     def test_succeeds_without_a_richmond_region(self):
         try:
             old_apps = self.migrate_from_before()
-            collection = old_apps.get_model(
-                "maps", "LayerCollection"
-            ).objects.create(name="Local", slug="local-without-richmond")
+            collection = old_apps.get_model("maps", "LayerCollection").objects.create(
+                name="Local", slug="local-without-richmond"
+            )
             layer = old_apps.get_model("maps", "MapLayer").objects.create(
                 name="Local",
                 slug="local-without-richmond",

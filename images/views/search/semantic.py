@@ -429,11 +429,6 @@ def semantic_search(request):
         )
 
 
-
-
-
-
-
 @ratelimit(key="ip", rate="1000/h", method=["GET", "POST"])  # 16/min average
 @ratelimit(key="ip", rate="100/5m", method=["GET", "POST"])  # 20/min burst
 def find_similar_images(request, image_id):
@@ -488,7 +483,7 @@ def find_similar_images(request, image_id):
         offset = int(request.GET.get("offset", 0))
         if offset < 0:
             offset = 0
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         offset = 0
 
     try:

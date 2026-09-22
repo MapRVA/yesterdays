@@ -648,7 +648,7 @@ class ImageAdmin(admin.ModelAdmin):
                 image_id = int(search_term)
                 queryset = self.model.objects.filter(id=image_id)
                 use_distinct = False
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 # If not a number, use normal fuzzy search
                 queryset, use_distinct = super().get_search_results(
                     request, queryset, search_term

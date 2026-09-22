@@ -292,7 +292,7 @@ def entry_update(request, entry_uuid):
 
     try:
         data = json.loads(request.body)
-    except (json.JSONDecodeError, KeyError):
+    except json.JSONDecodeError, KeyError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     with transaction.atomic():
@@ -585,7 +585,7 @@ def ocr_status(request, page_uuid):
     if page.ocr_raw:
         try:
             result["ocr_raw"] = json.loads(page.ocr_raw)
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             result["ocr_raw"] = page.ocr_raw
 
     result["has_saved_entries"] = page.entries.exists()
@@ -617,7 +617,7 @@ def save_entries(request, page_uuid):
         submitted = data.get("entries", [])
         if not isinstance(submitted, list):
             return JsonResponse({"error": "entries must be a list"}, status=400)
-    except (json.JSONDecodeError, KeyError):
+    except json.JSONDecodeError, KeyError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     with transaction.atomic():
@@ -632,7 +632,7 @@ def save_entries(request, page_uuid):
                 if val is not None:
                     try:
                         bbox[dim] = int(val)
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         pass
             entry = Entry.objects.create(page=page, original_text=original_text, **bbox)
 
@@ -918,7 +918,7 @@ def queue_ocr_remaining(request, slug):
 
     try:
         data = json.loads(request.body)
-    except (json.JSONDecodeError, KeyError):
+    except json.JSONDecodeError, KeyError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     model_identifier = data.get("model", "").strip()

@@ -128,7 +128,7 @@ def _parse_wikidata_date(value):
         return None
     try:
         return datetime.strptime(value[:10], "%Y-%m-%d").date()
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 

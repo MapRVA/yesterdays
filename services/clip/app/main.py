@@ -79,7 +79,7 @@ def embed_image(data: bytes = Body(media_type="application/octet-stream")):
         raise HTTPException(status_code=413, detail="Image too large")
     try:
         embedding = encoder.encode_image(data)
-    except (UnidentifiedImageError, OSError, ValueError):
+    except UnidentifiedImageError, OSError, ValueError:
         raise HTTPException(status_code=400, detail="Invalid image")
     return {
         "embedding": embedding,

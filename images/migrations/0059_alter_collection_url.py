@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('images', '0058_collectionstats'),
+        ("images", "0058_collectionstats"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='collection',
-            name='url',
+            model_name="collection",
+            name="url",
             field=models.URLField(blank=True),
         ),
     ]

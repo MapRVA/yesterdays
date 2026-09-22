@@ -27,9 +27,11 @@ def _filter_georeferenced_by(queryset, name, value):
     for v in raw_values:
         try:
             osm_id = int(v.strip())
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             raise ValidationError(
-                {"georeferenced_by": "Must be integers (OSM user IDs) separated by commas."}
+                {
+                    "georeferenced_by": "Must be integers (OSM user IDs) separated by commas."
+                }
             )
 
         if osm_id == 0:
@@ -64,7 +66,9 @@ def _filter_queryset_by_subject(queryset, prefix, value):
         subject_query |= Q(**{f"{prefix}subject_mappings__subject_id__in": pk_ids})
     if wikidata_ids:
         subject_query |= Q(
-            **{f"{prefix}subject_mappings__subject__wikidata_item__wikidata_id__in": wikidata_ids}
+            **{
+                f"{prefix}subject_mappings__subject__wikidata_item__wikidata_id__in": wikidata_ids
+            }
         )
 
     if not subject_query:

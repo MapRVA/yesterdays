@@ -6,28 +6,81 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('activity', '0003_alter_georeferencegroup_user'),
-        ('subjects', '0009_person_suffix'),
+        ("activity", "0003_alter_georeferencegroup_user"),
+        ("subjects", "0009_person_suffix"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='SubjectMappingActivityGroup',
+            name="SubjectMappingActivityGroup",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('action', models.CharField(choices=[('added', 'Added'), ('removed', 'Removed'), ('reordered', 'Reordered')], max_length=20)),
-                ('started_at', models.DateTimeField(help_text='Timestamp of the first activity in this group')),
-                ('ended_at', models.DateTimeField(db_index=True, help_text='Timestamp of the most recent activity in this group')),
-                ('count', models.PositiveIntegerField(default=1)),
-                ('subject', models.ForeignKey(blank=True, help_text='Subject involved in the group (null for reorder groups)', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='mapping_activity_groups', to='subjects.subject')),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='subject_mapping_activity_groups', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "action",
+                    models.CharField(
+                        choices=[
+                            ("added", "Added"),
+                            ("removed", "Removed"),
+                            ("reordered", "Reordered"),
+                        ],
+                        max_length=20,
+                    ),
+                ),
+                (
+                    "started_at",
+                    models.DateTimeField(
+                        help_text="Timestamp of the first activity in this group"
+                    ),
+                ),
+                (
+                    "ended_at",
+                    models.DateTimeField(
+                        db_index=True,
+                        help_text="Timestamp of the most recent activity in this group",
+                    ),
+                ),
+                ("count", models.PositiveIntegerField(default=1)),
+                (
+                    "subject",
+                    models.ForeignKey(
+                        blank=True,
+                        help_text="Subject involved in the group (null for reorder groups)",
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="mapping_activity_groups",
+                        to="subjects.subject",
+                    ),
+                ),
+                (
+                    "user",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="subject_mapping_activity_groups",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-ended_at'],
-                'indexes': [models.Index(fields=['-ended_at'], name='activity_su_ended_a_13c5b8_idx'), models.Index(fields=['user', 'subject', 'action', '-ended_at'], name='activity_su_user_id_024100_idx')],
+                "ordering": ["-ended_at"],
+                "indexes": [
+                    models.Index(
+                        fields=["-ended_at"], name="activity_su_ended_a_13c5b8_idx"
+                    ),
+                    models.Index(
+                        fields=["user", "subject", "action", "-ended_at"],
+                        name="activity_su_user_id_024100_idx",
+                    ),
+                ],
             },
         ),
     ]
