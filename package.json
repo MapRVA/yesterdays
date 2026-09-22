@@ -16,21 +16,21 @@
     "vite-plugin-static-copy": "^3.4.0"
   },
   "dependencies": {
-    "@fortawesome/fontawesome-free": "^7.3.0",
-    "@fortawesome/fontawesome-svg-core": "^7.3.0",
-    "@fortawesome/free-solid-svg-icons": "^7.3.0",
+    "@fortawesome/fontawesome-free": "^7.3.1",
+    "@fortawesome/fontawesome-svg-core": "^7.3.1",
+    "@fortawesome/free-solid-svg-icons": "^7.3.1",
     "@geoman-io/maplibre-geoman-free": "0.7.0",
     "@maplibre/maplibre-gl-geocoder": "1.9.4",
     "@popperjs/core": "^2.11.8",
     "@tarekraafat/autocomplete.js": "10.2.9",
-    "alpinejs": "^3.15.12",
+    "alpinejs": "^3.17.4",
     "bootstrap": "^5.3.8",
     "chartjs-adapter-date-fns": "3.0.0",
     "maplibre-gl": "^5.24.0",
-    "openseadragon": "^6.0.2",
+    "openseadragon": "^6.1.1",
     "photoswipe": "5.4.4",
     "pmtiles": "4.4.0",
-    "sass": "^1.101.0",
+    "sass": "^1.104.1",
     "sortablejs": "1.15.7"
   }
 }
