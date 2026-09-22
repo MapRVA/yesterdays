@@ -42,7 +42,7 @@ dev = [
     "pytest-django>=4.14.0",
     "pytest>=9.1.1",
 ]
-docs = ["zensical~=0.0.62"]
+docs = ["zensical~=0.0.63"]
 
 [tool.uv]
 default-groups = ["docs"]
