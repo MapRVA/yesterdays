@@ -10,7 +10,7 @@ A Django web application for georeferencing historical images.
 ## Development
 
 We welcome anyone who wishes to contribute code to Yesterdays, or build their own applications atop our API.
-Please start with our [documentation for developers](https://docs.yesterdays.today/dev), and feel free to [reach out](https://docs.yesterdays.today/dev) with any questions.
+Please start with our [documentation for contributors](https://docs.yesterdays.today/dev/contributing/), and feel free to [reach out](https://docs.yesterdays.today/contact) with any questions.
 
 ## License
 
