@@ -20,7 +20,7 @@ Use the `detail_url` field to fetch the full details for any image.
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/images/"
+    curl "https://yesterdays.today/api/v2/images/"
     ```
 
 === "Python"
@@ -28,7 +28,7 @@ Use the `detail_url` field to fetch the full details for any image.
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/images/")
+    response = requests.get("https://yesterdays.today/api/v2/images/")
     data = response.json()
     ```
 
@@ -37,7 +37,7 @@ Use the `detail_url` field to fetch the full details for any image.
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/images/") |>
+    resp <- request("https://yesterdays.today/api/v2/images/") |>
       req_perform()
     data <- resp_body_json(resp)
     ```
@@ -47,7 +47,7 @@ Use the `detail_url` field to fetch the full details for any image.
 ```json
 {
     "count": 37244,
-    "next": "https://yesterdays.maprva.org/api/v2/images/?page=2",
+    "next": "https://yesterdays.today/api/v2/images/?page=2",
     "previous": null,
     "results": [
         {
@@ -66,7 +66,7 @@ Use the `detail_url` field to fetch the full details for any image.
                 "source_name": "The Valentine"
             },
             "georeference_status": "georeferenced",
-            "detail_url": "https://yesterdays.maprva.org/api/v2/images/5934/"
+            "detail_url": "https://yesterdays.today/api/v2/images/5934/"
         }
     ]
 }
@@ -109,7 +109,7 @@ Find all georeferenced images from the Valentine, taken between 1900 and 1920:
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/images/?source=2&georeferenced=true&year_min=1900&year_max=1920"
+    curl "https://yesterdays.today/api/v2/images/?source=2&georeferenced=true&year_min=1900&year_max=1920"
     ```
 
 === "Python"
@@ -117,7 +117,7 @@ Find all georeferenced images from the Valentine, taken between 1900 and 1920:
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/images/", params={
+    response = requests.get("https://yesterdays.today/api/v2/images/", params={
         "source": 2,
         "georeferenced": "true",
         "year_min": 1900,
@@ -131,7 +131,7 @@ Find all georeferenced images from the Valentine, taken between 1900 and 1920:
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/images/") |>
+    resp <- request("https://yesterdays.today/api/v2/images/") |>
       req_url_query(source = 2, georeferenced = "true", year_min = 1900, year_max = 1920) |>
       req_perform()
     data <- resp_body_json(resp)
@@ -153,7 +153,7 @@ Prefix with `-` to sort descending. For example, `ordering=original_date` gives 
 
     ```bash
     # Most recently georeferenced images first
-    curl "https://yesterdays.maprva.org/api/v2/images/?ordering=-last_georeferenced_at"
+    curl "https://yesterdays.today/api/v2/images/?ordering=-last_georeferenced_at"
     ```
 
 === "Python"
@@ -162,7 +162,7 @@ Prefix with `-` to sort descending. For example, `ordering=original_date` gives 
     import requests
 
     # Most recently georeferenced images first
-    response = requests.get("https://yesterdays.maprva.org/api/v2/images/", params={
+    response = requests.get("https://yesterdays.today/api/v2/images/", params={
         "ordering": "-last_georeferenced_at",
     })
     data = response.json()
@@ -174,7 +174,7 @@ Prefix with `-` to sort descending. For example, `ordering=original_date` gives 
     library(httr2)
 
     # Most recently georeferenced images first
-    resp <- request("https://yesterdays.maprva.org/api/v2/images/") |>
+    resp <- request("https://yesterdays.today/api/v2/images/") |>
       req_url_query(ordering = "-last_georeferenced_at") |>
       req_perform()
     data <- resp_body_json(resp)
@@ -196,7 +196,7 @@ Returns complete details for a single image, including its georeferences, subjec
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/images/5934/"
+    curl "https://yesterdays.today/api/v2/images/5934/"
     ```
 
 === "Python"
@@ -204,7 +204,7 @@ Returns complete details for a single image, including its georeferences, subjec
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/images/5934/")
+    response = requests.get("https://yesterdays.today/api/v2/images/5934/")
     data = response.json()
     ```
 
@@ -213,7 +213,7 @@ Returns complete details for a single image, including its georeferences, subjec
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/images/5934/") |>
+    resp <- request("https://yesterdays.today/api/v2/images/5934/") |>
       req_perform()
     data <- resp_body_json(resp)
     ```
@@ -280,7 +280,7 @@ Returns complete details for a single image, including its georeferences, subjec
             "created_at": "2025-12-16T12:55:42Z"
         }
     ],
-    "detail_url": "https://yesterdays.maprva.org/api/v2/images/5934/",
+    "detail_url": "https://yesterdays.today/api/v2/images/5934/",
     "iiif_url": "https://cdn.maprva.org/images/5934/iiif/"
 }
 ```
@@ -480,7 +480,7 @@ Example response:
 === "curl"
 
     ```bash
-    INSTANCE="https://yesterdays.maprva.org"
+    INSTANCE="https://yesterdays.today"
     TOKEN="your-access-token"
     COLLECTION_ID=39
     FILE=/path/to/photo.tif
@@ -523,7 +523,7 @@ Example response:
     ```python
     import requests
 
-    INSTANCE = "https://yesterdays.maprva.org"
+    INSTANCE = "https://yesterdays.today"
     TOKEN = "your-access-token"
     COLLECTION_ID = 39
     FILE = "/path/to/photo.tif"
@@ -573,7 +573,7 @@ Example response:
     ```r
     library(httr2)
 
-    INSTANCE      <- "https://yesterdays.maprva.org"
+    INSTANCE      <- "https://yesterdays.today"
     TOKEN         <- "your-access-token"
     COLLECTION_ID <- 39
     FILE          <- "/path/to/photo.tif"
@@ -711,7 +711,7 @@ Example response (200 OK):
 === "curl"
 
     ```bash
-    INSTANCE="https://yesterdays.maprva.org"
+    INSTANCE="https://yesterdays.today"
     TOKEN="your-access-token"
     IMAGE_ID=5934
     COLLECTION_ID=39
@@ -742,7 +742,7 @@ Example response (200 OK):
     ```python
     import requests
 
-    INSTANCE = "https://yesterdays.maprva.org"
+    INSTANCE = "https://yesterdays.today"
     TOKEN = "your-access-token"
     IMAGE_ID = 5934
     COLLECTION_ID = 39
@@ -782,7 +782,7 @@ Example response (200 OK):
     ```r
     library(httr2)
 
-    INSTANCE      <- "https://yesterdays.maprva.org"
+    INSTANCE      <- "https://yesterdays.today"
     TOKEN         <- "your-access-token"
     IMAGE_ID      <- 5934
     COLLECTION_ID <- 39

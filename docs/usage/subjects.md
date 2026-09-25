@@ -2,11 +2,11 @@
 
 Subjects represent the entities in images. They could be:
 
-- [buildings](https://yesterdays.maprva.org/subjects/?category=Q41176),
-- [people](https://yesterdays.maprva.org/subjects/?category=Q215627),
-- [natural phenomena](https://yesterdays.maprva.org/subjects/?category=Q1322005),
-- [car models](https://yesterdays.maprva.org/subjects/?category=Q3231690),
-- [parks](https://yesterdays.maprva.org/subjects/?category=Q22698),
+- [buildings](https://yesterdays.today/subjects/?category=Q41176),
+- [people](https://yesterdays.today/subjects/?category=Q215627),
+- [natural phenomena](https://yesterdays.today/subjects/?category=Q1322005),
+- [car models](https://yesterdays.today/subjects/?category=Q3231690),
+- [parks](https://yesterdays.today/subjects/?category=Q22698),
 - etc.
 
 In general, a subject needs to be a physical, observable, _thing_.
@@ -15,12 +15,12 @@ In general, a subject needs to be a physical, observable, _thing_.
 
 ## Exploring Subjects
 
-The [subjects page](https://yesterdays.maprva.org/subjects/) provides two ways to explore subjects:
+The [subjects page](https://yesterdays.today/subjects/) provides two ways to explore subjects:
 
 - A map showing buildings, parks, etc. using [OpenStreetMap](https://openstreetmap.org) data.
 - An autocomplete-enabled search bar where you can filter by category.
 
-As demonstrated by the links at the top of this page, categories are determined by Wikidata relationships such as [`P31 instance of`](https://www.wikidata.org/wiki/Property:P31) or [`P279 subclass of`](https://www.wikidata.org/wiki/Property:P279). This system of categories allows us to tag specific things like [Morgan Fountain](https://yesterdays.maprva.org/subjects/morgan-fountain/), and have those photos also show up on the page for [fountain](https://yesterdays.maprva.org/subjects/fountain/). This works because [`Q137179642 Morgan Fountain`](https://www.wikidata.org/wiki/Q137179642) is an instance of [`Q483453 fountain`](https://www.wikidata.org/wiki/Q483453).
+As demonstrated by the links at the top of this page, categories are determined by Wikidata relationships such as [`P31 instance of`](https://www.wikidata.org/wiki/Property:P31) or [`P279 subclass of`](https://www.wikidata.org/wiki/Property:P279). This system of categories allows us to tag specific things like [Morgan Fountain](https://yesterdays.today/subjects/morgan-fountain/), and have those photos also show up on the page for [fountain](https://yesterdays.today/subjects/fountain/). This works because [`Q137179642 Morgan Fountain`](https://www.wikidata.org/wiki/Q137179642) is an instance of [`Q483453 fountain`](https://www.wikidata.org/wiki/Q483453).
 
 ## Tagging Subjects
 

@@ -10,7 +10,7 @@ You can use it to build apps, bots, maps, research tools...whatever you like.
 All endpoints live under:
 
 ```
-https://yesterdays.maprva.org/api/v2/
+https://yesterdays.today/api/v2/
 ```
 
 ## Quick start
@@ -20,7 +20,7 @@ Here's how to fetch a single image:
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/images/1234/"
+    curl "https://yesterdays.today/api/v2/images/1234/"
     ```
 
 === "Python"
@@ -28,7 +28,7 @@ Here's how to fetch a single image:
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/images/1234/")
+    response = requests.get("https://yesterdays.today/api/v2/images/1234/")
     data = response.json()
     ```
 
@@ -37,7 +37,7 @@ Here's how to fetch a single image:
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/images/1234/") |>
+    resp <- request("https://yesterdays.today/api/v2/images/1234/") |>
       req_perform()
     data <- resp_body_json(resp)
     ```
@@ -47,7 +47,7 @@ Or list all available sources:
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/sources/"
+    curl "https://yesterdays.today/api/v2/sources/"
     ```
 
 === "Python"
@@ -55,7 +55,7 @@ Or list all available sources:
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/sources/")
+    response = requests.get("https://yesterdays.today/api/v2/sources/")
     data = response.json()
     ```
 
@@ -64,7 +64,7 @@ Or list all available sources:
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/sources/") |>
+    resp <- request("https://yesterdays.today/api/v2/sources/") |>
       req_perform()
     data <- resp_body_json(resp)
     ```
@@ -100,7 +100,7 @@ List endpoints return paginated results with 50 items per page by default. You c
 ```json
 {
     "count": 2340,
-    "next": "https://yesterdays.maprva.org/api/v2/images/?page=2",
+    "next": "https://yesterdays.today/api/v2/images/?page=2",
     "previous": null,
     "results": [...]
 }
@@ -111,7 +111,7 @@ Use the `page` query parameter to request a specific page:
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/images/?page=3"
+    curl "https://yesterdays.today/api/v2/images/?page=3"
     ```
 
 === "Python"
@@ -119,7 +119,7 @@ Use the `page` query parameter to request a specific page:
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/images/", params={"page": 3})
+    response = requests.get("https://yesterdays.today/api/v2/images/", params={"page": 3})
     data = response.json()
     ```
 
@@ -128,7 +128,7 @@ Use the `page` query parameter to request a specific page:
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/images/") |>
+    resp <- request("https://yesterdays.today/api/v2/images/") |>
       req_url_query(page = 3) |>
       req_perform()
     data <- resp_body_json(resp)
@@ -141,7 +141,7 @@ Most endpoints support filtering and ordering via query parameters. Each endpoin
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/images/?collection=5"
+    curl "https://yesterdays.today/api/v2/images/?collection=5"
     ```
 
 === "Python"
@@ -149,7 +149,7 @@ Most endpoints support filtering and ordering via query parameters. Each endpoin
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/images/", params={"collection": 5})
+    response = requests.get("https://yesterdays.today/api/v2/images/", params={"collection": 5})
     data = response.json()
     ```
 
@@ -158,7 +158,7 @@ Most endpoints support filtering and ordering via query parameters. Each endpoin
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/images/") |>
+    resp <- request("https://yesterdays.today/api/v2/images/") |>
       req_url_query(collection = 5) |>
       req_perform()
     data <- resp_body_json(resp)
@@ -169,7 +169,7 @@ To change the sort order, use the `ordering` parameter:
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/images/?ordering=original_date"
+    curl "https://yesterdays.today/api/v2/images/?ordering=original_date"
     ```
 
 === "Python"
@@ -177,7 +177,7 @@ To change the sort order, use the `ordering` parameter:
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/images/", params={"ordering": "original_date"})
+    response = requests.get("https://yesterdays.today/api/v2/images/", params={"ordering": "original_date"})
     data = response.json()
     ```
 
@@ -186,7 +186,7 @@ To change the sort order, use the `ordering` parameter:
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/images/") |>
+    resp <- request("https://yesterdays.today/api/v2/images/") |>
       req_url_query(ordering = "original_date") |>
       req_perform()
     data <- resp_body_json(resp)
@@ -197,7 +197,7 @@ Prefix with `-` to sort descending:
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/images/?ordering=-original_date"
+    curl "https://yesterdays.today/api/v2/images/?ordering=-original_date"
     ```
 
 === "Python"
@@ -205,7 +205,7 @@ Prefix with `-` to sort descending:
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/images/", params={"ordering": "-original_date"})
+    response = requests.get("https://yesterdays.today/api/v2/images/", params={"ordering": "-original_date"})
     data = response.json()
     ```
 
@@ -214,7 +214,7 @@ Prefix with `-` to sort descending:
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/images/") |>
+    resp <- request("https://yesterdays.today/api/v2/images/") |>
       req_url_query(ordering = "-original_date") |>
       req_perform()
     data <- resp_body_json(resp)

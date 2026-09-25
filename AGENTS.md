@@ -91,7 +91,7 @@ The database is **PostgreSQL with PostGIS, pgvector, and pg_trgm** (trigram text
 
 ## Documentation site
 
-Project documentation (published at docs.yesterdays.maprva.org) is built from `docs/` with **Zensical** (config in `zensical.toml`) into the gitignored `site/` directory, and deployed to GitHub Pages on push to `trunk`. Build with `uv run --only-group docs zensical build --clean --strict`. To preview locally use `uv run zensical serve -a localhost:8080` — Zensical defaults to port 8000, which collides with the Django dev server.
+Project documentation (published at docs.yesterdays.today) is built from `docs/` with **Zensical** (config in `zensical.toml`) into the gitignored `site/` directory, and deployed to GitHub Pages on push to `trunk`. Build with `uv run --only-group docs zensical build --clean --strict`. To preview locally use `uv run zensical serve -a localhost:8080` — Zensical defaults to port 8000, which collides with the Django dev server.
 
 ## Testing and CI
 

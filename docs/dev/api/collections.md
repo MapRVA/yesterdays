@@ -1,7 +1,7 @@
 # Collections
 
 Collections group related images within a [source](sources.md).
-For example, [*Cook Photograph Collection*](https://yesterdays.maprva.org/browse/the-valentine/cook-photograph-collection/) is one of several collections from The Valentine.
+For example, [*Cook Photograph Collection*](https://yesterdays.today/browse/the-valentine/cook-photograph-collection/) is one of several collections from The Valentine.
 
 There are no "subcollections" in Yesterdays.
 Just sources and collections.
@@ -19,7 +19,7 @@ Returns a paginated list of all public collections.
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/collections/"
+    curl "https://yesterdays.today/api/v2/collections/"
     ```
 
 === "Python"
@@ -27,7 +27,7 @@ Returns a paginated list of all public collections.
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/collections/")
+    response = requests.get("https://yesterdays.today/api/v2/collections/")
     data = response.json()
     ```
 
@@ -36,7 +36,7 @@ Returns a paginated list of all public collections.
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/collections/") |>
+    resp <- request("https://yesterdays.today/api/v2/collections/") |>
       req_perform()
     data <- resp_body_json(resp)
     ```
@@ -61,7 +61,7 @@ Returns a paginated list of all public collections.
                 "slug": "the-valentine"
             },
             "image_count": 1957,
-            "images_url": "https://yesterdays.maprva.org/api/v2/images/?collection=118"
+            "images_url": "https://yesterdays.today/api/v2/images/?collection=118"
         }
     ]
 }
@@ -80,7 +80,7 @@ GET /api/v2/collections/{id}/
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/collections/118/"
+    curl "https://yesterdays.today/api/v2/collections/118/"
     ```
 
 === "Python"
@@ -88,7 +88,7 @@ GET /api/v2/collections/{id}/
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/collections/118/")
+    response = requests.get("https://yesterdays.today/api/v2/collections/118/")
     data = response.json()
     ```
 
@@ -97,7 +97,7 @@ GET /api/v2/collections/{id}/
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/collections/118/") |>
+    resp <- request("https://yesterdays.today/api/v2/collections/118/") |>
       req_perform()
     data <- resp_body_json(resp)
     ```
@@ -128,7 +128,7 @@ See [Authentication](authentication.md).
 === "curl"
 
     ```bash
-    curl -X POST "https://yesterdays.maprva.org/api/v2/collections/" \
+    curl -X POST "https://yesterdays.today/api/v2/collections/" \
       -H "Authorization: Bearer $TOKEN" \
       -H "Content-Type: application/json" \
       -d '{
@@ -146,7 +146,7 @@ See [Authentication](authentication.md).
     import requests
 
     resp = requests.post(
-        "https://yesterdays.maprva.org/api/v2/collections/",
+        "https://yesterdays.today/api/v2/collections/",
         headers={"Authorization": f"Bearer {TOKEN}"},
         json={
             "name": "Edith K. Shelton Photograph Collection",
@@ -165,7 +165,7 @@ See [Authentication](authentication.md).
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/collections/") |>
+    resp <- request("https://yesterdays.today/api/v2/collections/") |>
       req_auth_bearer_token(TOKEN) |>
       req_body_json(list(
         name        = "Edith K. Shelton Photograph Collection",

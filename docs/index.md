@@ -1,6 +1,6 @@
 # Yesterdays Documentation
 
-[Yesterdays](https://yesterdays.maprva.org) is a platform for cataloguing and georeferencing historical images.
+[Yesterdays](https://yesterdays.today) is a platform for cataloguing and georeferencing historical images.
 It was initially developed by [MapRVA](https://maprva.org) for use in Richmond, Virginia.
 Yesterdays is now an [OpenStreetMap US Charter Project](https://openstreetmap.us/our-work/community-charter-projects/).
 

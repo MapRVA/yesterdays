@@ -1,7 +1,7 @@
 # Hosting Images
 
 Yesterdays is designed to store images and other assets in an S3-compatible bucket.
-For [Yesterdays of Richmond](https://yesterdays.maprva.org), `cdn.yesterdays.maprva.org` is pointed at this bucket.
+For [Yesterdays of Richmond](https://yesterdays.today), `cdn.yesterdays.maprva.org` is pointed at this bucket.
 
 In general we recommend [Cloudflare R2](https://www.cloudflare.com/developer-platform/products/r2/) for its low fees and ease of use.
 However, you can use any S3-compatible service that you wish.

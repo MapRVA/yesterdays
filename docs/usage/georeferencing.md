@@ -32,7 +32,7 @@ Please be careful when inputting data from external sources: metadata submitted 
 
 ## Notes
 
-If you want to reference another image in your *Additional Notes*, you can do so by simply preceding the other image's ID with a # symbol. For example, `#36066` would render as a link to [the image with that ID](https://yesterdays.maprva.org/36066/).
+If you want to reference another image in your *Additional Notes*, you can do so by simply preceding the other image's ID with a # symbol. For example, `#36066` would render as a link to [the image with that ID](https://yesterdays.today/36066/).
 
 ## Other
 

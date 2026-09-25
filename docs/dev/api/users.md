@@ -18,7 +18,7 @@ Returns a paginated list of contributors with their georeference counts.
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/users/"
+    curl "https://yesterdays.today/api/v2/users/"
     ```
 
 === "Python"
@@ -26,7 +26,7 @@ Returns a paginated list of contributors with their georeference counts.
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/users/")
+    response = requests.get("https://yesterdays.today/api/v2/users/")
     data = response.json()
     ```
 
@@ -35,7 +35,7 @@ Returns a paginated list of contributors with their georeference counts.
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/users/") |>
+    resp <- request("https://yesterdays.today/api/v2/users/") |>
       req_perform()
     data <- resp_body_json(resp)
     ```
@@ -75,7 +75,7 @@ GET /api/v2/users/{id}/
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/users/21907338/"
+    curl "https://yesterdays.today/api/v2/users/21907338/"
     ```
 
 === "Python"
@@ -83,7 +83,7 @@ GET /api/v2/users/{id}/
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/users/21907338/")
+    response = requests.get("https://yesterdays.today/api/v2/users/21907338/")
     data = response.json()
     ```
 
@@ -92,7 +92,7 @@ GET /api/v2/users/{id}/
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/users/21907338/") |>
+    resp <- request("https://yesterdays.today/api/v2/users/21907338/") |>
       req_perform()
     data <- resp_body_json(resp)
     ```

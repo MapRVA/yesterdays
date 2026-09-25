@@ -15,7 +15,7 @@ Returns a stream of recent activity on the site, including georeference contribu
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/activity/"
+    curl "https://yesterdays.today/api/v2/activity/"
     ```
 
 === "Python"
@@ -23,7 +23,7 @@ Returns a stream of recent activity on the site, including georeference contribu
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/activity/")
+    response = requests.get("https://yesterdays.today/api/v2/activity/")
     data = response.json()
     ```
 
@@ -32,7 +32,7 @@ Returns a stream of recent activity on the site, including georeference contribu
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/activity/") |>
+    resp <- request("https://yesterdays.today/api/v2/activity/") |>
       req_perform()
     data <- resp_body_json(resp)
     ```
@@ -205,7 +205,7 @@ Fetch the first page:
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/activity/"
+    curl "https://yesterdays.today/api/v2/activity/"
     ```
 
 === "Python"
@@ -213,7 +213,7 @@ Fetch the first page:
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/activity/")
+    response = requests.get("https://yesterdays.today/api/v2/activity/")
     data = response.json()
     ```
 
@@ -222,7 +222,7 @@ Fetch the first page:
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/activity/") |>
+    resp <- request("https://yesterdays.today/api/v2/activity/") |>
       req_perform()
     data <- resp_body_json(resp)
     ```
@@ -232,7 +232,7 @@ Then use the `timestamp` of the last event to fetch the next page:
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/activity/?before=2026-02-20T01:58:16Z"
+    curl "https://yesterdays.today/api/v2/activity/?before=2026-02-20T01:58:16Z"
     ```
 
 === "Python"
@@ -240,7 +240,7 @@ Then use the `timestamp` of the last event to fetch the next page:
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/activity/", params={
+    response = requests.get("https://yesterdays.today/api/v2/activity/", params={
         "before": "2026-02-20T01:58:16Z",
     })
     data = response.json()
@@ -251,7 +251,7 @@ Then use the `timestamp` of the last event to fetch the next page:
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/activity/") |>
+    resp <- request("https://yesterdays.today/api/v2/activity/") |>
       req_url_query(before = "2026-02-20T01:58:16Z") |>
       req_perform()
     data <- resp_body_json(resp)
@@ -264,7 +264,7 @@ Show only comments and milestones:
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/activity/?types=comment,user_milestone"
+    curl "https://yesterdays.today/api/v2/activity/?types=comment,user_milestone"
     ```
 
 === "Python"
@@ -272,7 +272,7 @@ Show only comments and milestones:
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/activity/", params={
+    response = requests.get("https://yesterdays.today/api/v2/activity/", params={
         "types": "comment,user_milestone",
     })
     data = response.json()
@@ -283,7 +283,7 @@ Show only comments and milestones:
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/activity/") |>
+    resp <- request("https://yesterdays.today/api/v2/activity/") |>
       req_url_query(types = "comment,user_milestone") |>
       req_perform()
     data <- resp_body_json(resp)

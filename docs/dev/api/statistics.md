@@ -15,7 +15,7 @@ All counts cover only public collections belonging to public sources.
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/stats/"
+    curl "https://yesterdays.today/api/v2/stats/"
     ```
 
 === "Python"
@@ -23,7 +23,7 @@ All counts cover only public collections belonging to public sources.
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/stats/")
+    response = requests.get("https://yesterdays.today/api/v2/stats/")
     data = response.json()
     ```
 
@@ -32,7 +32,7 @@ All counts cover only public collections belonging to public sources.
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/stats/") |>
+    resp <- request("https://yesterdays.today/api/v2/stats/") |>
       req_perform()
     data <- resp_body_json(resp)
     ```

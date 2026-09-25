@@ -18,7 +18,7 @@ Returns a paginated list of subjects with their Wikidata metadata and image coun
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/subjects/"
+    curl "https://yesterdays.today/api/v2/subjects/"
     ```
 
 === "Python"
@@ -26,7 +26,7 @@ Returns a paginated list of subjects with their Wikidata metadata and image coun
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/subjects/")
+    response = requests.get("https://yesterdays.today/api/v2/subjects/")
     data = response.json()
     ```
 
@@ -35,7 +35,7 @@ Returns a paginated list of subjects with their Wikidata metadata and image coun
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/subjects/") |>
+    resp <- request("https://yesterdays.today/api/v2/subjects/") |>
       req_perform()
     data <- resp_body_json(resp)
     ```
@@ -45,7 +45,7 @@ Returns a paginated list of subjects with their Wikidata metadata and image coun
 ```json
 {
     "count": 263,
-    "next": "https://yesterdays.maprva.org/api/v2/subjects/?page=2",
+    "next": "https://yesterdays.today/api/v2/subjects/?page=2",
     "previous": null,
     "results": [
         {
@@ -60,7 +60,7 @@ Returns a paginated list of subjects with their Wikidata metadata and image coun
                 "description": "cemetery in Richmond, Virginia, United States"
             },
             "image_count": 208,
-            "images_url": "https://yesterdays.maprva.org/api/v2/images/?subject=22"
+            "images_url": "https://yesterdays.today/api/v2/images/?subject=22"
         }
     ]
 }
@@ -77,7 +77,7 @@ GET /api/v2/subjects/{id}/
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/subjects/4/"
+    curl "https://yesterdays.today/api/v2/subjects/4/"
     ```
 
 === "Python"
@@ -85,7 +85,7 @@ GET /api/v2/subjects/{id}/
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/subjects/4/")
+    response = requests.get("https://yesterdays.today/api/v2/subjects/4/")
     data = response.json()
     ```
 
@@ -94,7 +94,7 @@ GET /api/v2/subjects/{id}/
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/subjects/4/") |>
+    resp <- request("https://yesterdays.today/api/v2/subjects/4/") |>
       req_perform()
     data <- resp_body_json(resp)
     ```
@@ -117,7 +117,7 @@ Some subjects span multiple OSM elements (e.g., a street made up of several ways
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/subjects/4/geometry/"
+    curl "https://yesterdays.today/api/v2/subjects/4/geometry/"
     ```
 
 === "Python"
@@ -125,7 +125,7 @@ Some subjects span multiple OSM elements (e.g., a street made up of several ways
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/subjects/4/geometry/")
+    response = requests.get("https://yesterdays.today/api/v2/subjects/4/geometry/")
     data = response.json()
     ```
 
@@ -134,7 +134,7 @@ Some subjects span multiple OSM elements (e.g., a street made up of several ways
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/subjects/4/geometry/") |>
+    resp <- request("https://yesterdays.today/api/v2/subjects/4/geometry/") |>
       req_perform()
     data <- resp_body_json(resp)
     ```

@@ -69,7 +69,7 @@ These are some basic, site-wide settings that are important to configure per-ins
 django:
   timeZone: "America/New_York"
   secretKey: <SECRET KEY> # generate your own secret key
-  allowedHosts: "yesterdays.maprva.org" # comma-separated list
+  allowedHosts: "yesterdays.today" # comma-separated list
   adminUsernames: "jacobwhall" # comma-separated list, spaces allowed
 ```
 

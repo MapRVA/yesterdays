@@ -24,7 +24,7 @@ Uses a [CLIP](https://en.wikipedia.org/wiki/Contrastive_Language-Image_Pre-train
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/search/semantic/?q=church+on+a+hill"
+    curl "https://yesterdays.today/api/v2/search/semantic/?q=church+on+a+hill"
     ```
 
 === "Python"
@@ -32,7 +32,7 @@ Uses a [CLIP](https://en.wikipedia.org/wiki/Contrastive_Language-Image_Pre-train
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/search/semantic/", params={
+    response = requests.get("https://yesterdays.today/api/v2/search/semantic/", params={
         "q": "church on a hill",
     })
     data = response.json()
@@ -43,7 +43,7 @@ Uses a [CLIP](https://en.wikipedia.org/wiki/Contrastive_Language-Image_Pre-train
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/search/semantic/") |>
+    resp <- request("https://yesterdays.today/api/v2/search/semantic/") |>
       req_url_query(q = "church on a hill") |>
       req_perform()
     data <- resp_body_json(resp)
@@ -72,7 +72,7 @@ Uses a [CLIP](https://en.wikipedia.org/wiki/Contrastive_Language-Image_Pre-train
                 "slug": "1965-esthetic-survey",
                 "source_name": "Library of Virginia"
             },
-            "detail_url": "https://yesterdays.maprva.org/api/v2/images/657/"
+            "detail_url": "https://yesterdays.today/api/v2/images/657/"
         }
     ]
 }
@@ -98,7 +98,7 @@ Results are ranked by how closely the query matches, with the best matches first
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/search/text/?q=broad+street"
+    curl "https://yesterdays.today/api/v2/search/text/?q=broad+street"
     ```
 
 === "Python"
@@ -106,7 +106,7 @@ Results are ranked by how closely the query matches, with the best matches first
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/search/text/", params={
+    response = requests.get("https://yesterdays.today/api/v2/search/text/", params={
         "q": "broad street",
     })
     data = response.json()
@@ -117,7 +117,7 @@ Results are ranked by how closely the query matches, with the best matches first
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/search/text/") |>
+    resp <- request("https://yesterdays.today/api/v2/search/text/") |>
       req_url_query(q = "broad street") |>
       req_perform()
     data <- resp_body_json(resp)
@@ -146,7 +146,7 @@ Results are ranked by how closely the query matches, with the best matches first
                 "slug": "mary-wingfield-scott-photograph-collection",
                 "source_name": "The Valentine"
             },
-            "detail_url": "https://yesterdays.maprva.org/api/v2/images/1067/"
+            "detail_url": "https://yesterdays.today/api/v2/images/1067/"
         }
     ]
 }
@@ -190,7 +190,7 @@ Examples:
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/search/in-view/?lat=37.5407&lon=-77.4360&radius=500"
+    curl "https://yesterdays.today/api/v2/search/in-view/?lat=37.5407&lon=-77.4360&radius=500"
     ```
 
 === "Python"
@@ -198,7 +198,7 @@ Examples:
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/search/in-view/", params={
+    response = requests.get("https://yesterdays.today/api/v2/search/in-view/", params={
         "lat": 37.5407,
         "lon": -77.4360,
         "radius": 500,
@@ -211,7 +211,7 @@ Examples:
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/search/in-view/") |>
+    resp <- request("https://yesterdays.today/api/v2/search/in-view/") |>
       req_url_query(lat = 37.5407, lon = -77.4360, radius = 500) |>
       req_perform()
     data <- resp_body_json(resp)
@@ -249,7 +249,7 @@ Examples:
                 "slug": "mary-wingfield-scott-photograph-collection",
                 "source_name": "The Valentine"
             },
-            "detail_url": "https://yesterdays.maprva.org/api/v2/images/10470/"
+            "detail_url": "https://yesterdays.today/api/v2/images/10470/"
         }
     ]
 }
@@ -323,7 +323,7 @@ Find images matching "hotel" from the Library of Virginia, taken before 1920:
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/search/text/?q=hotel&source=1&year_max=1920"
+    curl "https://yesterdays.today/api/v2/search/text/?q=hotel&source=1&year_max=1920"
     ```
 
 === "Python"
@@ -331,7 +331,7 @@ Find images matching "hotel" from the Library of Virginia, taken before 1920:
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/search/text/", params={
+    response = requests.get("https://yesterdays.today/api/v2/search/text/", params={
         "q": "hotel",
         "source": 1,
         "year_max": 1920,
@@ -344,7 +344,7 @@ Find images matching "hotel" from the Library of Virginia, taken before 1920:
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/search/text/") |>
+    resp <- request("https://yesterdays.today/api/v2/search/text/") |>
       req_url_query(q = "hotel", source = 1, year_max = 1920) |>
       req_perform()
     data <- resp_body_json(resp)

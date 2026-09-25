@@ -3,7 +3,7 @@
 ## Email
 
 You may email [Jacob Hall](mailto:email@jacobhall.net), the primary developer of Yesterdays.
-They host [yesterdays.maprva.org](https://yesterdays.maprva.org) and would love to hear from you.
+They host [yesterdays.today](https://yesterdays.today) and would love to hear from you.
 
 ## Slack
 

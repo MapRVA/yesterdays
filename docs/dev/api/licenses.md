@@ -17,7 +17,7 @@ Returns the full license set as an **unpaginated JSON array**, alphabetical by `
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/licenses/"
+    curl "https://yesterdays.today/api/v2/licenses/"
     ```
 
 === "Python"
@@ -25,7 +25,7 @@ Returns the full license set as an **unpaginated JSON array**, alphabetical by `
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/licenses/")
+    response = requests.get("https://yesterdays.today/api/v2/licenses/")
     licenses = response.json()
     ```
 
@@ -34,7 +34,7 @@ Returns the full license set as an **unpaginated JSON array**, alphabetical by `
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/licenses/") |>
+    resp <- request("https://yesterdays.today/api/v2/licenses/") |>
       req_perform()
     licenses <- resp_body_json(resp)
     ```

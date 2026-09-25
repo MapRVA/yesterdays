@@ -25,7 +25,7 @@ Each feature is a user-submitted point representing the location of the "camera"
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/georeferences/"
+    curl "https://yesterdays.today/api/v2/georeferences/"
     ```
 
 === "Python"
@@ -33,7 +33,7 @@ Each feature is a user-submitted point representing the location of the "camera"
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/georeferences/")
+    response = requests.get("https://yesterdays.today/api/v2/georeferences/")
     data = response.json()
     ```
 
@@ -42,7 +42,7 @@ Each feature is a user-submitted point representing the location of the "camera"
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/georeferences/") |>
+    resp <- request("https://yesterdays.today/api/v2/georeferences/") |>
       req_perform()
     data <- resp_body_json(resp)
     ```
@@ -53,7 +53,7 @@ Each feature is a user-submitted point representing the location of the "camera"
 {
     "type": "FeatureCollection",
     "count": 8969,
-    "next": "https://yesterdays.maprva.org/api/v2/georeferences/?page=2",
+    "next": "https://yesterdays.today/api/v2/georeferences/?page=2",
     "previous": null,
     "features": [
         {
@@ -108,7 +108,7 @@ Each feature's geometry is a polygon outlining the area covered by the image.
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/from-above-georeferences/"
+    curl "https://yesterdays.today/api/v2/from-above-georeferences/"
     ```
 
 === "Python"
@@ -116,7 +116,7 @@ Each feature's geometry is a polygon outlining the area covered by the image.
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/from-above-georeferences/")
+    response = requests.get("https://yesterdays.today/api/v2/from-above-georeferences/")
     data = response.json()
     ```
 
@@ -125,7 +125,7 @@ Each feature's geometry is a polygon outlining the area covered by the image.
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/from-above-georeferences/") |>
+    resp <- request("https://yesterdays.today/api/v2/from-above-georeferences/") |>
       req_perform()
     data <- resp_body_json(resp)
     ```
@@ -194,7 +194,7 @@ The format is `in_bbox=west,south,east,north` (minimum longitude, minimum latitu
 
     ```bash
     # Georeferences in downtown Richmond
-    curl "https://yesterdays.maprva.org/api/v2/georeferences/?in_bbox=-77.45,37.53,-77.43,37.55"
+    curl "https://yesterdays.today/api/v2/georeferences/?in_bbox=-77.45,37.53,-77.43,37.55"
     ```
 
 === "Python"
@@ -203,7 +203,7 @@ The format is `in_bbox=west,south,east,north` (minimum longitude, minimum latitu
     import requests
 
     # Georeferences in downtown Richmond
-    response = requests.get("https://yesterdays.maprva.org/api/v2/georeferences/", params={
+    response = requests.get("https://yesterdays.today/api/v2/georeferences/", params={
         "in_bbox": "-77.45,37.53,-77.43,37.55",
     })
     data = response.json()
@@ -215,7 +215,7 @@ The format is `in_bbox=west,south,east,north` (minimum longitude, minimum latitu
     library(httr2)
 
     # Georeferences in downtown Richmond
-    resp <- request("https://yesterdays.maprva.org/api/v2/georeferences/") |>
+    resp <- request("https://yesterdays.today/api/v2/georeferences/") |>
       req_url_query(in_bbox = "-77.45,37.53,-77.43,37.55") |>
       req_perform()
     data <- resp_body_json(resp)
@@ -249,7 +249,7 @@ Find all high-confidence georeferences from the Library of Virginia:
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/georeferences/?source=1&confidence=high"
+    curl "https://yesterdays.today/api/v2/georeferences/?source=1&confidence=high"
     ```
 
 === "Python"
@@ -257,7 +257,7 @@ Find all high-confidence georeferences from the Library of Virginia:
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/georeferences/", params={
+    response = requests.get("https://yesterdays.today/api/v2/georeferences/", params={
         "source": 1,
         "confidence": "high",
     })
@@ -269,7 +269,7 @@ Find all high-confidence georeferences from the Library of Virginia:
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/georeferences/") |>
+    resp <- request("https://yesterdays.today/api/v2/georeferences/") |>
       req_url_query(source = 1, confidence = "high") |>
       req_perform()
     data <- resp_body_json(resp)

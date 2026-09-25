@@ -4,24 +4,24 @@ The search page features four search modes: semantic, text, reverse image, and i
 
 ## Semantic Search
 
-Yesterdays provides a "semantic search" feature on [the search page](https://yesterdays.maprva.org/search/), which allows the user to search based on the **content** of the images rather than any textual metadata. This uses a [CLIP](https://en.wikipedia.org/wiki/Contrastive_Language-Image_Pre-training) model, allowing users to search by describing what the images are of.
+Yesterdays provides a "semantic search" feature on [the search page](https://yesterdays.today/search/), which allows the user to search based on the **content** of the images rather than any textual metadata. This uses a [CLIP](https://en.wikipedia.org/wiki/Contrastive_Language-Image_Pre-training) model, allowing users to search by describing what the images are of.
 
 Try out searches like:
 
-- [firefighters responding to the scene](https://yesterdays.maprva.org/search/?q=firefighters+responding+to+the+scene&mode=semantic)
-- [stained-glass windows](https://yesterdays.maprva.org/search/?q=stained-glass+windows&mode=semantic)
-- [truck on a highway](https://yesterdays.maprva.org/search/?q=truck+on+a+highway&mode=semantic)
+- [firefighters responding to the scene](https://yesterdays.today/search/?q=firefighters+responding+to+the+scene&mode=semantic)
+- [stained-glass windows](https://yesterdays.today/search/?q=stained-glass+windows&mode=semantic)
+- [truck on a highway](https://yesterdays.today/search/?q=truck+on+a+highway&mode=semantic)
 - etc.
 
 ### Find Similar Images
 
 On an image page or subject page, there is a button to view "similar" images to that image or subject.
 This list uses the same CLIP model described above, providing images that look similar to the given image or set of images.
-For example, a photo of an overturned car might yield [other photos of overturned cars](https://yesterdays.maprva.org/10470/similar/).
+For example, a photo of an overturned car might yield [other photos of overturned cars](https://yesterdays.today/10470/similar/).
 
 ## Text Search
 
-On [the search page](https://yesterdays.maprva.org/search/), there is also a classic text search, which indexes:
+On [the search page](https://yesterdays.today/search/), there is also a classic text search, which indexes:
 
 - Image titles
 - Image descriptions
@@ -29,7 +29,7 @@ On [the search page](https://yesterdays.maprva.org/search/), there is also a cla
 
 
 This mode performs a distance search across the entire Yesterdays database.
-For example, [a search for "118 East Cary"](https://yesterdays.maprva.org/search/?q=118+East+Cary&mode=text) will surface an image with the title "117 East Cary Street"
+For example, [a search for "118 East Cary"](https://yesterdays.today/search/?q=118+East+Cary&mode=text) will surface an image with the title "117 East Cary Street"
 
 ## Reverse Image Search
 

@@ -5,12 +5,12 @@
 
 A Django web application for georeferencing historical images.
 
-[Check out the live site](https://yesterdays.maprva.org), or [read our documentation](https://docs.yesterdays.maprva.org/).
+[Check out the live site](https://yesterdays.today), or [read our documentation](https://docs.yesterdays.today/).
 
 ## Development
 
 We welcome anyone who wishes to contribute code to Yesterdays, or build their own applications atop our API.
-Please start with our [documentation for developers](https://docs.yesterdays.maprva.org/dev), and feel free to [reach out](https://docs.yesterdays.maprva.org/dev) with any questions.
+Please start with our [documentation for developers](https://docs.yesterdays.today/dev), and feel free to [reach out](https://docs.yesterdays.today/dev) with any questions.
 
 ## License
 
@@ -18,4 +18,4 @@ This repository is released under AGPLv3 or any later version.
 Please see [LICENSE.md](LICENSE.md) for more information.
 
 Content on Yesterdays is distributed under a variety of licenses.
-These are discussed in our [data licensing documentation](https://docs.yesterdays.maprva.org/licenses/).
+These are discussed in our [data licensing documentation](https://docs.yesterdays.today/licenses/).

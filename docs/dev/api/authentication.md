@@ -61,7 +61,7 @@ Credentials are valid only on the instance that issued them.
 Send the user's browser to the authorization endpoint with the parameters below.
 
 ```
-GET https://yesterdays.maprva.org/oauth/authorize/
+GET https://yesterdays.today/oauth/authorize/
     ?response_type=code
     &client_id={CLIENT_ID}
     &redirect_uri={REDIRECT_URI}
@@ -251,7 +251,7 @@ In all cases, **verify the `state`** value matches the one you generated before 
 Exchange the authorization code at the token endpoint within 60 seconds.
 
 ```
-POST https://yesterdays.maprva.org/oauth/token/
+POST https://yesterdays.today/oauth/token/
 Content-Type: application/x-www-form-urlencoded
 ```
 
@@ -270,7 +270,7 @@ Parameters for the `authorization_code` grant:
 === "curl"
 
     ```bash
-    curl -X POST "https://yesterdays.maprva.org/oauth/token/" \
+    curl -X POST "https://yesterdays.today/oauth/token/" \
       -d grant_type=authorization_code \
       -d code="$CODE" \
       -d redirect_uri="http://127.0.0.1:$PORT/callback" \
@@ -284,7 +284,7 @@ Parameters for the `authorization_code` grant:
     import requests
 
     resp = requests.post(
-        "https://yesterdays.maprva.org/oauth/token/",
+        "https://yesterdays.today/oauth/token/",
         data={
             "grant_type": "authorization_code",
             "code": code,
@@ -301,7 +301,7 @@ Parameters for the `authorization_code` grant:
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/oauth/token/") |>
+    resp <- request("https://yesterdays.today/oauth/token/") |>
       req_body_form(
         grant_type    = "authorization_code",
         code          = code,
@@ -316,7 +316,7 @@ Parameters for the `authorization_code` grant:
 ### Refresh token grant
 
 ```
-POST https://yesterdays.maprva.org/oauth/token/
+POST https://yesterdays.today/oauth/token/
 Content-Type: application/x-www-form-urlencoded
 ```
 
@@ -365,7 +365,7 @@ Inspect the current token:
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/auth/me/" \
+    curl "https://yesterdays.today/api/v2/auth/me/" \
       -H "Authorization: Bearer $ACCESS_TOKEN"
     ```
 
@@ -375,7 +375,7 @@ Inspect the current token:
     import requests
 
     resp = requests.get(
-        "https://yesterdays.maprva.org/api/v2/auth/me/",
+        "https://yesterdays.today/api/v2/auth/me/",
         headers={"Authorization": f"Bearer {access_token}"},
     )
     me = resp.json()
@@ -386,7 +386,7 @@ Inspect the current token:
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/auth/me/") |>
+    resp <- request("https://yesterdays.today/api/v2/auth/me/") |>
       req_headers(Authorization = paste("Bearer", access_token)) |>
       req_perform()
     me <- resp_body_json(resp)
@@ -473,7 +473,7 @@ Exceeding a limit returns `429 Too Many Requests` with a `Retry-After` header.
     
     import requests
     
-    INSTANCE = "https://yesterdays.maprva.org"
+    INSTANCE = "https://yesterdays.today"
     CLIENT_ID = "your-public-client-id"
     
     # 1. PKCE
@@ -575,7 +575,7 @@ Exceeding a limit returns `429 Too Many Requests` with a `Retry-After` header.
     library(httpuv)
     library(httr2)
     
-    INSTANCE  <- "https://yesterdays.maprva.org"
+    INSTANCE  <- "https://yesterdays.today"
     CLIENT_ID <- "your-public-client-id"
     
     b64url <- function(x) {

@@ -16,7 +16,7 @@ Returns a paginated list of all public sources.
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/sources/"
+    curl "https://yesterdays.today/api/v2/sources/"
     ```
 
 === "Python"
@@ -24,7 +24,7 @@ Returns a paginated list of all public sources.
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/sources/")
+    response = requests.get("https://yesterdays.today/api/v2/sources/")
     data = response.json()
     ```
 
@@ -33,7 +33,7 @@ Returns a paginated list of all public sources.
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/sources/") |>
+    resp <- request("https://yesterdays.today/api/v2/sources/") |>
       req_perform()
     data <- resp_body_json(resp)
     ```
@@ -54,7 +54,7 @@ Returns a paginated list of all public sources.
             "description": "The Library of Virginia is the archival agency and reference library for...",
             "collection_count": 3,
             "image_count": 1766,
-            "collections_url": "https://yesterdays.maprva.org/api/v2/sources/1/collections/"
+            "collections_url": "https://yesterdays.today/api/v2/sources/1/collections/"
         },
         {
             "id": 2,
@@ -64,7 +64,7 @@ Returns a paginated list of all public sources.
             "description": "The Valentine is a museum in Richmond, Virginia dedicated to...",
             "collection_count": 36,
             "image_count": 17037,
-            "collections_url": "https://yesterdays.maprva.org/api/v2/sources/2/collections/"
+            "collections_url": "https://yesterdays.today/api/v2/sources/2/collections/"
         }
     ]
 }
@@ -81,7 +81,7 @@ GET /api/v2/sources/{id}/
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/sources/1/"
+    curl "https://yesterdays.today/api/v2/sources/1/"
     ```
 
 === "Python"
@@ -89,7 +89,7 @@ GET /api/v2/sources/{id}/
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/sources/1/")
+    response = requests.get("https://yesterdays.today/api/v2/sources/1/")
     data = response.json()
     ```
 
@@ -98,7 +98,7 @@ GET /api/v2/sources/{id}/
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/sources/1/") |>
+    resp <- request("https://yesterdays.today/api/v2/sources/1/") |>
       req_perform()
     data <- resp_body_json(resp)
     ```
@@ -117,7 +117,7 @@ This returns the same format as the [collections endpoint](collections.md).
 === "curl"
 
     ```bash
-    curl "https://yesterdays.maprva.org/api/v2/sources/1/collections/"
+    curl "https://yesterdays.today/api/v2/sources/1/collections/"
     ```
 
 === "Python"
@@ -125,7 +125,7 @@ This returns the same format as the [collections endpoint](collections.md).
     ```python
     import requests
 
-    response = requests.get("https://yesterdays.maprva.org/api/v2/sources/1/collections/")
+    response = requests.get("https://yesterdays.today/api/v2/sources/1/collections/")
     data = response.json()
     ```
 
@@ -134,7 +134,7 @@ This returns the same format as the [collections endpoint](collections.md).
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/sources/1/collections/") |>
+    resp <- request("https://yesterdays.today/api/v2/sources/1/collections/") |>
       req_perform()
     data <- resp_body_json(resp)
     ```
@@ -162,7 +162,7 @@ Creates a new archive source on this instance. Import tools should call this whe
 === "curl"
 
     ```bash
-    curl -X POST "https://yesterdays.maprva.org/api/v2/sources/" \
+    curl -X POST "https://yesterdays.today/api/v2/sources/" \
       -H "Authorization: Bearer $TOKEN" \
       -H "Content-Type: application/json" \
       -d '{
@@ -179,7 +179,7 @@ Creates a new archive source on this instance. Import tools should call this whe
     import requests
 
     resp = requests.post(
-        "https://yesterdays.maprva.org/api/v2/sources/",
+        "https://yesterdays.today/api/v2/sources/",
         headers={"Authorization": f"Bearer {TOKEN}"},
         json={
             "name": "Library of Virginia",
@@ -197,7 +197,7 @@ Creates a new archive source on this instance. Import tools should call this whe
     ```r
     library(httr2)
 
-    resp <- request("https://yesterdays.maprva.org/api/v2/sources/") |>
+    resp <- request("https://yesterdays.today/api/v2/sources/") |>
       req_auth_bearer_token(TOKEN) |>
       req_body_json(list(
         name        = "Library of Virginia",

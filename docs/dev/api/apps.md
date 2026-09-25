@@ -25,7 +25,7 @@ No authentication required. The server returns the `client_secret` in plaintext 
 === "curl"
 
     ```bash
-    curl -X POST "https://yesterdays.maprva.org/api/v2/apps/" \
+    curl -X POST "https://yesterdays.today/api/v2/apps/" \
       -H "Content-Type: application/json" \
       -d '{
         "name": "My Yesterdays Tool",
@@ -40,7 +40,7 @@ No authentication required. The server returns the `client_secret` in plaintext 
     import requests
 
     response = requests.post(
-        "https://yesterdays.maprva.org/api/v2/apps/",
+        "https://yesterdays.today/api/v2/apps/",
         json={
             "name": "My Yesterdays Tool",
             "redirect_uris": "http://127.0.0.1/callback",

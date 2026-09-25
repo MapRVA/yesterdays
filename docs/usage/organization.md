@@ -5,16 +5,16 @@ Content in Yesterdays is organized in a three-level hierarchy of _sources_, _col
 ```mermaid
 graph TD
     Y["<strong>Yesterdays</strong>"]
-    Y --> S1["<strong>Source</strong><br/><em>e.g. <a href="https://yesterdays.maprva.org/browse/library-of-congress/">Library of Congress</a></em>"]
-    S1 --> C1["<strong>Collection</strong><br/><em>e.g. <a href="https://yesterdays.maprva.org/browse/library-of-congress/detroit-publishing-company/">Detroit Publishing Company</a></em>"]
-    C1 --> I1["<strong>Image</strong><br/><em>e.g. <a href="https://yesterdays.maprva.org/7134/">Monumental Church, Richmond, Va.</a></em>"]
+    Y --> S1["<strong>Source</strong><br/><em>e.g. <a href="https://yesterdays.today/browse/library-of-congress/">Library of Congress</a></em>"]
+    S1 --> C1["<strong>Collection</strong><br/><em>e.g. <a href="https://yesterdays.today/browse/library-of-congress/detroit-publishing-company/">Detroit Publishing Company</a></em>"]
+    C1 --> I1["<strong>Image</strong><br/><em>e.g. <a href="https://yesterdays.today/7134/">Monumental Church, Richmond, Va.</a></em>"]
 ```
 
 ## Sources
 
 Sources represent individual institutions, e.g. Library of Congress, where we have sourced images on Yesterdays.
 The images in Yesterdays are from online databases provided by these institutions, or in some cases provided directly from those insitutions.
-You can browse the sources on Yesterdays [here](https://yesterdays.maprva.org/browse/).
+You can browse the sources on Yesterdays [here](https://yesterdays.today/browse/).
 
 ## Collections
 
@@ -32,7 +32,7 @@ In some cases where
 <div class="ui-demo-copy ui-demo-copy--lead" markdown="1">
 
 Images are at the heart of Yesterdays.
-Each image has its own unique ID, and is permanently accessible at `https://yesterdays.maprva.org/<ID>`.
+Each image has its own unique ID, and is permanently accessible at `https://yesterdays.today/<ID>`.
 This is called the _image detail page_, and includes the following information:
 
 - a zoom-able view of the image
@@ -58,9 +58,9 @@ This is called the _image detail page_, and includes the following information:
 
 While most images in Yesterdays are old photographs, they also include:
 
-- [drawings](https://yesterdays.maprva.org/10875/)
-- [postcards](https://yesterdays.maprva.org/17088/)
-- [architectural sketches](https://yesterdays.maprva.org/14250/)
+- [drawings](https://yesterdays.today/10875/)
+- [postcards](https://yesterdays.today/17088/)
+- [architectural sketches](https://yesterdays.today/14250/)
 
 These can often be georeferenced, too, _even if they do not represent reality._
 For example, we can place an architectural sketch on the map even if the building was never built.
