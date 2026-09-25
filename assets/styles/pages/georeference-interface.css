@@ -1,5 +1,15 @@
 /* This stylesheet is for both georeference interfaces, "point" and "from above" */
 
+/* Header and notes/actions sections are capped at the sitewide .container
+ * width. Below the sm breakpoint .container is full width anyway, so drop its
+ * padding to avoid doubling the gutter main.container-fluid already provides. */
+@media (max-width: 575.98px) {
+    .container.georeference-capped {
+        padding-left: 0;
+        padding-right: 0;
+    }
+}
+
 /* Card layout */
 #image-preview-card {
     flex: 0 1 auto;
