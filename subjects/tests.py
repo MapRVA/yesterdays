@@ -1948,6 +1948,25 @@ class SubjectMutationAuthorizationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["added_count"], 2)
 
+    def test_bulk_add_skips_images_already_tagged(self):
+        self.map_subject(self.public_image)
+        self.client.force_login(self.user)
+        response = self.post_json(
+            reverse("bulk_add_subject_to_images"),
+            {
+                "image_ids": [self.public_image.id, self.second_public_image.id],
+                "wikidata_id": self.wikidata_item.wikidata_id,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["added_count"], 1)
+        self.assertEqual(response.json()["already_exists_count"], 1)
+        self.assertTrue(
+            SubjectMapping.objects.filter(
+                image=self.second_public_image, subject=self.subject
+            ).exists()
+        )
+
     @override_settings(BULK_MAX_IMAGE_IDS=1)
     def test_bulk_add_enforces_the_id_cap(self):
         self.client.force_login(self.user)

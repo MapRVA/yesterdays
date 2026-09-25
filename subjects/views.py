@@ -394,9 +394,12 @@ def _append_subject_mapping(*, user, image, subject):
     )
 
     try:
-        mapping = SubjectMapping.objects.create(
-            image=image, subject=subject, order=max_order + 1
-        )
+        # Savepoint, so a duplicate rolls back only this insert rather than
+        # poisoning an enclosing transaction (e.g. the bulk-add loop).
+        with transaction.atomic():
+            mapping = SubjectMapping.objects.create(
+                image=image, subject=subject, order=max_order + 1
+            )
     except IntegrityError:
         # unique_together (image, subject): the pair already exists, either
         # from an earlier request or a concurrent one.
