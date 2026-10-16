@@ -60,7 +60,7 @@ from .tasks import (
     get_next_stale_wikidata_item,
     sync_osm_elements,
 )
-from .views import _MAX_AUTOCOMPLETE_QUERY_LEN
+from .views import _MAX_AUTOCOMPLETE_QUERY_LEN, _public_image_count_annotations
 from .wikidata_aliases import aliases_from_payload, sync_wikidata_aliases
 from .wikidata_closure import (
     ClosureLoadError,
@@ -1549,6 +1549,161 @@ class BrowseSubjectsTests(TestCase):
         )
         self.assertEqual(response.context["overall_stats"]["total_subjects"], 2)
         self.assertEqual(response.context["overall_stats"]["total_images"], 2)
+
+
+class BrowseSubjectCountsTests(TestCase):
+    """Card counts, ranking, filters and pagination on the browse grid."""
+
+    @classmethod
+    def setUpTestData(cls):
+        public_source = Source.objects.create(
+            name="Counts public source",
+            slug="counts-public",
+            url="https://example.com/counts-public",
+            description="",
+        )
+        private_source = Source.objects.create(
+            name="Counts private source",
+            slug="counts-private",
+            url="https://example.com/counts-private",
+            description="",
+            public=False,
+        )
+        public_collection = Collection.objects.create(
+            source=public_source, name="Public", slug="counts-public"
+        )
+        private_collection = Collection.objects.create(
+            source=public_source,
+            name="Private",
+            slug="counts-private-collection",
+            public=False,
+        )
+        private_source_collection = Collection.objects.create(
+            source=private_source, name="Staged", slug="counts-staged"
+        )
+
+        category_item, alpha_item, beta_item, gamma_item = (
+            WikidataItem.objects.bulk_create(
+                [
+                    WikidataItem(wikidata_id="Q5000", title="Example Category"),
+                    WikidataItem(wikidata_id="Q5001", title="Alpha"),
+                    WikidataItem(wikidata_id="Q5002", title="Beta"),
+                    WikidataItem(wikidata_id="Q5003", title="Gamma"),
+                ]
+            )
+        )
+        cls.alpha = Subject.objects.create(title="Alpha", wikidata_item=alpha_item)
+        cls.beta = Subject.objects.create(title="Beta", wikidata_item=beta_item)
+        cls.gamma = Subject.objects.create(title="Gamma", wikidata_item=gamma_item)
+        SubjectAncestor.objects.bulk_create(
+            [
+                SubjectAncestor(subject=cls.alpha, ancestor=category_item),
+                SubjectAncestor(subject=cls.beta, ancestor=category_item),
+            ]
+        )
+
+        def image(collection, title, subject, **kwargs):
+            image = Image.objects.create(
+                collection=collection,
+                title=title,
+                permalink=f"https://example.com/{title.replace(' ', '-')}.jpg",
+                **kwargs,
+            )
+            SubjectMapping.objects.create(image=image, subject=subject)
+            return image
+
+        alpha_georeferenced = image(public_collection, "alpha one", cls.alpha)
+        image(public_collection, "alpha two", cls.alpha)
+        # None of these are publicly visible originals, so none count.
+        image(
+            public_collection,
+            "alpha duplicate",
+            cls.alpha,
+            duplicate_of=alpha_georeferenced,
+        )
+        image(private_collection, "alpha private", cls.alpha)
+        image(private_source_collection, "alpha staged", cls.alpha)
+
+        beta_georeferenced = image(public_collection, "beta one", cls.beta)
+        for n in range(3):
+            image(public_collection, f"gamma {n}", cls.gamma)
+
+        # Several georeferences on one image still count it once.
+        Georeference.objects.create(
+            image=alpha_georeferenced, point=Point(-77.43, 37.55, srid=4326)
+        )
+        Georeference.objects.create(
+            image=alpha_georeferenced,
+            point=Point(-77.42, 37.56, srid=4326),
+            georeferenced_by=User.objects.create_user(username="counts-tester"),
+        )
+        Georeference.objects.create(
+            image=beta_georeferenced, point=Point(-77.41, 37.57, srid=4326)
+        )
+
+    def get(self, ajax=False, **params):
+        headers = {"HTTP_X_REQUESTED_WITH": "XMLHttpRequest"} if ajax else {}
+        return self.client.get(reverse("subjects:browse_subjects"), params, **headers)
+
+    def test_counts_only_public_originals_and_match_map_panel(self):
+        response = self.get()
+
+        cards = {
+            subject.pk: (subject.total_images, subject.georeferenced_images)
+            for subject in response.context["subjects"]
+        }
+        self.assertEqual(
+            cards,
+            {self.alpha.pk: (2, 1), self.beta.pk: (1, 1), self.gamma.pk: (3, 0)},
+        )
+        panel = {
+            subject.pk: (subject.total_images, subject.georeferenced_images)
+            for subject in Subject.objects.annotate(**_public_image_count_annotations())
+        }
+        self.assertEqual(cards, panel)
+        self.assertEqual(
+            response.context["overall_stats"],
+            {"total_subjects": 3, "total_images": 6},
+        )
+
+    def test_ranks_by_image_count_and_pages_by_offset(self):
+        response = self.get()
+        self.assertEqual(
+            [subject.pk for subject in response.context["subjects"]],
+            [self.gamma.pk, self.alpha.pk, self.beta.pk],
+        )
+        self.assertFalse(response.context["has_more"])
+
+        response = self.get(ajax=True, offset=1)
+        self.assertEqual(
+            [subject.pk for subject in response.context["subjects"]],
+            [self.alpha.pk, self.beta.pk],
+        )
+        self.assertContains(response, 'data-has-more="false"')
+
+    def test_category_filter_keeps_overall_stats(self):
+        response = self.get(category="Q5000")
+
+        self.assertEqual(
+            [subject.pk for subject in response.context["subjects"]],
+            [self.alpha.pk, self.beta.pk],
+        )
+        self.assertEqual(
+            response.context["selected_category"],
+            {"qid": "Q5000", "label": "Example Category"},
+        )
+        self.assertEqual(
+            response.context["overall_stats"],
+            {"total_subjects": 3, "total_images": 6},
+        )
+
+    def test_search_filter_is_case_insensitive(self):
+        response = self.get(ajax=True, filter="gAmMa")
+
+        self.assertEqual(
+            [subject.pk for subject in response.context["subjects"]],
+            [self.gamma.pk],
+        )
 
 
 class BrowseSubjectsRegionTests(TestCase):

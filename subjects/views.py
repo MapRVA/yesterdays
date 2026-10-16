@@ -15,7 +15,6 @@ from django.db.models import (
     OuterRef,
     Q,
     Subquery,
-    Sum,
     Value,
     When,
 )
@@ -42,7 +41,12 @@ from activity.models import (
     SubjectMappingActivityGroup,
 )
 from images.embeddings import QUERY_VECTOR_SQL, VECTOR_SQL
-from images.models import Image, SubjectMapping, SubjectMappingActivity
+from images.models import (
+    Georeference,
+    Image,
+    SubjectMapping,
+    SubjectMappingActivity,
+)
 from images.policies import (
     editable_images_for,
     get_image_or_404,
@@ -652,22 +656,19 @@ def reorder_subjects(request, image_id):
     )
 
 
-def _public_image_count_annotations(region=None):
+def _public_image_count_annotations():
     """Annotations counting a subject's publicly visible images.
 
-    Shared by the browse page and the subjects-map info panel so both report
-    the same numbers: originals only (no duplicates), from public collections
-    of public sources. When ``region`` is supplied, count images assigned to
-    that region or any region inside it using Image.effective_region semantics.
+    Used by the subjects-map info panel. Counts originals only (no
+    duplicates), from public collections of public sources; an image is
+    georeferenced if it has any point georeference. _browse_subject_counts
+    must count the same way so the panel and the browse cards agree.
     """
     public_images = Q(
         image_mappings__image__duplicate_of__isnull=True,
         image_mappings__image__collection__public=True,
         image_mappings__image__collection__source__public=True,
     )
-    if region is not None:
-        regional_image_ids = Image.objects.in_region(region).values("pk")
-        public_images &= Q(image_mappings__image_id__in=regional_image_ids)
 
     return {
         "total_images": models.Count(
@@ -684,14 +685,58 @@ def _public_image_count_annotations(region=None):
     }
 
 
-def _browse_subject_queryset(region=None):
-    """Subjects eligible for the browse grid, optionally scoped by region."""
+def _browse_subject_counts(region=None):
+    """Ranked ``(subject_id, total_images, georeferenced_images)`` rows.
+
+    Covers every subject eligible for the browse grid, most images first.
+    When ``region`` is supplied, only images assigned to that region or any
+    region inside it count, using Image.effective_region semantics.
+
+    Aggregates SubjectMapping directly rather than annotating Subject: the
+    eligible images are resolved once as a semi-join, and "georeferenced" is
+    an EXISTS rather than a join, so an image with several georeferences
+    doesn't multiply the rows being grouped. Counting mappings is a distinct
+    image count because (image, subject) is unique.
+    """
+    images = Image.objects.filter(duplicate_of__isnull=True)
+    if region is not None:
+        images = images.in_region(region)
+    public_image_ids = images.filter(
+        collection__public=True,
+        collection__source__public=True,
+    ).values("pk")
+
     return (
-        Subject.objects.all()
-        .select_related("wikidata_item", "representative_image")
+        SubjectMapping.objects.filter(image_id__in=public_image_ids)
+        # A city (or other broad subject) that is an ancestor of a more
+        # specific Subject is represented by its descendants in this grid.
+        # NOT IN rather than NOT EXISTS: Postgres misestimates the anti-join
+        # as a single row and re-runs the aggregate for every subject.
+        .exclude(
+            subject__wikidata_item_id__in=SubjectAncestor.objects.values("ancestor_id")
+        )
+        .values("subject_id")
+        .annotate(
+            total_images=Count("pk"),
+            georeferenced_images=Count(
+                "pk",
+                filter=Exists(
+                    Georeference.objects.filter(image_id=OuterRef("image_id"))
+                ),
+            ),
+        )
+        .order_by("-total_images", "subject__title", "subject_id")
+        .values_list("subject_id", "total_images", "georeferenced_images")
+    )
+
+
+def _browse_subject_cards(rows):
+    """Load the Subjects for ``rows``, in order, carrying their counts."""
+    subjects = (
+        Subject.objects.select_related("wikidata_item", "representative_image")
         # Only what the cards and og: tags read; a deferred field read in the
         # template costs a query per subject. Notably skips the representative
-        # image's embedding, which would otherwise be loaded for every row.
+        # image's embedding.
         .only(
             "title",
             "slug",
@@ -702,18 +747,19 @@ def _browse_subject_queryset(region=None):
             "representative_image__title",
             "representative_image__thumbnail",
         )
-        .annotate(**_public_image_count_annotations(region))
-        # A city (or other broad subject) that is an ancestor of a more
-        # specific Subject is represented by its descendants in this grid.
-        .annotate(
-            has_descendant_subject=Exists(
-                SubjectAncestor.objects.filter(ancestor_id=OuterRef("wikidata_item_id"))
-            )
-        )
-        .filter(total_images__gt=0)
-        .filter(has_descendant_subject=False)
-        .order_by("-total_images", "title")
+        .in_bulk([subject_id for subject_id, _, _ in rows])
     )
+
+    cards = []
+    for subject_id, total_images, georeferenced_images in rows:
+        subject = subjects.get(subject_id)
+        if subject is None:
+            # Deleted since the counts were read.
+            continue
+        subject.total_images = total_images
+        subject.georeferenced_images = georeferenced_images
+        cards.append(subject)
+    return cards
 
 
 def browse_subjects(request):
@@ -722,31 +768,24 @@ def browse_subjects(request):
 
     browse_region = get_current_region(request)
     region_fallback = False
-    subjects = _browse_subject_queryset(browse_region)
+    # One aggregate serves the whole request: the fallback check, the overall
+    # statistics, and the filtered page all derive from these rows.
+    rows = list(_browse_subject_counts(browse_region))
     # Decide the fallback against the unsearched directory. A title or
     # category with no matches should stay an empty regional search rather
     # than unexpectedly replacing the directory with global results.
-    if browse_region is not None and not subjects.exists():
+    if browse_region is not None and not rows:
         browse_region = None
         region_fallback = True
-        subjects = _browse_subject_queryset()
+        rows = list(_browse_subject_counts())
 
     is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
-    # Calculate overall statistics before filtering by search query. Aggregate
-    # in the database rather than materializing every subject (and its
-    # representative image) just to count them.
+    # Overall statistics come from the directory before any search filtering.
     if not is_ajax:
-        stats = subjects.aggregate(
-            total_subjects=Count("pk"),
-            # Must not reuse the "total_images" annotation's name: Django prunes
-            # the shadowed annotation from the inner query, and the SUM fails
-            # with 'column "total_images" does not exist'.
-            image_total=Sum("total_images", default=0),
-        )
         overall_stats = {
-            "total_subjects": stats["total_subjects"],
-            "total_images": stats["image_total"],
+            "total_subjects": len(rows),
+            "total_images": sum(total for _, total, _ in rows),
         }
 
     # Apply category filter via the SubjectAncestor materialization. If the
@@ -760,9 +799,16 @@ def browse_subjects(request):
         except UnsafeSparqlInput:
             return HttpResponseBadRequest("invalid category")
 
-        matching_subject_ids = SubjectAncestor.objects.filter(
-            ancestor__wikidata_id=category_qid,
-        ).values("subject_id")
+        matching_subject_ids = set(
+            SubjectAncestor.objects.filter(
+                ancestor__wikidata_id=category_qid,
+            ).values_list("subject_id", flat=True)
+        )
+        category_subject_ids = set(
+            Subject.objects.filter(
+                wikidata_item__wikidata_id=category_qid,
+            ).values_list("pk", flat=True)
+        )
 
         category_item = WikidataItem.objects.filter(wikidata_id=category_qid).first()
         category_label = (
@@ -772,25 +818,22 @@ def browse_subjects(request):
         )
         selected_category = {"qid": category_qid, "label": category_label}
 
-        subjects = (
-            subjects.filter(
-                Q(pk__in=matching_subject_ids)
-                | Q(wikidata_item__wikidata_id=category_qid),
-            )
-            .annotate(
-                _category_self=Case(
-                    When(wikidata_item__wikidata_id=category_qid, then=Value(0)),
-                    default=Value(1),
-                    output_field=IntegerField(),
-                ),
-            )
-            .order_by("_category_self", "-total_images", "title")
-        )
+        rows = [
+            row
+            for row in rows
+            if row[0] in matching_subject_ids or row[0] in category_subject_ids
+        ]
+        # Stable sort, so the rest keep their ranking.
+        rows.sort(key=lambda row: row[0] not in category_subject_ids)
 
-    # Apply search filter
+    # Apply search filter. Matched in the database so icontains keeps
+    # Postgres's case-folding rules; there are only ~1,200 subjects.
     query = request.GET.get("filter", "").strip()
     if query:
-        subjects = subjects.filter(title__icontains=query)
+        title_matches = set(
+            Subject.objects.filter(title__icontains=query).values_list("pk", flat=True)
+        )
+        rows = [row for row in rows if row[0] in title_matches]
 
     # Offset-based pagination
     try:
@@ -798,9 +841,8 @@ def browse_subjects(request):
     except ValueError, TypeError:
         offset = 0
 
-    subject_list = list(subjects[offset : offset + PER_PAGE + 1])
-    has_more = len(subject_list) > PER_PAGE
-    subject_list = subject_list[:PER_PAGE]
+    has_more = len(rows) > offset + PER_PAGE
+    subject_list = _browse_subject_cards(rows[offset : offset + PER_PAGE])
 
     if is_ajax:
         return render(
