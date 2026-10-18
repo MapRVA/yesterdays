@@ -84,7 +84,7 @@ export default defineConfig({
           __dirname,
           "./assets/js/pages/from_above_georeference_interface.ts",
         ),
-        stats: path.resolve(__dirname, "./assets/js/pages/stats.js"),
+        stats: path.resolve(__dirname, "./assets/js/pages/stats.ts"),
 
         subject_detail: path.resolve(
           __dirname,

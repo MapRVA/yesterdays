@@ -23,3 +23,13 @@ export const lightColor =
   getComputedStyle(document.documentElement)
     .getPropertyValue("--bs-light")
     .trim() || "#f8f9fa";
+
+export const warningColor =
+  getComputedStyle(document.documentElement)
+    .getPropertyValue("--bs-warning")
+    .trim() || "#ffc107";
+
+export const successColor =
+  getComputedStyle(document.documentElement)
+    .getPropertyValue("--bs-success")
+    .trim() || "#198754";
