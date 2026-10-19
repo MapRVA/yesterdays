@@ -19,14 +19,16 @@ from images.models import (
     Georeference,
     Image,
     ImageOfTheDay,
+    ImageRating,
     SiteSettings,
     Source,
     SubjectMapping,
+    TopRatedImageView,
 )
 from subjects.models import Subject, WikidataItem
 from subjects.sparql_safety import UnsafeSparqlInput
 from subjects.tasks import _do_refresh_wikidata_item, get_next_stale_wikidata_item
-from yesterdays.views import HOME_SUBJECT_LABEL_LIMIT
+from yesterdays.views import HOME_SUBJECT_LABEL_LIMIT, get_top_rated_image
 
 from .admin import RegionAdminForm
 from .context_processors import REGION_COOKIE_NAME, current_region
@@ -1692,6 +1694,95 @@ class GlobalHomeHeroTests(TestCase):
         response = self.client.get(reverse("home"))
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.context["hero_feature"])
+
+
+class TopRatedImageTests(TestCase):
+    """get_top_rated_image, the Open Graph image and the hero's fallback.
+
+    It ranks the ratings table directly rather than reading
+    images_top_rated_view, so these pin it to the view's choice.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        source = Source.objects.create(name="Src", slug="src", public=True)
+        cls.collection = Collection.objects.create(
+            name="Coll", slug="coll", source=source, public=True
+        )
+        cls.private_collection = Collection.objects.create(
+            name="Private", slug="private", source=source, public=False
+        )
+        cls.raters = [
+            User.objects.create_user(username=f"rater{i}", password="test")
+            for i in range(3)
+        ]
+
+    def setUp(self):
+        # The pick is cached outside the test transaction.
+        cache.clear()
+
+    def _image(self, title, collection=None, **kwargs):
+        return Image.objects.create(
+            collection=collection or self.collection,
+            title=title,
+            permalink=f"https://img.example.com/{title}.jpg",
+            **kwargs,
+        )
+
+    def _rate(self, image, *ratings):
+        for user, rating in zip(self.raters, ratings):
+            ImageRating.objects.create(image=image, user=user, rating=rating)
+
+    def _view_pick(self):
+        return (
+            TopRatedImageView.objects.order_by(
+                "-sort_value", "-avg_rating", "-vote_count", "image_id"
+            )
+            .values_list("image_id", flat=True)
+            .first()
+        )
+
+    def test_highest_average_wins_then_most_votes(self):
+        self._rate(self._image("one-vote"), 9)
+        two_votes = self._image("two-votes")
+        self._rate(two_votes, 9, 9)
+        self._rate(self._image("lower"), 8, 8, 8)
+        self.assertEqual(get_top_rated_image(), two_votes)
+        self.assertEqual(self._view_pick(), two_votes.pk)
+
+    def test_ties_go_to_the_lowest_id(self):
+        first = self._image("first")
+        self._rate(first, 7)
+        self._rate(self._image("second"), 7)
+        self.assertEqual(get_top_rated_image(), first)
+        self.assertEqual(self._view_pick(), first.pk)
+
+    def test_private_and_duplicate_images_are_skipped(self):
+        public = self._image("public")
+        self._rate(public, 6)
+        self._rate(self._image("private", collection=self.private_collection), 10)
+        self._rate(self._image("duplicate", duplicate_of=public), 10)
+        self.assertEqual(get_top_rated_image(), public)
+        self.assertEqual(self._view_pick(), public.pk)
+
+    def test_unrated_site_falls_back_to_the_first_public_image(self):
+        self._image("private", collection=self.private_collection)
+        first = self._image("first")
+        self._image("second")
+        self.assertEqual(get_top_rated_image(), first)
+        self.assertEqual(self._view_pick(), first.pk)
+
+    def test_site_without_public_images_has_none(self):
+        self._image("private", collection=self.private_collection)
+        self.assertIsNone(get_top_rated_image())
+        self.assertIsNone(self._view_pick())
+
+    def test_loaded_without_the_embedding(self):
+        self._rate(self._image("rated"), 8)
+        self.assertTrue(
+            {"embedding", "search_vector"}
+            <= get_top_rated_image().get_deferred_fields()
+        )
 
 
 class GlobalHomeSubjectsTests(TestCase):

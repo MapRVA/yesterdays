@@ -955,6 +955,9 @@ class ImageQuerySet(models.QuerySet):
         thing left out, because the refresh leaves it out as well — both
         tables count non-public collections and sources, and callers apply the
         public filter at read time (see images.utils._public_collection_stats).
+
+        To filter some other model by its image, use in_region_q rather than
+        ``image_id__in=Image.objects.in_region(...)``; it explains why.
         """
         return (
             self.filter(duplicate_of__isnull=True)
@@ -967,6 +970,46 @@ class ImageQuerySet(models.QuerySet):
             )
             .filter(effective_region_id__in=region.self_and_descendant_ids())
         )
+
+
+def in_region_q(path, region_ids):
+    """Q for rows whose image, reached through ``path``, is in ``region_ids``.
+
+    The join form of ImageQuerySet.in_region, for filtering another model
+    (comments, validations, activity) by its image: the same precedence
+    (image -> collection -> source, first region set wins) and the same
+    exclusion of duplicates. ``region_ids`` is
+    Region.self_and_descendant_ids().
+
+    Embedding in_region as ``image_id__in=`` doesn't scale: no index can
+    answer its COALESCE across three tables, so Postgres materializes every
+    image in the region — a sequential scan of images_image, whose rows are
+    wide with embeddings — before it filters a single row. This instead
+    resolves each row's own image through primary-key joins, so a query
+    walking an index in order under a LIMIT stops after a few lookups.
+    """
+    return Q(**{f"{path}__duplicate_of__isnull": True}) & (
+        Q(**{f"{path}__region__in": region_ids})
+        | Q(
+            **{
+                f"{path}__region__isnull": True,
+                f"{path}__collection__region__in": region_ids,
+            }
+        )
+        | Q(
+            **{
+                f"{path}__region__isnull": True,
+                f"{path}__collection__region__isnull": True,
+                f"{path}__collection__source__region__in": region_ids,
+            }
+        )
+    )
+
+
+# Image columns that nothing showing an image (a card, a thumbnail, a link)
+# reads, and that dwarf the rest of the row: the embedding alone averages
+# about 5 KB. Defer them wherever images are loaded only to be displayed.
+UNDISPLAYED_IMAGE_FIELDS = ("embedding", "search_vector")
 
 
 class Image(models.Model):

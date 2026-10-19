@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest import mock
 
 from django.contrib.auth.models import User
 from django.core.cache import cache
@@ -32,6 +33,7 @@ from .models import (
     SubjectMappingActivityGroup,
     UserMilestone,
 )
+from .signals import _process_georeference
 from .views import get_activity_events
 
 
@@ -407,6 +409,122 @@ class ActivityRegionTests(TestCase):
             [event.pk for event in self._objects("validation", self.other)],
             [other_validation.pk],
         )
+
+    def _group(self, *members):
+        """A georeference group of (image, minutes ago) members."""
+        times = [timezone.now() - timedelta(minutes=ago) for _, ago in members]
+        group = GeoreferenceGroup.objects.create(
+            user=self.user,
+            started_at=min(times),
+            ended_at=max(times),
+            count=len(members),
+        )
+        for (image, _), added_at in zip(members, times):
+            GeoreferenceGroupMember.objects.create(
+                group=group,
+                georeference=Georeference.objects.create(
+                    image=image, point=TEST_POINT, georeferenced_by=self.user
+                ),
+                added_at=added_at,
+            )
+        return group
+
+    def test_regional_groups_rank_by_in_region_activity_across_batches(self):
+        # Newest group first, with batches of 1, 2, then 4 groups. The second
+        # batch already holds an in-region group, but the third holds one
+        # whose in-region work is later, so the walk mustn't stop at the
+        # first find.
+        self._group((self.other_image, 1))
+        early = self._group((self.source_region_image, 50), (self.other_image, 5))
+        self._group((self.other_image, 7))
+        late = self._group((self.collection_region_image, 20), (self.other_image, 10))
+        oldest = self._group((self.image_region_image, 90))
+
+        with mock.patch("activity.views.REGIONAL_GROUP_BATCH", 1):
+            self.assertEqual(
+                [
+                    g
+                    for _, g, _ in get_activity_events(
+                        event_types={"group"}, region=self.city, limit=1
+                    )
+                ],
+                [late],
+            )
+            events = get_activity_events(
+                event_types={"group"}, region=self.city, limit=5
+            )
+
+        self.assertEqual([g for _, g, _ in events], [late, early, oldest])
+        self.assertEqual([g.feed_count for _, g, _ in events], [1, 1, 1])
+        self.assertEqual(
+            [[m.image for m in g.feed_members] for _, g, _ in events],
+            [
+                [self.collection_region_image],
+                [self.source_region_image],
+                [self.image_region_image],
+            ],
+        )
+
+    def test_regional_walk_resumes_between_groups_sharing_an_ended_at(self):
+        # One group per batch puts the resume point between two groups that
+        # ended at the same instant; neither may be skipped or repeated.
+        first = self._group((self.source_region_image, 5))
+        second = self._group((self.collection_region_image, 5))
+        GeoreferenceGroup.objects.filter(pk=second.pk).update(ended_at=first.ended_at)
+        GeoreferenceGroupMember.objects.filter(group=second).update(
+            added_at=first.ended_at
+        )
+
+        with mock.patch("activity.views.REGIONAL_GROUP_BATCH", 1):
+            events = get_activity_events(
+                event_types={"group"}, region=self.city, limit=5
+            )
+
+        self.assertCountEqual([g for _, g, _ in events], [first, second])
+
+    def test_backdated_georeference_does_not_rewind_its_group(self):
+        now = timezone.now()
+        for image, timestamp in (
+            (self.source_region_image, now),
+            (self.other_image, now - timedelta(minutes=10)),
+        ):
+            _process_georeference(
+                user=self.user,
+                timestamp=timestamp,
+                georeference=Georeference.objects.create(
+                    image=image, point=TEST_POINT, georeferenced_by=self.user
+                ),
+                aerial_georeference=None,
+            )
+
+        group = GeoreferenceGroup.objects.get(user=self.user)
+        self.assertEqual(group.count, 2)
+        self.assertEqual(group.ended_at, now)
+
+    def test_duplicates_stay_out_of_regional_feeds(self):
+        duplicate = self._make_image(
+            self.city_source_collection,
+            "Duplicate Image",
+        )
+        duplicate.duplicate_of = self.source_region_image
+        duplicate.save(update_fields=["duplicate_of"])
+        comment = Comment.objects.create(
+            image=duplicate, text="On a duplicate", commented_by=self.user
+        )
+        self._group((duplicate, 1))
+
+        self.assertNotIn(comment, self._objects("comment", self.city))
+        self.assertIn(comment, self._objects("comment"))
+        self.assertEqual(self._objects("group", self.city), [])
+
+    def test_feed_images_load_without_the_embedding(self):
+        self._group((self.source_region_image, 1))
+        undisplayed = {"embedding", "search_vector"}
+        for region in (None, self.city):
+            group = self._objects("group", region)[0]
+            comment = self._objects("comment", region)[0]
+            for image in (group.feed_members[0].image, comment.image):
+                self.assertTrue(undisplayed <= image.get_deferred_fields())
 
     def test_milestones_remain_global_in_a_regional_feed(self):
         user_milestone = UserMilestone.objects.create(

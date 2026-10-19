@@ -11,6 +11,7 @@ from django.views.decorators.http import require_GET
 
 from activity.views import get_activity_events
 from images.models import (
+    UNDISPLAYED_IMAGE_FIELDS,
     AerialGeoreference,
     Georeference,
     GeoreferenceValidation,
@@ -18,7 +19,6 @@ from images.models import (
     ImageOfTheDay,
     ImageRating,
     SiteSettings,
-    TopRatedImageView,
 )
 from images.utils import get_confidence_breakdown, get_overall_stats
 from regions.context_processors import get_current_region
@@ -74,15 +74,41 @@ def get_top_rated_image():
         # yet re-ran the query below on every single request.
         return cached or None
 
-    top_rated_entry = (
-        TopRatedImageView.objects.all()
-        .order_by("-sort_value", "-avg_rating", "-vote_count", "image_id")
+    # The same pick as images_top_rated_view's ordering, but aggregated over
+    # the ratings table: that view groups every public image to rank the
+    # few that have ratings, which made each cache miss a full scan.
+    public = {
+        "collection__public": True,
+        "collection__source__public": True,
+        "duplicate_of__isnull": True,
+    }
+    best = (
+        ImageRating.objects.filter(
+            **{f"image__{lookup}": value for lookup, value in public.items()}
+        )
+        .values("image_id")
+        .annotate(avg_rating=Avg("rating"), vote_count=Count("id"))
+        .order_by("-avg_rating", "-vote_count", "image_id")
         .first()
     )
+    if best is not None:
+        image_id = best["image_id"]
+    else:
+        # Nothing rated yet: the view ranks every unrated image level, so
+        # it falls through to the lowest id.
+        image_id = (
+            Image.objects.filter(**public)
+            .order_by("id")
+            .values_list("id", flat=True)
+            .first()
+        )
+
     top_rated_image = None
-    if top_rated_entry:
-        top_rated_image = Image.objects.select_related("collection__source").get(
-            id=top_rated_entry.image_id
+    if image_id is not None:
+        top_rated_image = (
+            Image.objects.select_related("collection__source")
+            .defer(*UNDISPLAYED_IMAGE_FIELDS)
+            .get(id=image_id)
         )
 
     cache.set("top_rated_image", top_rated_image or "", PICTURE_CACHE_SECONDS)
@@ -167,6 +193,7 @@ def _draw_hero_image():
             .select_related(
                 "collection__source__region", "collection__region", "region"
             )
+            .defer(*UNDISPLAYED_IMAGE_FIELDS)
             .first()
         )
         if image is not None and image.get_georeference() is not None:
@@ -208,6 +235,7 @@ def _fallback_hero_image():
         .exclude(image__thumbnail__isnull=True)
         .exclude(image__thumbnail="")
         .select_related("image__collection__source", "image__region")
+        .defer(*(f"image__{field}" for field in UNDISPLAYED_IMAGE_FIELDS))
         .order_by("-georeferenced_at")
         .first()
     )
@@ -282,6 +310,7 @@ def get_subjects_feature(site_settings):
         .exclude(thumbnail__isnull=True)
         .exclude(thumbnail="")
         .select_related("collection__source")
+        .defer(*UNDISPLAYED_IMAGE_FIELDS)
         .first()
     )
     if image is None:

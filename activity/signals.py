@@ -75,7 +75,9 @@ def _process_georeference(user, timestamp, georeference, aerial_georeference):
 
     # If within 3 hours of last activity, add to existing group
     if latest_group and (timestamp - latest_group.ended_at) < GROUPING_WINDOW:
-        latest_group.ended_at = timestamp
+        # A late-arriving or backdated georeference mustn't pull ended_at
+        # below a newer member's: the feed treats it as the latest one's.
+        latest_group.ended_at = max(latest_group.ended_at, timestamp)
         latest_group.count += 1
         latest_group.save(update_fields=["ended_at", "count"])
         group = latest_group
