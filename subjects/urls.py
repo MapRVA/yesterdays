@@ -3,6 +3,9 @@ from django.urls import path, register_converter
 from . import views
 from .converters import SubjectKeyConverter
 
+from subjects import views
+from subjects.feeds import SubjectActivityFeed
+
 register_converter(SubjectKeyConverter, "subject")
 
 app_name = "subjects"
@@ -13,6 +16,7 @@ urlpatterns = [
     path("map/", views.subjects_map, name="subjects_map"),
     path("<subject:qid>/", views.subject_detail, name="subject_detail"),
     path("<subject:qid>/edit/", views.subject_edit, name="subject_edit"),
+    path("<slug:subject_slug>/feed/", SubjectActivityFeed(), name="subject_feed"),
     path(
         "<subject:qid>/similar/",
         views.find_similar_images_to_subject,
