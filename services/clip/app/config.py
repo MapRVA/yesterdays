@@ -16,6 +16,11 @@ VISION_DEVICE = os.getenv("CLIP_VISION_DEVICE", "AUTO")
 # otherwise run bf16 on CPUs with AVX512-BF16/AMX).
 INFERENCE_PRECISION = os.getenv("CLIP_INFERENCE_PRECISION", "")
 
+# Inference threads per tower on CPU; unset or 0 leaves it to OpenVINO, which
+# sizes its pool from the visible CPUs and ignores a container's CPU quota. Set
+# it to the quota, or every thread spends most of its time being throttled.
+INFERENCE_THREADS = int(os.getenv("CLIP_INFERENCE_THREADS") or 0)
+
 # Compiled-kernel cache. Hardware/driver specific, so it belongs on an
 # emptyDir/PV, never in the image. Empty string disables caching.
 CACHE_DIR = os.getenv("CLIP_CACHE_DIR", "")

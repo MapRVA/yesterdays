@@ -162,6 +162,43 @@ def test_compile_config_auto_resolves_each_candidate():
     }
 
 
+def test_compile_config_limits_threads_on_cpu_only():
+    limited = {
+        "INFERENCE_PRECISION_HINT": "f32",
+        "INFERENCE_NUM_THREADS": 2,
+        "ENABLE_CPU_PINNING": False,
+    }
+    assert compile_config("CPU", "", ["CPU"], threads=2) == limited
+    assert compile_config("GPU", "", ["CPU", "GPU"], threads=2) == {
+        "INFERENCE_PRECISION_HINT": "f16"
+    }
+    assert compile_config("AUTO", "", ["CPU", "GPU"], threads=2) == {
+        "DEVICE_PROPERTIES": {
+            "CPU": limited,
+            "GPU": {"INFERENCE_PRECISION_HINT": "f16"},
+        }
+    }
+
+
+def test_compile_config_leaves_threads_to_openvino_by_default():
+    assert compile_config("CPU", "", ["CPU"], threads=0) == {
+        "INFERENCE_PRECISION_HINT": "f32"
+    }
+
+
+@pytest.mark.parametrize(
+    "value, expected", [(None, 0), ("", 0), ("0", 0), ("2", 2)]
+)
+def test_threads_env(monkeypatch, value, expected):
+    if value is None:
+        monkeypatch.delenv("CLIP_INFERENCE_THREADS", raising=False)
+    else:
+        monkeypatch.setenv("CLIP_INFERENCE_THREADS", value)
+    assert importlib.reload(config).INFERENCE_THREADS == expected
+    monkeypatch.delenv("CLIP_INFERENCE_THREADS", raising=False)
+    importlib.reload(config)
+
+
 def test_precision_env(monkeypatch):
     monkeypatch.setenv("CLIP_INFERENCE_PRECISION", "f16")
     assert importlib.reload(config).INFERENCE_PRECISION == "f16"

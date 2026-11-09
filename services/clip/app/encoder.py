@@ -49,7 +49,9 @@ class ClipEncoder:
     from a thread pool, so concurrent requests simply queue on the lock.
     """
 
-    def __init__(self, model_dir, text_device, vision_device, cache_dir="", precision=""):
+    def __init__(
+        self, model_dir, text_device, vision_device, cache_dir="", precision="", threads=0
+    ):
         model_dir = Path(model_dir)
         self.meta = json.loads((model_dir / "metadata.json").read_text())
         self.preprocess, self.special = bundle_specs(self.meta)
@@ -60,7 +62,7 @@ class ClipEncoder:
         self._requested = {}
         compiled = {}
         for name, device in (("text", text_device), ("vision", vision_device)):
-            props = compile_config(device, precision, core.available_devices)
+            props = compile_config(device, precision, core.available_devices, threads)
             self._requested[name] = props
             compiled[name] = core.compile_model(
                 model_dir / f"{name}.xml",
@@ -239,22 +241,33 @@ def resolve_precision(device, precision=""):
     return "f16" if device.upper().startswith("GPU") else "f32"
 
 
-def compile_config(device, precision, available_devices):
+def device_properties(device, precision="", threads=0):
+    """Compile properties for one physical device."""
+    props = {"INFERENCE_PRECISION_HINT": resolve_precision(device, precision)}
+    if threads and device.upper().startswith("CPU"):
+        # OpenVINO pins by default, which would tie so few threads to fixed
+        # cores even while other pods on the node are busy on them.
+        props["INFERENCE_NUM_THREADS"] = threads
+        props["ENABLE_CPU_PINNING"] = False
+    return props
+
+
+def compile_config(device, precision, available_devices, threads=0):
     """
     OpenVINO compile properties pinning the inference precision.
 
     Always explicit, because CPUs with AVX512-BF16/AMX otherwise silently run
     bf16. Virtual devices (AUTO/MULTI/HETERO) only forward the hint as
-    per-device properties, resolved for each candidate they might pick.
+    per-device properties, resolved for each candidate they might pick. A
+    thread count applies to CPU only.
     """
     virtual, _, candidates = device.partition(":")
     if virtual.upper() not in ("AUTO", "MULTI", "HETERO"):
-        return {"INFERENCE_PRECISION_HINT": resolve_precision(device, precision)}
+        return device_properties(device, precision, threads)
     names = candidates.split(",") if candidates else available_devices
     return {
         "DEVICE_PROPERTIES": {
-            name: {"INFERENCE_PRECISION_HINT": resolve_precision(name, precision)}
-            for name in names
+            name: device_properties(name, precision, threads) for name in names
         }
     }
 

@@ -39,6 +39,7 @@ def _load_encoder():
             config.VISION_DEVICE,
             config.CACHE_DIR,
             config.INFERENCE_PRECISION,
+            config.INFERENCE_THREADS,
         )
         encoder.warmup()
     except Exception as exc:
