@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 
-from django.db.models import Count, F, Max, Prefetch, Q
+from django.db.models import Count, Exists, F, Max, OuterRef, Prefetch, Q
 from django.db.models.functions import Coalesce
 from django.http import Http404
 from django.shortcuts import render
@@ -9,8 +9,10 @@ from django.utils import timezone
 
 from images.models import (
     UNDISPLAYED_IMAGE_FIELDS,
+    AerialGeoreference,
     AerialGeoreferenceValidation,
     Comment,
+    Georeference,
     GeoreferenceValidation,
     SubjectMappingActivity,
     in_region_q,
@@ -118,6 +120,23 @@ def activity_feed(request):
 def _deferred_image_fields(*paths):
     """UNDISPLAYED_IMAGE_FIELDS of the images select_related through ``paths``."""
     return [f"{path}__{field}" for path in paths for field in UNDISPLAYED_IMAGE_FIELDS]
+
+
+def _georeferenced_in_region_by_milestone(model, region_ids):
+    """Exists for a UserMilestone whose user had georeferenced in the region.
+
+    ``model`` is Georeference or AerialGeoreference. Only georeferences made
+    by the time the milestone was reached count, so a contributor's old
+    milestones don't surface in a region's history once they start work
+    there.
+    """
+    return Exists(
+        model.objects.filter(
+            in_region_q("image", region_ids),
+            georeferenced_by=OuterRef("user_id"),
+            georeferenced_at__lte=OuterRef("reached_at"),
+        )
+    )
 
 
 def _latest_regional_groups(groups, members, timestamp, member_filter, limit, before):
@@ -231,8 +250,9 @@ def get_activity_events(
         image_region = in_region_q("image", region_ids)
         validation_region = in_region_q("georeference__image", region_ids)
 
-    # User and sitewide milestones have no image-backed event to associate
-    # with a region, so they intentionally remain global in regional feeds.
+    # Sitewide milestones have no image-backed event to associate with a
+    # region, so they intentionally remain global in regional feeds. User
+    # milestones appear in the feeds of regions the user had georeferenced in.
 
     if before:
         comment_filter["created_at__lt"] = before
@@ -292,11 +312,13 @@ def get_activity_events(
         events.extend(("comment", c, c.created_at) for c in comments)
 
     if "milestone" in event_types:
-        milestones = (
-            UserMilestone.objects.filter(**milestone_filter)
-            .select_related("user")
-            .order_by("-reached_at")[:limit]
-        )
+        milestones = UserMilestone.objects.filter(**milestone_filter)
+        if region_ids is not None:
+            milestones = milestones.filter(
+                _georeferenced_in_region_by_milestone(Georeference, region_ids)
+                | _georeferenced_in_region_by_milestone(AerialGeoreference, region_ids)
+            )
+        milestones = milestones.select_related("user").order_by("-reached_at")[:limit]
         events.extend(("milestone", m, m.reached_at) for m in milestones)
 
     if "sitewide" in event_types:

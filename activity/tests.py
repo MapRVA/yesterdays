@@ -526,15 +526,60 @@ class ActivityRegionTests(TestCase):
             for image in (group.feed_members[0].image, comment.image):
                 self.assertTrue(undisplayed <= image.get_deferred_fields())
 
-    def test_milestones_remain_global_in_a_regional_feed(self):
-        user_milestone = UserMilestone.objects.create(
-            user=self.user, count=5, reached_at=timezone.now()
+    def _georeferenced(self, model, user, image, minutes_ago):
+        """A georeference of ``model`` by ``user``, made ``minutes_ago``."""
+        if model is Georeference:
+            georeference = Georeference.objects.create(
+                image=image, point=TEST_POINT, georeferenced_by=user
+            )
+        else:
+            georeference = AerialGeoreference.objects.create(
+                image=image, polygon=TEST_POLYGON, georeferenced_by=user
+            )
+        # georeferenced_at is auto_now_add, so backdate it after creation.
+        model.objects.filter(pk=georeference.pk).update(
+            georeferenced_at=timezone.now() - timedelta(minutes=minutes_ago)
         )
+
+    def test_user_milestones_follow_the_regions_the_user_georeferenced(self):
+        reached_at = timezone.now() - timedelta(minutes=5)
+        for model in (Georeference, AerialGeoreference):
+            with self.subTest(model=model.__name__):
+                user = User.objects.create_user(username=f"m-{model.__name__}")
+                self._georeferenced(model, user, self.source_region_image, 10)
+                milestone = UserMilestone.objects.create(
+                    user=user, count=5, reached_at=reached_at
+                )
+
+                self.assertIn(milestone, self._objects("milestone", self.state))
+                self.assertIn(milestone, self._objects("milestone", self.city))
+                self.assertNotIn(milestone, self._objects("milestone", self.other))
+
+    def test_user_milestones_need_in_region_work_by_the_time_reached(self):
+        reached_at = timezone.now() - timedelta(minutes=5)
+        elsewhere = User.objects.create_user(username="elsewhere")
+        self._georeferenced(Georeference, elsewhere, self.other_image, 10)
+        elsewhere_milestone = UserMilestone.objects.create(
+            user=elsewhere, count=5, reached_at=reached_at
+        )
+        latecomer = User.objects.create_user(username="latecomer")
+        self._georeferenced(Georeference, latecomer, self.other_image, 10)
+        self._georeferenced(AerialGeoreference, latecomer, self.source_region_image, 1)
+        latecomer_milestone = UserMilestone.objects.create(
+            user=latecomer, count=5, reached_at=reached_at
+        )
+
+        self.assertEqual(self._objects("milestone", self.state), [])
+        self.assertEqual(
+            set(self._objects("milestone")),
+            {elsewhere_milestone, latecomer_milestone},
+        )
+
+    def test_sitewide_milestones_remain_global_in_a_regional_feed(self):
         sitewide_milestone = SitewideMilestone.objects.create(
             count=100, reached_at=timezone.now()
         )
 
-        self.assertEqual(self._objects("milestone", self.state), [user_milestone])
         self.assertEqual(self._objects("sitewide", self.state), [sitewide_milestone])
 
     def test_home_full_feed_and_ajax_use_the_region_cookie(self):
