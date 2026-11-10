@@ -1316,29 +1316,6 @@ class SiteSettingsAdmin(admin.ModelAdmin):
             },
         ),
         (
-            "Default Map View",
-            {
-                "fields": (
-                    "default_map_longitude",
-                    "default_map_latitude",
-                    "default_map_zoom",
-                ),
-                "description": "Default center and zoom level for maps across the site",
-            },
-        ),
-        (
-            "Default Search Bounding Box",
-            {
-                "fields": (
-                    "default_search_bbox_west",
-                    "default_search_bbox_south",
-                    "default_search_bbox_east",
-                    "default_search_bbox_north",
-                ),
-                "description": "Default bounding box used by the geocoder and other location-based search features",
-            },
-        ),
-        (
             "Homepage Activity Feed",
             {
                 "fields": (

@@ -2,11 +2,7 @@
 // templates/images/partials/map_display.html, which loads this bundle and
 // calls window.initializeMap() with a MapDisplayConfig.
 import maplibregl from "maplibre-gl";
-import {
-  DEFAULT_MAP_CENTER,
-  DEFAULT_MAP_ZOOM,
-  initialMapView,
-} from "../../constants/map";
+import { initialMapView } from "../../constants/map";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "@maplibre/maplibre-gl-geocoder/dist/maplibre-gl-geocoder.css";
 import "../../../styles/components/map-display.css";
@@ -31,9 +27,11 @@ import type {
 export function initializeMap(config: MapDisplayConfig): maplibregl.Map {
   const {
     mapId,
-    center = DEFAULT_MAP_CENTER,
-    zoom = DEFAULT_MAP_ZOOM,
-    bounds = null,
+    // Left undefined, initialMapView() picks the selected region's view or
+    // the whole world. The template resolves all three itself.
+    center,
+    zoom,
+    bounds,
     hash = false,
     vectorTilesUrl = null,
     allImagesUrl = null,
@@ -135,8 +133,9 @@ export function initializeMap(config: MapDisplayConfig): maplibregl.Map {
     // Fit bounds to aerial polygon (only on initial load). Only include
     // `center` in the bounds when it marks the current image point
     // (point+polygon case). In the polygon-only case there is no
-    // current-image marker and `center` is just the default map center, so
-    // extending to it would drag the view off the polygon.
+    // current-image marker and `center` is just the region centerpoint (or
+    // 0,0 with no region), so extending to it would drag the view off the
+    // polygon.
     if (aerialGeoreference) {
       try {
         const bounds = boundsFromAerialGeometry(

@@ -11,16 +11,13 @@ Usage:
 - Custom location: {% include 'images/partials/map_display.html' with image_id=image.id center_lng=-77.44 center_lat=37.53 zoom_level=11.5 %}
   (center_lng/center_lat must be numbers, not strings — see the mapCenter block below.
    Omit them and the map fits the selected region's viewport when configured,
-   falling back to its centerpoint and then the SiteSettings defaults.)
+   falling back to its centerpoint; with no region it fits the whole world.)
 - Geocoder: {% include 'images/partials/map_display.html' with include_geocoder=True %}
 - Scale-based visibility: {% include 'images/partials/map_display.html' with enable_scale_visibility=True %}
 - Regional source/collection maps: pass map_region explicitly to filter image tiles.
-  Set ignore_region_view=True for a global fallback despite a selected navbar region.
+  Set ignore_region_view=True for a whole-world view despite a selected navbar region.
 - Initial viewport from a specific region: pass view_region to start on that region's
   bounds/centerpoint instead of the navbar region's (explicit center/zoom still win).
-- Whole-world fallback: {% include 'images/partials/map_display.html' with world_view=True %}
-  fits the entire world when no navbar region is selected, instead of the SiteSettings
-  default center/zoom, and lets the geocoder search the whole world too.
 - Auto-zoom to contents: {% include 'images/partials/map_display.html' with zoom_to_contents=True %}
 {% endcomment %}
 
@@ -90,7 +87,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // caller, then a view_region passed by the caller, then the region
     // picked in the navbar (its admin-set
     // centerpoint, else its Wikidata P625 coordinate — Region resolves
-    // that), then the sitewide default from SiteSettings. Compared
+    // that), then 0,0 rather than assuming a place — which only shows when
+    // an embed passes a zoom but no center; otherwise the whole-world
+    // bounds below override it. Compared
     // against None, not truthiness, so a deliberate 0 still counts.
     // center_lng/center_lat must reach us as numbers, never raw strings —
     // they land in a JS numeric position, where autoescaping won't save us
@@ -103,29 +102,34 @@ document.addEventListener('DOMContentLoaded', function() {
     {% elif current_region and not ignore_region_view %}
     const mapCenter = [{{ current_region.coordinate_location.x|unlocalize }}, {{ current_region.coordinate_location.y|unlocalize }}];
     {% else %}
-    const mapCenter = [{{ default_map_center.0|unlocalize }}, {{ default_map_center.1|unlocalize }}];
+    const mapCenter = [0, 0];
     {% endif %}
 
     // Region bounds are used only when the caller did not specify a camera
-    // setting. Explicit content and embed parameters retain precedence.
+    // setting. Explicit content and embed parameters retain precedence. A
+    // region without bounds opens on its centerpoint (above) instead. With
+    // no region at all the map opens on the whole world, to Web Mercator's
+    // latitude limits, and its geocoder searches the whole world to match.
     {% if center_lng is not None and center_lat is not None or zoom_level is not None %}
     const mapBounds = null;
+    const worldView = false;
     {% elif view_region %}
     const mapBounds = {% if view_region.map_bbox %}{{ view_region.map_bbox }}{% else %}null{% endif %};
-    {% elif region_map_bounds and not ignore_region_view %}
-    const mapBounds = {{ region_map_bounds }};
-    {% elif world_view and not current_region %}
-    // No region selected: the whole world, to Web Mercator's latitude limits.
-    const mapBounds = [-180, -85.0511, 180, 85.0511];
+    const worldView = false;
+    {% elif current_region and not ignore_region_view %}
+    const mapBounds = {% if region_map_bounds %}{{ region_map_bounds }}{% else %}null{% endif %};
+    const worldView = false;
     {% else %}
-    const mapBounds = null;
+    // Matches WORLD_BOUNDS in assets/js/constants/map.ts.
+    const mapBounds = [-180, -85.0511, 180, 85.0511];
+    const worldView = true;
     {% endif %}
 
     // Initialize the map using the global function from the bundled module
     window.initializeMap({
         mapId: mapId,
         center: mapCenter,
-        zoom: {% if zoom_level is not None %}{{ zoom_level|unlocalize }}{% else %}{{ default_map_zoom|unlocalize }}{% endif %},
+        zoom: {% if zoom_level is not None %}{{ zoom_level|unlocalize }}{% else %}{{ region_map_zoom|unlocalize }}{% endif %},
         bounds: mapBounds,
         hash: {{ hash|yesno:"true,false,false" }},
         vectorTilesUrl: vectorTilesUrl,
@@ -135,8 +139,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Scale zoom thresholds live in assets/js/components/map_display/scale_visibility.ts
         enableScaleVisibility: {{ enable_scale_visibility|yesno:"true,false,false" }},
         includeGeocoder: {{ include_geocoder|yesno:"true,false,false" }},
-        // A whole-world view searches the whole world, not the sitewide box
-        unboundedSearch: {% if world_view and not current_region %}true{% else %}false{% endif %},
+        unboundedSearch: worldView,
         geolocate: {{ geolocate|yesno:"true,false,false" }},
         aerialGeoreference: {% if aerial_georeference %}{{ aerial_georeference.polygon.geojson|safe }}{% else %}null{% endif %},
         zoomToContents: {{ zoom_to_contents|yesno:"true,false,false" }},

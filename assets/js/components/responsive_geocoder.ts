@@ -9,7 +9,7 @@
  * Usage:
  *   import { addResponsiveGeocoder } from "./responsive_geocoder";
  *
- *   // With default Nominatim API (uses the selected region's effective bbox)
+ *   // With default Nominatim API (the selected region's search box, else worldwide)
  *   addResponsiveGeocoder(map);
  *
  *   // With custom geocoder API
@@ -37,10 +37,10 @@ interface NominatimFeature {
 }
 
 export interface ResponsiveGeocoderOptions {
-  // Custom API (default: Nominatim using the effective region/site bbox)
+  // Custom API (default: Nominatim, bounded to the selected region's box)
   geocoderApi?: MaplibreGeocoderApi;
   // Box the default API restricts results to. Omitted: the selected region's
-  // box, else the sitewide default. null: search the whole world.
+  // box, else the whole world. null: search the whole world regardless.
   searchBbox?: MapBounds | null;
   // Screen width breakpoint in pixels below which the control starts collapsed
   breakpoint?: number;
@@ -70,7 +70,7 @@ const createDefaultGeocoderApi = (
         addressdetails: "1",
         layer: "address",
       });
-      // Without a configured search box, fall back to an unbounded search
+      // With no region selected there is no box: search the whole world
       // rather than sending an empty viewbox.
       if (bbox) {
         params.set("viewbox", bbox.join(","));
@@ -115,7 +115,7 @@ export function addResponsiveGeocoder(
   options: ResponsiveGeocoderOptions = {},
 ): ResponsiveGeocoderHandle {
   const {
-    searchBbox = window.SEARCH_BBOX ?? window.DEFAULT_SEARCH_BBOX,
+    searchBbox = window.SEARCH_BBOX ?? null,
     geocoderApi = createDefaultGeocoderApi(
       window.ADMIN_EMAIL,
       searchBbox ?? undefined,

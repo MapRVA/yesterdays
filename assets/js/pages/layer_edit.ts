@@ -24,8 +24,6 @@ import {
 import "../components/map_display/pmtiles_protocol";
 import { initialMapView } from "../constants/map";
 
-const PREVIEW_ZOOM = 13;
-
 type PreviewStatus = "ok" | "waiting" | "error";
 
 interface LayerEditor {
@@ -151,7 +149,7 @@ document.addEventListener("alpine:init", () => {
         const map = new maplibregl.Map({
           container,
           style,
-          ...initialMapView({ zoom: PREVIEW_ZOOM }),
+          ...initialMapView(),
         });
         map.addControl(new maplibregl.NavigationControl());
         map.addControl(new maplibregl.FullscreenControl());

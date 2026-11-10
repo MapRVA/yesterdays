@@ -16,7 +16,6 @@ import {
 import "../components/map_display/pmtiles_protocol";
 import { initialMapView } from "../constants/map";
 
-const PREVIEW_ZOOM = 13;
 const COPIED_REVERT_MS = 1500;
 
 // The source link is labelled with the bare hostname rather than the full URL.
@@ -75,7 +74,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const map = new maplibregl.Map({
     container,
     style: isStyleLayer ? layer.url : protomapsStyleUrl(),
-    ...initialMapView({ zoom: PREVIEW_ZOOM }),
+    ...initialMapView(),
   });
 
   map.addControl(new maplibregl.NavigationControl());

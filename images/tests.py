@@ -66,7 +66,7 @@ from images.tasks import (
     reconcile_collection_stats,
 )
 from images.utils import compass_label, get_confidence_breakdown, get_overall_stats
-from regions.context_processors import REGION_COOKIE_NAME
+from regions.context_processors import REGION_COOKIE_NAME, REGION_MAP_ZOOM
 from regions.models import Region, RegionAncestor
 from regions.tests import make_region
 from subjects.models import Subject, WikidataItem
@@ -1021,6 +1021,23 @@ class GeoreferenceRegionQueueTests(TestCase):
     def test_subject_queue_does_not_accept_slugs(self):
         response = self.client.get(self.url, {"subject": self.subject.slug})
         self.assertEqual(response.status_code, 404)
+
+    def test_map_view_comes_from_the_region_not_a_site_default(self):
+        # The selected region has no bounds: the map opens on its
+        # centerpoint at the region zoom, and the search is unbounded.
+        response = self.client.get(self.url)
+        self.assertContains(response, f"window.REGION_MAP_ZOOM = {REGION_MAP_ZOOM};")
+        self.assertContains(response, "window.SEARCH_BBOX = null;")
+        self.assertNotContains(response, "defaultMap")
+        self.assertNotContains(response, "window.DEFAULT_")
+
+    def test_image_detail_has_no_site_default_map_config(self):
+        response = self.client.get(
+            reverse("images:image_detail", args=[self.outside_image.id])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "defaultMap")
+        self.assertNotContains(response, "window.DEFAULT_")
 
 
 class StatsEventsMixin:
@@ -3807,34 +3824,36 @@ class CompassLabelTests(SimpleTestCase):
         self.assertIsNone(compass_label(None))
 
 
-class DetectAddressesRegionTests(SimpleTestCase):
-    def setUp(self):
-        self.site_settings = SimpleNamespace(
-            default_search_bbox_west=-2,
-            default_search_bbox_south=52,
-            default_search_bbox_east=-1,
-            default_search_bbox_north=53,
-        )
+def _bounds(west, south, east, north):
+    bounds = Polygon.from_bbox((west, south, east, north))
+    bounds.srid = 4326
+    return bounds
 
+
+class DetectAddressesRegionTests(SimpleTestCase):
     def test_region_search_bounds_become_a_geopy_viewbox(self):
-        map_bounds = Polygon.from_bbox((-79, 36, -75, 40))
-        map_bounds.srid = 4326
-        geocoder_bounds = Polygon.from_bbox((-78.8, 36.2, -75.2, 39.8))
-        geocoder_bounds.srid = 4326
         region = Region(
-            map_bounds=map_bounds,
-            geocoder_bounds=geocoder_bounds,
+            map_bounds=_bounds(-79, 36, -75, 40),
+            geocoder_bounds=_bounds(-78.8, 36.2, -75.2, 39.8),
         )
         self.assertEqual(
-            DetectAddressesCommand.get_search_viewbox(region, self.site_settings),
+            DetectAddressesCommand.get_search_viewbox(region),
             ((36.2, -78.8), (39.8, -75.2)),
         )
 
-    def test_site_search_bounds_are_the_no_region_fallback(self):
+    def test_map_bounds_stand_in_for_missing_geocoder_bounds(self):
+        region = Region(map_bounds=_bounds(-79, 36, -75, 40))
         self.assertEqual(
-            DetectAddressesCommand.get_search_viewbox(None, self.site_settings),
-            ((52, -2), (53, -1)),
+            DetectAddressesCommand.get_search_viewbox(region),
+            ((36, -79), (40, -75)),
         )
+
+    def test_no_region_has_no_viewbox(self):
+        # No sitewide fallback area: the caller skips the image instead.
+        self.assertIsNone(DetectAddressesCommand.get_search_viewbox(None))
+
+    def test_region_without_bounds_has_no_viewbox(self):
+        self.assertIsNone(DetectAddressesCommand.get_search_viewbox(Region()))
 
     def test_region_name_disambiguates_the_nominatim_query(self):
         command = DetectAddressesCommand()
@@ -3855,6 +3874,95 @@ class DetectAddressesRegionTests(SimpleTestCase):
             bounded=True,
             exactly_one=True,
         )
+
+
+class DetectAddressesCommandTests(TestCase):
+    """Images are geocoded only inside their region's search bounds."""
+
+    TITLE = "House at 2013 Monument Ave."
+
+    @classmethod
+    def setUpTestData(cls):
+        source = Source.objects.create(
+            name="Src", slug="src", url="https://example.com", description=""
+        )
+        cls.collection = Collection.objects.create(
+            source=source, name="Col", slug="col", url="https://example.com"
+        )
+        items = WikidataItem.objects.bulk_create(
+            [
+                WikidataItem(wikidata_id="Q43421", title="Richmond"),
+                WikidataItem(wikidata_id="Q49231", title="Norfolk"),
+            ]
+        )
+        cls.bounded = make_region(
+            short_name="Richmond",
+            long_name="Richmond, Virginia",
+            slug="richmond",
+            wikidata_item=items[0],
+            geocoder_bounds=_bounds(-77.6, 37.4, -77.3, 37.7),
+        )
+        cls.unbounded = make_region(
+            short_name="Norfolk",
+            long_name="Norfolk, Virginia",
+            slug="norfolk",
+            wikidata_item=items[1],
+        )
+
+    def img(self, slug, region=None):
+        return Image.objects.create(
+            collection=self.collection,
+            title=self.TITLE,
+            permalink=f"https://img.example.com/{slug}.jpg",
+            region=region,
+        )
+
+    def run_command(self, **options):
+        stdout = StringIO()
+        location = SimpleNamespace(latitude=37.55, longitude=-77.45)
+        with patch.object(
+            DetectAddressesCommand, "geocode_address", return_value=location
+        ) as geocode_address:
+            call_command(
+                "detect_addresses",
+                collection_id=self.collection.pk,
+                stdout=stdout,
+                **options,
+            )
+        return geocode_address, stdout.getvalue()
+
+    def test_images_without_region_bounds_are_skipped(self):
+        no_region = self.img("no-region")
+        no_bounds = self.img("no-bounds", region=self.unbounded)
+        geocode_address, output = self.run_command()
+        geocode_address.assert_not_called()
+        self.assertIn("Skipped (no region search bounds): 2", output)
+        self.assertIn("Successfully geocoded: 0", output)
+        no_region.refresh_from_db()
+        no_bounds.refresh_from_db()
+        self.assertIsNone(no_region.detected_address)
+        self.assertIsNone(no_bounds.detected_address)
+
+    def test_dry_run_reports_skips_without_geocoding(self):
+        self.img("no-region")
+        self.img("bounded", region=self.bounded)
+        geocode_address, output = self.run_command(dry_run=True)
+        geocode_address.assert_not_called()
+        self.assertIn("Skipped (no region search bounds): 1", output)
+        self.assertNotIn("Successfully geocoded", output)
+
+    def test_region_bounds_scope_the_geocoder(self):
+        image = self.img("bounded", region=self.bounded)
+        geocode_address, output = self.run_command()
+        geocode_address.assert_called_once()
+        args = geocode_address.call_args.args
+        self.assertEqual(args[3], ((37.4, -77.6), (37.7, -77.3)))
+        self.assertEqual(args[4], "Richmond, Virginia")
+        self.assertIn("Skipped (no region search bounds): 0", output)
+        self.assertIn("Successfully geocoded: 1", output)
+        image.refresh_from_db()
+        self.assertAlmostEqual(image.detected_address.x, -77.45)
+        self.assertAlmostEqual(image.detected_address.y, 37.55)
 
 
 # ---------------------------------------------------------------------------
@@ -5055,13 +5163,6 @@ class HomeSubjectsOrderAdminFormTests(TestCase):
                 "site_subtitle": "A community effort",
                 "footer_content": "<p>Footer</p>",
                 "admin_email": "admin@example.com",
-                "default_map_longitude": -77.4,
-                "default_map_latitude": 37.5,
-                "default_map_zoom": 12,
-                "default_search_bbox_west": -78,
-                "default_search_bbox_south": 37,
-                "default_search_bbox_east": -77,
-                "default_search_bbox_north": 38,
                 "home_feed_item_count": 5,
                 "home_subjects_image": self.image.pk,
                 "home_subjects_order": f"{self.hall.subject_id},{self.station.subject_id}",

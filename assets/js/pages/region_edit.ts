@@ -14,7 +14,7 @@ import {
   protomapsStyleUrl,
 } from "../components/map_display/basemap";
 import { retintBaseMap } from "../components/map_display/layer_preview";
-import { DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM } from "../constants/map";
+import { REGION_MAP_ZOOM, WORLD_BOUNDS } from "../constants/map";
 
 type Coordinate = [number, number];
 type BoundsKind = "map" | "geocoder";
@@ -115,20 +115,24 @@ function formatBounds(bounds: RegionBounds | null): string {
   return bounds.map((value) => value.toFixed(5)).join(", ");
 }
 
+// Opens on the region being edited, never the navbar's selected region: its
+// bounds, else its centerpoint, else the whole world for a region with
+// neither yet.
 function buildMap(
   container: string,
   bounds: RegionBounds | null,
-  center: Coordinate,
+  center: Coordinate | null,
 ): MapLibreMap {
+  const fit = bounds ?? (center ? null : WORLD_BOUNDS);
   const map = new maplibregl.Map({
     container,
     style: protomapsStyleUrl(),
-    ...(bounds
+    ...(fit
       ? {
-          bounds: [[bounds[0], bounds[1]], [bounds[2], bounds[3]]],
+          bounds: [[fit[0], fit[1]], [fit[2], fit[3]]],
           fitBoundsOptions: { padding: 48, maxZoom: 14 },
         }
-      : { center, zoom: DEFAULT_MAP_ZOOM }),
+      : { center: center ?? undefined, zoom: REGION_MAP_ZOOM }),
   });
   map.addControl(new maplibregl.NavigationControl());
   map.addControl(new maplibregl.FullscreenControl());
@@ -166,7 +170,7 @@ document.addEventListener("alpine:init", () => {
 
       init() {
         window.PROTOMAPS_API_KEY = config.protomapsApiKey;
-        const center = this.center ?? DEFAULT_MAP_CENTER;
+        const center = this.center;
         viewportMap = buildMap("region-map-bounds-map", this.mapBounds, center);
         geocoderMap = buildMap(
           "region-geocoder-bounds-map",
@@ -187,8 +191,10 @@ document.addEventListener("alpine:init", () => {
           (message) => { this.geocoderError = message; },
         );
 
+        // A region with no center yet gets its marker mid-map, unsaved until
+        // dragged.
         centerMarker = new maplibregl.Marker({ color: "#dc3545", draggable: true })
-          .setLngLat(center)
+          .setLngLat(center ?? viewportMap.getCenter())
           .addTo(viewportMap);
         centerMarker.on("drag", () => {
           const point = centerMarker?.getLngLat();

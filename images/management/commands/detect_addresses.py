@@ -15,7 +15,7 @@ from geopy.extra.rate_limiter import RateLimiter
 from geopy.geocoders import Nominatim
 from tqdm import tqdm
 
-from images.models import Collection, Image, SiteSettings
+from images.models import Collection, Image
 
 # Regex pattern for street addresses with house numbers
 # Handles patterns like:
@@ -147,8 +147,6 @@ class Command(BaseCommand):
                 self.style.WARNING("DRY RUN - no changes will be saved\n")
             )
 
-        site_settings = SiteSettings.load()
-
         # Initialize geocoder with rate limiting (2 seconds between calls)
         # Use a longer timeout to reduce transient failures
         geolocator = Nominatim(user_agent="YesterdaysMapRVA", timeout=10)
@@ -166,6 +164,7 @@ class Command(BaseCommand):
         geocoded_count = 0
         geocode_failed_count = 0
         cache_hit_count = 0
+        no_region_count = 0
 
         # Region is part of the key: the same street address can legitimately
         # resolve differently in two cities.
@@ -189,64 +188,80 @@ class Command(BaseCommand):
                     f"{image.title!r} -> {address!r}"
                 )
 
-                if not dry_run:
-                    region = image.effective_region
-                    viewbox = self.get_search_viewbox(region, site_settings)
-                    cache_key = (region.pk if region is not None else None, address)
+                region = image.effective_region
+                viewbox = self.get_search_viewbox(region)
+                cache_key = (region.pk if region is not None else None, address)
 
-                    # Check cache first
-                    if cache_key in address_cache:
-                        cached_coords = address_cache[cache_key]
-                        if cached_coords:
-                            lat, lon = cached_coords
-                            point = Point(lon, lat, srid=4326)
-                            image.detected_address = point
-                            image.save(update_fields=["detected_address"])
-                            cache_hit_count += 1
-                            progress_bar.write(
-                                f"    -> {self.style.SUCCESS('CACHED')}: "
-                                f"({lat:.6f}, {lon:.6f})"
-                            )
-                        else:
-                            # Cached as failed
-                            geocode_failed_count += 1
-                            progress_bar.write(
-                                f"    -> {self.style.WARNING('GEOCODE FAILED')} (cached)"
-                            )
-                    else:
-                        # Geocode the address
-                        location = self.geocode_address(
-                            geocode,
-                            address,
-                            progress_bar,
-                            viewbox,
-                            region.long_name if region is not None else None,
+                # A bare street address searched worldwide matches
+                # whichever "123 Main St" Nominatim ranks first, which
+                # is worse than leaving the hint empty. Checked in dry
+                # runs too, so they show which regions still need bounds.
+                if viewbox is None:
+                    no_region_count += 1
+                    progress_bar.write(
+                        f"    -> {self.style.WARNING('SKIPPED')}: "
+                        + (
+                            f"region {region.short_name!r} has no map or "
+                            "geocoder bounds"
+                            if region is not None
+                            else "image has no region"
                         )
+                    )
+                elif dry_run:
+                    pass
+                # Check cache first
+                elif cache_key in address_cache:
+                    cached_coords = address_cache[cache_key]
+                    if cached_coords:
+                        lat, lon = cached_coords
+                        point = Point(lon, lat, srid=4326)
+                        image.detected_address = point
+                        image.save(update_fields=["detected_address"])
+                        cache_hit_count += 1
+                        progress_bar.write(
+                            f"    -> {self.style.SUCCESS('CACHED')}: "
+                            f"({lat:.6f}, {lon:.6f})"
+                        )
+                    else:
+                        # Cached as failed
+                        geocode_failed_count += 1
+                        progress_bar.write(
+                            f"    -> {self.style.WARNING('GEOCODE FAILED')} (cached)"
+                        )
+                else:
+                    # Geocode the address
+                    location = self.geocode_address(
+                        geocode,
+                        address,
+                        progress_bar,
+                        viewbox,
+                        region.long_name if region is not None else None,
+                    )
 
-                        if location:
-                            # Cache the result
-                            address_cache[cache_key] = (
-                                location.latitude,
-                                location.longitude,
-                            )
-                            # Save to database
-                            point = Point(
-                                location.longitude, location.latitude, srid=4326
-                            )
-                            image.detected_address = point
-                            image.save(update_fields=["detected_address"])
-                            geocoded_count += 1
-                            progress_bar.write(
-                                f"    -> {self.style.SUCCESS('GEOCODED')}: "
-                                f"({location.latitude:.6f}, {location.longitude:.6f})"
-                            )
-                        else:
-                            # Cache the failure
-                            address_cache[cache_key] = None
-                            geocode_failed_count += 1
-                            progress_bar.write(
-                                f"    -> {self.style.WARNING('GEOCODE FAILED')}"
-                            )
+                    if location:
+                        # Cache the result
+                        address_cache[cache_key] = (
+                            location.latitude,
+                            location.longitude,
+                        )
+                        # Save to database
+                        point = Point(
+                            location.longitude, location.latitude, srid=4326
+                        )
+                        image.detected_address = point
+                        image.save(update_fields=["detected_address"])
+                        geocoded_count += 1
+                        progress_bar.write(
+                            f"    -> {self.style.SUCCESS('GEOCODED')}: "
+                            f"({location.latitude:.6f}, {location.longitude:.6f})"
+                        )
+                    else:
+                        # Cache the failure
+                        address_cache[cache_key] = None
+                        geocode_failed_count += 1
+                        progress_bar.write(
+                            f"    -> {self.style.WARNING('GEOCODE FAILED')}"
+                        )
             else:
                 no_match_count += 1
                 if options["verbosity"] >= 2:
@@ -258,6 +273,7 @@ class Command(BaseCommand):
         self.stdout.write("\n" + "-" * 60)
         self.stdout.write(f"Addresses matched: {matched_count}")
         self.stdout.write(f"No address found: {no_match_count}")
+        self.stdout.write(f"Skipped (no region search bounds): {no_region_count}")
         if not dry_run:
             self.stdout.write(f"Successfully geocoded: {geocoded_count}")
             self.stdout.write(f"From cache: {cache_hit_count}")
@@ -396,16 +412,16 @@ class Command(BaseCommand):
         return None
 
     @staticmethod
-    def get_search_viewbox(region, site_settings):
-        """Return geopy's southwest/northeast viewbox for a region."""
+    def get_search_viewbox(region):
+        """Return geopy's southwest/northeast viewbox for a region.
+
+        None when there is no region, or the region has neither geocoder nor
+        map bounds: there is no sitewide fallback area, and the caller skips
+        the image rather than geocoding it worldwide.
+        """
         bbox = region.search_bbox if region is not None else None
         if bbox is None:
-            bbox = [
-                site_settings.default_search_bbox_west,
-                site_settings.default_search_bbox_south,
-                site_settings.default_search_bbox_east,
-                site_settings.default_search_bbox_north,
-            ]
+            return None
         west, south, east, north = bbox
         return ((south, west), (north, east))
 
@@ -419,7 +435,7 @@ class Command(BaseCommand):
         max_retries=3,
     ):
         """
-        Geocode an address using Nominatim, restricted to the effective search bbox.
+        Geocode an address using Nominatim, restricted to the region's search bbox.
 
         Args:
             geocode: Rate-limited geocode function

@@ -10,13 +10,13 @@
 
     {% block opengraph %}{% endblock %}
     <script>
-        // Global map configuration
-        window.DEFAULT_MAP_CENTER = {{ default_map_center }};
-        window.DEFAULT_MAP_ZOOM = {{ default_map_zoom }};
-        window.DEFAULT_SEARCH_BBOX = {{ default_search_bbox }};
+        // Global map configuration: the selected navbar region's view. With
+        // no region these are null, and maps fit the whole world while the
+        // geocoder searches it.
         window.REGION_MAP_CENTER = {% if region_map_center %}{{ region_map_center }}{% else %}null{% endif %};
         window.REGION_MAP_BOUNDS = {% if region_map_bounds %}{{ region_map_bounds }}{% else %}null{% endif %};
-        window.SEARCH_BBOX = {% if region_search_bbox %}{{ region_search_bbox }}{% else %}{{ default_search_bbox }}{% endif %};
+        window.REGION_MAP_ZOOM = {% if region_map_zoom %}{{ region_map_zoom }}{% else %}null{% endif %};
+        window.SEARCH_BBOX = {% if region_search_bbox %}{{ region_search_bbox }}{% else %}null{% endif %};
         window.ADMIN_EMAIL = {% if admin_email %}"{{ admin_email }}"{% else %}null{% endif %};
         window.MAP_LAYERS_DATA = {{ map_layers_json|safe }};
     </script>

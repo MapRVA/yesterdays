@@ -49,9 +49,6 @@
         avgRating: {{ avg_rating|default:'null' }},
         userRating: {{ user_rating|default:'null' }},
         ratingCount: {{ rating_count|default:'0' }},
-        defaultMapLat: {{ default_map_center.1|floatformat:6 }},
-        defaultMapLng: {{ default_map_center.0|floatformat:6 }},
-        defaultMapZoom: {{ default_map_zoom }},
         urls: {
             markDifficulty: '{% url "images:mark_difficulty" image.id %}',
             markScale: '{% url "images:mark_scale" image.id %}',

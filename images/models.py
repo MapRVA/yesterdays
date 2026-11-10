@@ -86,34 +86,6 @@ class SiteSettings(models.Model):
         null=True,
         help_text="Admin contact email, used for external API requests (e.g., Nominatim geocoder)",
     )
-    default_map_longitude = models.FloatField(
-        default=-77.43916,
-        help_text="Default map center longitude",
-    )
-    default_map_latitude = models.FloatField(
-        default=37.54376,
-        help_text="Default map center latitude",
-    )
-    default_map_zoom = models.FloatField(
-        default=10.0,
-        help_text="Default map zoom level (0-22, supports decimals like 11.5)",
-    )
-    default_search_bbox_west = models.FloatField(
-        default=-77.61976,
-        help_text="Westernmost longitude for the default search bounding box (used by the geocoder and other location filters)",
-    )
-    default_search_bbox_south = models.FloatField(
-        default=37.44393,
-        help_text="Southernmost latitude for the default search bounding box",
-    )
-    default_search_bbox_east = models.FloatField(
-        default=-77.36673,
-        help_text="Easternmost longitude for the default search bounding box",
-    )
-    default_search_bbox_north = models.FloatField(
-        default=37.60954,
-        help_text="Northernmost latitude for the default search bounding box",
-    )
     home_feed_item_count = models.PositiveSmallIntegerField(
         default=5,
         help_text="Number of recent activity items to show in the homepage feed embed",

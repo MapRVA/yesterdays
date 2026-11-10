@@ -85,7 +85,7 @@ class Region(models.Model):
         help_text=(
             "Initial map viewport for this region. Stored as a rectangular "
             "WGS84 polygon and fitted to the available screen size. Blank "
-            "falls back to the region centerpoint and sitewide zoom."
+            "falls back to the region centerpoint at a fixed zoom."
         ),
     )
     geocoder_bounds = gis_models.PolygonField(
@@ -94,8 +94,8 @@ class Region(models.Model):
         spatial_index=False,
         help_text=(
             "Optional Nominatim search area for this region. Blank uses the "
-            "map viewport, then the sitewide search bounds if the viewport "
-            "is also blank."
+            "map viewport; if that is also blank, searches are unbounded and "
+            "detect_addresses skips this region's images."
         ),
     )
     created_at = models.DateTimeField(auto_now_add=True)

@@ -395,7 +395,8 @@ def collection_detail(request, source_slug, collection_slug):
         "region_fallback": region_fallback,
         # Where the map starts before zooming to its contents: the browse
         # region when one applies, else the collection's own (inherited
-        # from its source when unset), rather than the sitewide default.
+        # from its source when unset), rather than the navbar region or the
+        # whole world.
         "map_view_region": region or collection.effective_region,
         "georeference_url": georeference_url,
         "page_obj": page_obj,

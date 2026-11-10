@@ -79,8 +79,8 @@ class RegionAdminForm(forms.ModelForm):
         max_value=90,
         label="Map viewport north latitude",
         help_text=(
-            "Enter all four viewport edges. Blank uses the centerpoint and "
-            "sitewide zoom while existing regions are being configured."
+            "Enter all four viewport edges. Blank uses the centerpoint at a "
+            "fixed zoom while existing regions are being configured."
         ),
     )
     geocoder_west = forms.FloatField(
@@ -389,7 +389,7 @@ class RegionAdmin(admin.ModelAdmin):
                 ),
                 "description": (
                     "Optional Nominatim restriction. Blank reuses the map "
-                    "viewport, then the sitewide search bounds."
+                    "viewport; if that is also blank, searches are unbounded."
                 ),
             },
         ),

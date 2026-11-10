@@ -60,16 +60,17 @@ declare global {
 
   interface Window {
     // Django-provided configuration, set by inline scripts in templates/base.html
-    DEFAULT_MAP_CENTER?: [number, number];
-    DEFAULT_MAP_ZOOM?: number;
+    // The selected navbar region's map view; null with no region selected.
+    // REGION_MAP_ZOOM is how close to show a region that has no bounds.
     REGION_MAP_CENTER?: [number, number] | null;
     REGION_MAP_BOUNDS?: MapBounds | null;
+    REGION_MAP_ZOOM?: number | null;
 
-    // Geocoder configuration: the search bounding box is
-    // [west, south, east, north]; ADMIN_EMAIL is sent to Nominatim as a
-    // contact address and is null when unset.
-    DEFAULT_SEARCH_BBOX?: [number, number, number, number];
-    SEARCH_BBOX?: MapBounds;
+    // Geocoder configuration: the selected region's search bounding box,
+    // [west, south, east, north], or null to search the whole world;
+    // ADMIN_EMAIL is sent to Nominatim as a contact address and is null
+    // when unset.
+    SEARCH_BBOX?: MapBounds | null;
     ADMIN_EMAIL?: string | null;
 
     MAP_LAYERS_DATA?: MapLayersData;

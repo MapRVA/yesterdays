@@ -58,7 +58,7 @@ New frontend code is **TypeScript** (`strict`); the sitewide migration is in pro
 
 Other conventions worth knowing:
 - Templates load assets with **`django-vite`**: `{% load django_vite %}` then `{% vite_asset 'assets/js/pages/<name>.js' %}`. `templates/base.html` emits `{% vite_hmr_client %}` and the global `assets/index.js` bundle; pages add their own bundle via `{% block extra_js %}`.
-- `base.html` exposes server-side config to JS as `window.*` globals (e.g. `window.DEFAULT_MAP_CENTER`, `window.MAP_LAYERS_DATA`).
+- `base.html` exposes server-side config to JS as `window.*` globals (e.g. `window.REGION_MAP_CENTER`, `window.MAP_LAYERS_DATA`).
 - Shared helpers are global: `window.showAlert(type, message, duration)`, `window.getCsrfToken()`, `window.Alpine`, `window.bootstrap`.
 - Register Alpine components with `Alpine.data(...)` in page scripts before `Alpine.start()` runs (handled in `index.js` on `DOMContentLoaded`).
 

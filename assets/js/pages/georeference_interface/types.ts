@@ -56,9 +56,6 @@ export interface GeoreferenceConfig {
   isAuthenticated: boolean;
   difficultyFilters: DifficultyFilter[];
   remainingCount: number;
-  defaultMapLat: number;
-  defaultMapLng: number;
-  defaultMapZoom: number;
   urls: GeoreferenceConfigUrls;
   csrfToken: string;
 }

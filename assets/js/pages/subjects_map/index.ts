@@ -16,8 +16,6 @@ import { addCustomLayers } from "./layers";
 import { registerSubjectPanel } from "./panel";
 import type { SubjectsMapUrls } from "./types";
 
-const INITIAL_ZOOM = 13;
-
 registerSubjectPanel();
 
 // Django can only reverse a tile route with concrete coordinates, so the
@@ -42,7 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const map = new maplibregl.Map({
     container,
     style: protomapsStyleUrl(),
-    ...initialMapView({ zoom: INITIAL_ZOOM }),
+    ...initialMapView(),
   });
 
   // Take the wrapper rather than the map container fullscreen so the info

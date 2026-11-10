@@ -5,6 +5,11 @@ from .models import Region
 # reaches that component via a data attribute on the selector partial.
 REGION_COOKIE_NAME = "region"
 
+# Zoom for a selected region without map bounds, shown around its
+# centerpoint. Exposed to templates and, via templates/base.html, to
+# assets/js/constants/map.ts, so both kinds of map agree.
+REGION_MAP_ZOOM = 10
+
 
 def get_current_region(request):
     """The Region picked in the navbar selector, or None.
@@ -46,4 +51,5 @@ def current_region(request):
         "region_map_center": center,
         "region_map_bounds": map_bounds,
         "region_search_bbox": search_bounds,
+        "region_map_zoom": REGION_MAP_ZOOM,
     }

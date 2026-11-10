@@ -31,7 +31,7 @@ export interface MapDisplayConfig {
   imageId?: string | null;
   enableScaleVisibility?: boolean;
   includeGeocoder?: boolean;
-  // Search the whole world instead of the region/sitewide search box
+  // Search the whole world even when a region is selected
   unboundedSearch?: boolean;
   geolocate?: boolean;
   aerialGeoreference?: Polygon | MultiPolygon | null;
@@ -43,9 +43,9 @@ export interface MapDisplayConfig {
 // MapDisplayConfig after defaults are applied in initializeMap().
 export interface ResolvedMapDisplayConfig {
   mapId: string;
-  center: [number, number];
-  zoom: number;
-  bounds: MapBounds | null;
+  center: [number, number] | undefined;
+  zoom: number | undefined;
+  bounds: MapBounds | null | undefined;
   hash: boolean;
   vectorTilesUrl: string | null;
   allImagesUrl: string | null;

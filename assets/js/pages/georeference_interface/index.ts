@@ -178,10 +178,8 @@ function initializeGeoreferenceInterface(
     mapOptions.center = allHintCoords[0];
     mapOptions.zoom = 17;
   } else {
-    Object.assign(
-      mapOptions,
-      initialMapView({ zoom: config.defaultMapZoom }),
-    );
+    // No hints: the selected region, else the whole world
+    Object.assign(mapOptions, initialMapView());
   }
 
   const map = new maplibregl.Map(mapOptions);

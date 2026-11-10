@@ -9,6 +9,7 @@ import "../../styles/components/image-viewer.css";
 // Import components
 import { initSubjectEditor } from "../components/subject_editor.js";
 import { initImageViewer } from "../components/image_viewer";
+import { REGION_MAP_CENTER, REGION_MAP_ZOOM } from "../constants/map";
 
 // Utility function for difficulty badge colors
 function getBootstrapColor(difficulty) {
@@ -63,7 +64,11 @@ document.addEventListener("DOMContentLoaded", function () {
       const zoom = "18";
       mapswapLink.href = `https://mapswap.trailsta.sh/swap/#type=m&url=geo:${lat},${lng};z=${zoom}`;
     } else {
-      mapswapLink.href = `https://mapswap.trailsta.sh/swap/#type=m&url=geo:${config.defaultMapLat},${config.defaultMapLng};z=${config.defaultMapZoom}`;
+      // Not placed yet: the selected region, else the whole world
+      const [lng, lat, zoom] = REGION_MAP_CENTER
+        ? [...REGION_MAP_CENTER, REGION_MAP_ZOOM]
+        : [0, 0, 1];
+      mapswapLink.href = `https://mapswap.trailsta.sh/swap/#type=m&url=geo:${lat},${lng};z=${zoom}`;
     }
   }
 

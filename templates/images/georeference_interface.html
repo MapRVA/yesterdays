@@ -525,9 +525,6 @@
         isAuthenticated: {{ request.user.is_authenticated|yesno:"true,false" }},
         difficultyFilters: {{ difficulty_filters_json|safe }},
         remainingCount: {{ remaining_count|default:0 }},
-        defaultMapLat: {{ default_map_center.1|floatformat:6 }},
-        defaultMapLng: {{ default_map_center.0|floatformat:6 }},
-        defaultMapZoom: {{ default_map_zoom }},
         urls: {
             georeferenceImage: {% if current_image %}"{% url 'images:georeference_image' current_image.id %}"{% else %}null{% endif %},
             skipImage: {% if current_image %}"{% url 'images:skip_image' current_image.id %}"{% else %}null{% endif %},

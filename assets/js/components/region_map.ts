@@ -11,13 +11,8 @@ import "../../styles/components/region-map.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import maplibregl from "maplibre-gl";
+import { WORLD_BOUNDS } from "../constants/map";
 import { onColorSchemeChange, protomapsStyleUrl } from "./map_display/basemap";
-
-// Fallback view for the no-regions case, when there is nothing to frame:
-// the contiguous US — the geographic center near Lebanon, Kansas, zoomed
-// out far enough to take in the whole country.
-const FALLBACK_CENTER: [number, number] = [-96, 38];
-const FALLBACK_ZOOM = 3.8;
 
 // How the pins are framed on load. The max zoom keeps a lone pin (whose
 // bounds are a single point) at a metro-area view instead of maplibre's
@@ -184,12 +179,10 @@ export function initRegionMap({
   const map = new maplibregl.Map({
     container,
     style: protomapsStyleUrl(),
-    ...(summaries.length > 0
-      ? {
-          bounds,
-          fitBoundsOptions: { padding: FIT_PADDING, maxZoom: FIT_MAX_ZOOM },
-        }
-      : { center: FALLBACK_CENTER, zoom: FALLBACK_ZOOM }),
+    // With no regions there is nothing to frame, so show the whole world,
+    // as every other map does without a region.
+    bounds: summaries.length > 0 ? bounds : WORLD_BOUNDS,
+    fitBoundsOptions: { padding: FIT_PADDING, maxZoom: FIT_MAX_ZOOM },
   });
   map.addControl(new maplibregl.NavigationControl());
 

@@ -31,7 +31,7 @@ from subjects.tasks import _do_refresh_wikidata_item, get_next_stale_wikidata_it
 from yesterdays.views import HOME_SUBJECT_LABEL_LIMIT, get_top_rated_image
 
 from .admin import RegionAdminForm
-from .context_processors import REGION_COOKIE_NAME, current_region
+from .context_processors import REGION_COOKIE_NAME, REGION_MAP_ZOOM, current_region
 from .forms import RegionForm
 from .models import Region, RegionAncestor
 from .region_ancestors import update_region_ancestors
@@ -1234,9 +1234,15 @@ class CurrentRegionContextProcessorTests(TestCase):
         self.assertIsNone(context["region_map_bounds"])
         self.assertIsNone(context["region_search_bbox"])
 
+    def test_region_map_zoom_is_exposed_with_or_without_a_region(self):
+        # Templates read the zoom even when they end up fitting the world,
+        # so it must never be missing from the context.
+        self.assertEqual(self._context()["region_map_zoom"], REGION_MAP_ZOOM)
+        self.assertEqual(self._context("Q920")["region_map_zoom"], REGION_MAP_ZOOM)
+
 
 class MapPageInitialViewTests(TestCase):
-    """/map/ opens on the whole world unless a region is selected."""
+    """/map/ opens on, and searches, the whole world unless a region is selected."""
 
     WORLD_BOUNDS = "const mapBounds = [-180, -85.0511, 180, 85.0511];"
 
@@ -1255,14 +1261,49 @@ class MapPageInitialViewTests(TestCase):
     def test_no_region_fits_and_searches_the_whole_world(self):
         response = self.client.get(reverse("map"))
         self.assertContains(response, self.WORLD_BOUNDS)
-        self.assertContains(response, "unboundedSearch: true,")
+        self.assertContains(response, "const worldView = true;")
 
     def test_selected_region_fits_and_searches_its_bounds(self):
         self.client.cookies[REGION_COOKIE_NAME] = "Q920"
         response = self.client.get(reverse("map"))
         self.assertContains(response, "const mapBounds = [-77.7, 37.3, -77.2, 37.8];")
         self.assertNotContains(response, self.WORLD_BOUNDS)
-        self.assertContains(response, "unboundedSearch: false,")
+        self.assertContains(response, "unboundedSearch: worldView,")
+        self.assertContains(response, "const worldView = false;")
+
+    def test_no_region_leaves_the_global_map_config_empty(self):
+        # base.html: null globals tell assets/js/constants/map.ts to fit,
+        # and the geocoder to search, the whole world. There is no
+        # sitewide default place to fall back on any more.
+        response = self.client.get(reverse("map"))
+        self.assertContains(response, "window.REGION_MAP_CENTER = null;")
+        self.assertContains(response, "window.REGION_MAP_BOUNDS = null;")
+        self.assertContains(response, "window.SEARCH_BBOX = null;")
+        self.assertContains(response, f"window.REGION_MAP_ZOOM = {REGION_MAP_ZOOM};")
+        self.assertNotContains(response, "window.DEFAULT_")
+
+    def test_selected_region_fills_the_global_map_config(self):
+        self.client.cookies[REGION_COOKIE_NAME] = "Q920"
+        response = self.client.get(reverse("map"))
+        self.assertContains(
+            response, "window.REGION_MAP_BOUNDS = [-77.7, 37.3, -77.2, 37.8];"
+        )
+        # No geocoder bounds, so the search box falls back to the map bounds.
+        self.assertContains(
+            response, "window.SEARCH_BBOX = [-77.7, 37.3, -77.2, 37.8];"
+        )
+        self.assertContains(response, f"window.REGION_MAP_ZOOM = {REGION_MAP_ZOOM};")
+        self.assertNotContains(response, "window.DEFAULT_")
+
+    def test_geocoder_bounds_outrank_map_bounds_for_search(self):
+        geocoder_bounds = Polygon.from_bbox((-77.6, 37.4, -77.3, 37.7))
+        geocoder_bounds.srid = 4326
+        Region.objects.filter(pk=self.region.pk).update(geocoder_bounds=geocoder_bounds)
+        self.client.cookies[REGION_COOKIE_NAME] = "Q920"
+        response = self.client.get(reverse("map"))
+        self.assertContains(
+            response, "window.SEARCH_BBOX = [-77.6, 37.4, -77.3, 37.7];"
+        )
 
 
 class HomeRegionBranchTests(TestCase):
@@ -2028,17 +2069,6 @@ class MapDisplayCenterTests(TestCase):
 
     @classmethod
     def setUpTestData(cls):
-        SiteSettings.objects.update_or_create(
-            pk=1,
-            defaults={
-                "default_map_longitude": -1.5,
-                "default_map_latitude": 52.5,
-                "default_search_bbox_west": -2,
-                "default_search_bbox_south": 52,
-                "default_search_bbox_east": -1,
-                "default_search_bbox_north": 53,
-            },
-        )
         item = WikidataItem.objects.bulk_create(
             [WikidataItem(wikidata_id="Q1370", title="Virginia")]
         )[0]
@@ -2049,14 +2079,31 @@ class MapDisplayCenterTests(TestCase):
             wikidata_coordinate_location=Point(-78.6569, 37.4316, srid=4326),
         )
 
-    def test_falls_back_to_site_default_without_a_region(self):
+    WORLD_BOUNDS = "const mapBounds = [-180, -85.0511, 180, 85.0511];"
+
+    def test_opens_on_the_whole_world_without_a_region(self):
         resp = self.client.get(self.url)
-        self.assertContains(resp, "const mapCenter = [-1.5, 52.5];")
+        self.assertContains(resp, self.WORLD_BOUNDS)
+        self.assertContains(resp, "const worldView = true;")
+        self.assertContains(resp, "const mapCenter = [0, 0];")
+
+    def test_zoom_without_a_center_centers_on_null_island(self):
+        resp = self.client.get(self.url, {"zoom_level": "8.5"})
+        self.assertContains(resp, "const mapCenter = [0, 0];")
+        self.assertContains(resp, "zoom: 8.5,")
+        self.assertNotContains(resp, self.WORLD_BOUNDS)
 
     def test_uses_the_selected_region_coordinate(self):
         self.client.cookies[REGION_COOKIE_NAME] = self.region.slug
         resp = self.client.get(self.url)
         self.assertContains(resp, "const mapCenter = [-78.6569, 37.4316];")
+        self.assertContains(resp, "const mapBounds = null;")
+        self.assertContains(resp, "const worldView = false;")
+
+    def test_region_without_bounds_opens_at_the_region_map_zoom(self):
+        self.client.cookies[REGION_COOKIE_NAME] = self.region.slug
+        resp = self.client.get(self.url)
+        self.assertContains(resp, f"zoom: {REGION_MAP_ZOOM},")
 
     def test_custom_centerpoint_outranks_the_wikidata_one(self):
         Region.objects.filter(pk=self.region.pk).update(
@@ -2093,7 +2140,8 @@ class MapDisplayCenterTests(TestCase):
         resp = self.client.get(self.url, {"zoom_level": "8.5"})
         self.assertContains(resp, "const mapBounds = null;")
 
-    def test_unknown_region_slug_falls_back_to_site_default(self):
+    def test_unknown_region_slug_opens_on_the_whole_world(self):
         self.client.cookies[REGION_COOKIE_NAME] = "no-such-region"
         resp = self.client.get(self.url)
-        self.assertContains(resp, "const mapCenter = [-1.5, 52.5];")
+        self.assertContains(resp, self.WORLD_BOUNDS)
+        self.assertContains(resp, "const worldView = true;")

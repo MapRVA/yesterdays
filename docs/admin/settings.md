@@ -16,16 +16,13 @@ This should include links to Yesterdays source code, admin contact information, 
 The administrator should consider putting their email into this field.
 An email is required for Yesterdays to successfully geocode user requests using the Nominatim geocoder.
 
-## Default Map View
+## Maps and geocoding
 
-These are the latitude, longitude, and zoom that maps across the site, including `/map/` and maps in the georeference interfaces, default to.
+There is no sitewide default map view or search area.
+When a visitor has selected a region in the navbar, maps open on that region and the geocoder searches within it; with no region selected, maps show the whole world and the geocoder searches worldwide.
 
-## Default Search Bounding Box
+Each region's starting view and search area are configured on the region itself, at `/admin/regions/region/`:
 
-These north/south/east/west values determine the bounds of data queries, such as with the geocoder.
-It's valuable to limit this bounding box to the region of interest for your instance, so that when users search things like `123 Main Street` they're more likely to find the address they're looking for in their area.
-
-## Default Subject Bounding Box
-
-Subjects are currently updated using Postpass, which benefits from a limited search area.
-This area should be wider than the search bounding box above, and encompass the area within which most subjects will be.
+- **Map bounds** is the initial map viewport. Left blank, maps center on the region's coordinate location at a fixed zoom.
+- **Geocoder bounds** limits Nominatim searches, so that when users search things like `123 Main Street` they're more likely to find the address they're looking for in their area. Left blank, the map bounds are used instead; if both are blank, searches are unbounded.
+  The `detect_addresses` command skips images that have no region, or whose region has neither, rather than geocoding street addresses worldwide.

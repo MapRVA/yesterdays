@@ -62,7 +62,7 @@
                 </div>
                 <div class="card-body border-top">
                     <p class="small mb-2">Use the rectangle tool to draw the initial viewport. Geoman’s edit, drag, and delete tools modify an existing rectangle.</p>
-                    <p class="small text-body-secondary mb-3">The map fits this rectangle to each visitor’s screen. Blank falls back to the centerpoint and sitewide zoom.</p>
+                    <p class="small text-body-secondary mb-3">The map fits this rectangle to each visitor’s screen. Blank falls back to the centerpoint at a fixed zoom.</p>
                     <p class="small mb-2">
                         <strong>Rectangle:</strong>
                         <span class="font-monospace" x-text="mapBoundsLabel"></span>
@@ -89,7 +89,7 @@
                 </div>
                 <div class="card-body border-top">
                     <p class="small mb-2">Use the rectangle tool to set the optional Nominatim search area. Geoman’s edit, drag, and delete tools modify an existing rectangle.</p>
-                    <p class="small text-body-secondary mb-2">Blank reuses the map viewport, then the sitewide search bounds.</p>
+                    <p class="small text-body-secondary mb-2">Blank reuses the map viewport; if that is also blank, searches are unbounded.</p>
                     <p class="small mb-0">
                         <strong>Rectangle:</strong>
                         <span class="font-monospace" x-text="geocoderBoundsLabel"></span>
