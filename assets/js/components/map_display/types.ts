@@ -31,6 +31,8 @@ export interface MapDisplayConfig {
   imageId?: string | null;
   enableScaleVisibility?: boolean;
   includeGeocoder?: boolean;
+  // Search the whole world instead of the region/sitewide search box
+  unboundedSearch?: boolean;
   geolocate?: boolean;
   aerialGeoreference?: Polygon | MultiPolygon | null;
   zoomToContents?: boolean;
@@ -51,6 +53,7 @@ export interface ResolvedMapDisplayConfig {
   imageId: string | null;
   enableScaleVisibility: boolean;
   includeGeocoder: boolean;
+  unboundedSearch: boolean;
   geolocate: boolean;
   aerialGeoreference: Polygon | MultiPolygon | null;
   zoomToContents: boolean;

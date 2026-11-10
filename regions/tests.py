@@ -1235,6 +1235,36 @@ class CurrentRegionContextProcessorTests(TestCase):
         self.assertIsNone(context["region_search_bbox"])
 
 
+class MapPageInitialViewTests(TestCase):
+    """/map/ opens on the whole world unless a region is selected."""
+
+    WORLD_BOUNDS = "const mapBounds = [-180, -85.0511, 180, 85.0511];"
+
+    @classmethod
+    def setUpTestData(cls):
+        item = WikidataItem.objects.create(wikidata_id="Q920", title="Richmond")
+        map_bounds = Polygon.from_bbox((-77.7, 37.3, -77.2, 37.8))
+        map_bounds.srid = 4326
+        cls.region = make_region(
+            short_name="Richmond",
+            slug="richmond",
+            wikidata_item=item,
+            map_bounds=map_bounds,
+        )
+
+    def test_no_region_fits_and_searches_the_whole_world(self):
+        response = self.client.get(reverse("map"))
+        self.assertContains(response, self.WORLD_BOUNDS)
+        self.assertContains(response, "unboundedSearch: true,")
+
+    def test_selected_region_fits_and_searches_its_bounds(self):
+        self.client.cookies[REGION_COOKIE_NAME] = "Q920"
+        response = self.client.get(reverse("map"))
+        self.assertContains(response, "const mapBounds = [-77.7, 37.3, -77.2, 37.8];")
+        self.assertNotContains(response, self.WORLD_BOUNDS)
+        self.assertContains(response, "unboundedSearch: false,")
+
+
 class HomeRegionBranchTests(TestCase):
     """The homepage branches on the navbar region selection."""
 

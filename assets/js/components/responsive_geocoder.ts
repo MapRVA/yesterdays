@@ -39,6 +39,9 @@ interface NominatimFeature {
 export interface ResponsiveGeocoderOptions {
   // Custom API (default: Nominatim using the effective region/site bbox)
   geocoderApi?: MaplibreGeocoderApi;
+  // Box the default API restricts results to. Omitted: the selected region's
+  // box, else the sitewide default. null: search the whole world.
+  searchBbox?: MapBounds | null;
   // Screen width breakpoint in pixels below which the control starts collapsed
   breakpoint?: number;
   placeholder?: string;
@@ -112,9 +115,10 @@ export function addResponsiveGeocoder(
   options: ResponsiveGeocoderOptions = {},
 ): ResponsiveGeocoderHandle {
   const {
+    searchBbox = window.SEARCH_BBOX ?? window.DEFAULT_SEARCH_BBOX,
     geocoderApi = createDefaultGeocoderApi(
       window.ADMIN_EMAIL,
-      window.SEARCH_BBOX ?? window.DEFAULT_SEARCH_BBOX,
+      searchBbox ?? undefined,
     ),
     breakpoint = 1000,
     placeholder = "Search places",

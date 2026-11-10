@@ -18,6 +18,9 @@ Usage:
   Set ignore_region_view=True for a global fallback despite a selected navbar region.
 - Initial viewport from a specific region: pass view_region to start on that region's
   bounds/centerpoint instead of the navbar region's (explicit center/zoom still win).
+- Whole-world fallback: {% include 'images/partials/map_display.html' with world_view=True %}
+  fits the entire world when no navbar region is selected, instead of the SiteSettings
+  default center/zoom, and lets the geocoder search the whole world too.
 - Auto-zoom to contents: {% include 'images/partials/map_display.html' with zoom_to_contents=True %}
 {% endcomment %}
 
@@ -111,6 +114,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const mapBounds = {% if view_region.map_bbox %}{{ view_region.map_bbox }}{% else %}null{% endif %};
     {% elif region_map_bounds and not ignore_region_view %}
     const mapBounds = {{ region_map_bounds }};
+    {% elif world_view and not current_region %}
+    // No region selected: the whole world, to Web Mercator's latitude limits.
+    const mapBounds = [-180, -85.0511, 180, 85.0511];
     {% else %}
     const mapBounds = null;
     {% endif %}
@@ -129,6 +135,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // Scale zoom thresholds live in assets/js/components/map_display/scale_visibility.ts
         enableScaleVisibility: {{ enable_scale_visibility|yesno:"true,false,false" }},
         includeGeocoder: {{ include_geocoder|yesno:"true,false,false" }},
+        // A whole-world view searches the whole world, not the sitewide box
+        unboundedSearch: {% if world_view and not current_region %}true{% else %}false{% endif %},
         geolocate: {{ geolocate|yesno:"true,false,false" }},
         aerialGeoreference: {% if aerial_georeference %}{{ aerial_georeference.polygon.geojson|safe }}{% else %}null{% endif %},
         zoomToContents: {{ zoom_to_contents|yesno:"true,false,false" }},

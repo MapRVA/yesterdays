@@ -41,6 +41,7 @@ export function initializeMap(config: MapDisplayConfig): maplibregl.Map {
     imageId = null,
     enableScaleVisibility = false,
     includeGeocoder = false,
+    unboundedSearch = false,
     geolocate = false,
     aerialGeoreference = null,
     zoomToContents = false,
@@ -60,6 +61,7 @@ export function initializeMap(config: MapDisplayConfig): maplibregl.Map {
     imageId,
     enableScaleVisibility,
     includeGeocoder,
+    unboundedSearch,
     geolocate,
     aerialGeoreference,
     zoomToContents,
@@ -125,7 +127,7 @@ export function initializeMap(config: MapDisplayConfig): maplibregl.Map {
   map.on("load", async function () {
     // Add geocoder if requested
     if (includeGeocoder) {
-      addResponsiveGeocoder(map);
+      addResponsiveGeocoder(map, unboundedSearch ? { searchBbox: null } : {});
     }
 
     await setupMapDataLayers(ctx);
