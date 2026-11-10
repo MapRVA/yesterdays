@@ -1,3 +1,4 @@
+from operator import attrgetter
 from urllib.parse import urlencode
 
 from django.contrib.gis.geos import Point
@@ -463,13 +464,36 @@ def image_detail(request, image_id):
     image = get_object_or_404(
         Image.objects.select_related(
             "region", "collection__region", "collection__source__region", "license"
-        ).prefetch_related("subject_mappings__subject__wikidata_item"),
+        ).prefetch_related(
+            "subject_mappings__subject__wikidata_item",
+            # The template and its timeline walk every georeference, aerial
+            # georeference, validation and comment with their users; prefetch
+            # them so the query count doesn't grow with an image's activity.
+            "georeferences__georeferenced_by",
+            "georeferences__validations__validated_by",
+            "aerial_georeferences__georeferenced_by",
+            "aerial_georeferences__validations__validated_by",
+            "comments__commented_by",
+            "duplicates",
+        ),
         id=image_id,
     )
 
-    # Get current georeferences (cached HTML is used directly in templates)
-    georeference = image.get_georeference()
-    polygonal_georeference = image.get_aerial_georeference() if image.aerial else None
+    # The most recent georeferences, picked from the prefetched rows rather
+    # than get_georeference()/get_aerial_georeference(), which query again.
+    # The template must use these context variables, not the model methods.
+    georeference = max(
+        image.georeferences.all(), key=attrgetter("georeferenced_at"), default=None
+    )
+    polygonal_georeference = (
+        max(
+            image.aerial_georeferences.all(),
+            key=attrgetter("georeferenced_at"),
+            default=None,
+        )
+        if image.aerial
+        else None
+    )
 
     # Get total count of images in this collection
     total_images_in_collection = image.collection.images.count()
@@ -490,7 +514,7 @@ def image_detail(request, image_id):
 
     context = {
         "image": image,
-        "has_georeference": image.georeferences.exists(),
+        "has_georeference": bool(image.georeferences.all()),
         "georeference": georeference,
         "validations": georeference.validations.all() if georeference else [],
         "polygonal_georeference": polygonal_georeference,

@@ -31,17 +31,17 @@
         isAuthenticated: {{ request.user.is_authenticated|yesno:'true,false' }},
         isGeoreferenced: {{ image.is_georeferenced|yesno:'true,false' }},
         isAerial: {{ image.aerial|yesno:'true,false' }},
-        {% if image.is_georeferenced and image.get_georeference %}
+        {% if image.is_georeferenced and georeference %}
         georeference: {
-            id: {{ image.get_georeference.id }},
-            lat: {{ image.get_georeference.point.y|floatformat:6 }},
-            lng: {{ image.get_georeference.point.x|floatformat:6 }},
-            {% if image.get_georeference.direction is not None %}
-            direction: {{ image.get_georeference.direction }},
+            id: {{ georeference.id }},
+            lat: {{ georeference.point.y|floatformat:6 }},
+            lng: {{ georeference.point.x|floatformat:6 }},
+            {% if georeference.direction is not None %}
+            direction: {{ georeference.direction }},
             {% else %}
             direction: null,
             {% endif %}
-            validationUrl: '{% url "images:validate_georeference" image.get_georeference.id %}'
+            validationUrl: '{% url "images:validate_georeference" georeference.id %}'
         },
         {% else %}
         georeference: null,
@@ -158,7 +158,7 @@
                     <div class="card-header">
                         <div class="d-flex justify-content-between align-items-center">
                             <h5 class="mb-0"><i class="fas fa-map me-2"></i>{% if polygonal_georeference and not image.is_georeferenced %}Aerial Georeference{% else %}Current Georeference{% endif %}</h5>
-                            {% if image.get_georeference %}
+                            {% if georeference %}
                             <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox" id="show-other-images-toggle" autocomplete="off">
                                 <label class="form-check-label" for="show-other-images-toggle">
@@ -173,8 +173,8 @@
                     </div>
                     <div class="card-body p-0">
                         <div class="map-container">
-                            {% if image.get_georeference %}
-                                {% include 'images/partials/map_display.html' with image_id=image.id map_id='image-detail-map' height='40vh' center_lat=image.get_georeference.point.y center_lng=image.get_georeference.point.x zoom_level=16 aerial_georeference=polygonal_georeference show_other_images=True current_image_direction=image.get_georeference.direction %}
+                            {% if georeference %}
+                                {% include 'images/partials/map_display.html' with image_id=image.id map_id='image-detail-map' height='40vh' center_lat=georeference.point.y center_lng=georeference.point.x zoom_level=16 aerial_georeference=polygonal_georeference show_other_images=True current_image_direction=georeference.direction %}
                             {% elif polygonal_georeference %}
                                 {% include 'images/partials/map_display.html' with map_id='image-detail-map' height='40vh' aerial_georeference=polygonal_georeference disable_image_points=True %}
                             {% endif %}
@@ -183,24 +183,24 @@
                     {% if image.is_georeferenced %}
                     <div class="card-footer">
                         <div class="row g-2 text-center">
-                            {% if image.get_georeference %}
+                            {% if georeference %}
                             <div class="col-md-4">
                                 <small class="text-muted d-block">Coordinates</small>
-                                <span class="coordinate-display">{{ image.get_georeference.point.y|floatformat:6 }}, {{ image.get_georeference.point.x|floatformat:6 }}</span>
+                                <span class="coordinate-display">{{ georeference.point.y|floatformat:6 }}, {{ georeference.point.x|floatformat:6 }}</span>
                             </div>
-                            {% if image.get_georeference.direction is not None %}
+                            {% if georeference.direction is not None %}
                             <div class="col-md-4">
                                 <small class="text-muted d-block">Direction</small>
                                 <span class="coordinate-display">
-                                    {{ image.get_georeference.direction }}°
-                                    {% if image.get_georeference.direction == 0 %} (N)
-                                    {% elif image.get_georeference.direction == 90 %} (E)
-                                    {% elif image.get_georeference.direction == 180 %} (S)
-                                    {% elif image.get_georeference.direction == 270 %} (W)
-                                    {% elif image.get_georeference.direction >= 315 or image.get_georeference.direction < 45 %} (N)
-                                    {% elif image.get_georeference.direction >= 45 and image.get_georeference.direction < 135 %} (E)
-                                    {% elif image.get_georeference.direction >= 135 and image.get_georeference.direction < 225 %} (S)
-                                    {% elif image.get_georeference.direction >= 225 and image.get_georeference.direction < 315 %} (W)
+                                    {{ georeference.direction }}°
+                                    {% if georeference.direction == 0 %} (N)
+                                    {% elif georeference.direction == 90 %} (E)
+                                    {% elif georeference.direction == 180 %} (S)
+                                    {% elif georeference.direction == 270 %} (W)
+                                    {% elif georeference.direction >= 315 or georeference.direction < 45 %} (N)
+                                    {% elif georeference.direction >= 45 and georeference.direction < 135 %} (E)
+                                    {% elif georeference.direction >= 135 and georeference.direction < 225 %} (S)
+                                    {% elif georeference.direction >= 225 and georeference.direction < 315 %} (W)
                                     {% endif %}
                                 </span>
                             </div>
@@ -437,9 +437,9 @@
                                 <dt class="col-sm-5">By:</dt>
                                 <dd class="col-sm-7">
                                     <i class="fas fa-user me-1"></i>
-                                    {% if image.get_georeference.georeferenced_by %}
-                                        <a href="{% url 'user_profile' image.get_georeference.georeferenced_by.get_display_name %}" class="text-decoration-none">
-                                            {{ image.get_georeference.georeferenced_by.get_display_name }}
+                                    {% if georeference.georeferenced_by %}
+                                        <a href="{% url 'user_profile' georeference.georeferenced_by.get_display_name %}" class="text-decoration-none">
+                                            {{ georeference.georeferenced_by.get_display_name }}
                                         </a>
                                     {% else %}
                                         Anonymous
@@ -448,7 +448,7 @@
 
                                 <dt class="col-sm-5">Date:</dt>
                                 <dd class="col-sm-7">
-                                    <i class="fas fa-calendar me-1"></i>{{ image.get_georeference.georeferenced_at|date:"M j, Y" }}
+                                    <i class="fas fa-calendar me-1"></i>{{ georeference.georeferenced_at|date:"M j, Y" }}
                                 </dd>
 
                                 <dt class="col-sm-5">Total:</dt>
@@ -460,15 +460,15 @@
 
                                 <dt class="col-sm-5">Confidence:</dt>
                                 <dd class="col-sm-7">
-                                    <span class="badge {% if image.get_georeference.confidence == 'high' %}bg-success{% elif image.get_georeference.confidence == 'medium' %}text-bg-warning{% elif image.get_georeference.confidence == 'low' %}bg-danger{% else %}bg-secondary{% endif %}">
-                                        {{ image.get_georeference.confidence|capfirst }}
+                                    <span class="badge {% if georeference.confidence == 'high' %}bg-success{% elif georeference.confidence == 'medium' %}text-bg-warning{% elif georeference.confidence == 'low' %}bg-danger{% else %}bg-secondary{% endif %}">
+                                        {{ georeference.confidence|capfirst }}
                                     </span>
                                 </dd>
 
                                 <dt class="col-sm-5">Validations:</dt>
                                 <dd class="col-sm-7">
-                                    {% with validation_counts=image.get_georeference.get_validation_counts %}
-                                        {% if image.get_georeference.validation_count > 0 %}
+                                    {% with validation_counts=georeference.get_validation_counts %}
+                                        {% if georeference.validation_count > 0 %}
                                             <div class="badge-group d-flex flex-wrap">
                                                 {% if validation_counts.correct > 0 %}
                                                     <span class="badge bg-success" title="{{ validation_counts.correct }} correct validation{{ validation_counts.correct|pluralize }}">
@@ -546,7 +546,7 @@
                             </a>
                         {% elif image.is_georeferenced %}
                             {% if request.user.is_authenticated %}
-                                {% if image.get_georeference.georeferenced_by and request.user == image.get_georeference.georeferenced_by %}
+                                {% if georeference.georeferenced_by and request.user == georeference.georeferenced_by %}
                                     <div class="alert alert-success mb-3">
                                         <i class="fas fa-user-check me-2"></i>
                                         You submitted the current georeference.
@@ -802,8 +802,8 @@
 </div>
 
 <!-- Validation Modal -->
-{% if image.is_georeferenced and request.user.is_authenticated and image.get_georeference and image.get_georeference.id %}
-    {% if not image.get_georeference.georeferenced_by or request.user != image.get_georeference.georeferenced_by %}
+{% if image.is_georeferenced and request.user.is_authenticated and georeference and georeference.id %}
+    {% if not georeference.georeferenced_by or request.user != georeference.georeferenced_by %}
 <div class="modal fade" id="validateModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">

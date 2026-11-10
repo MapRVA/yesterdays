@@ -31,6 +31,7 @@ from django.test import (
     TransactionTestCase,
     override_settings,
 )
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.text import slugify
@@ -44,6 +45,7 @@ from images import clip_client, policies
 from images.admin import SiteSettingsAdminForm
 from images.models import (
     AerialGeoreference,
+    AerialGeoreferenceValidation,
     Album,
     AlbumImage,
     Collection,
@@ -5304,3 +5306,114 @@ class SimilarImagesRegionTests(TestCase):
         self.assertIsNone(response.context["browse_region"])
         self.assertFalse(response.context["region_fallback"])
         self.assertNotContains(response, "of 4 images in")
+
+
+class ImageDetailQueryCountTests(TestCase):
+    """The image detail page is the most crawled page on the site, so its
+    query count must not grow with an image's georeferences, validations,
+    comments or duplicates."""
+
+    SQUARE = Polygon(
+        (
+            (-77.44, 37.53),
+            (-77.43, 37.53),
+            (-77.43, 37.54),
+            (-77.44, 37.54),
+            (-77.44, 37.53),
+        ),
+        srid=4326,
+    )
+
+    @classmethod
+    def setUpTestData(cls):
+        source = Source.objects.create(
+            name="Detail source",
+            slug="detail-source",
+            url="https://example.com/detail",
+            description="",
+        )
+        cls.collection = Collection.objects.create(
+            source=source, name="Detail collection", slug="detail-collection"
+        )
+        cls.image = Image.objects.create(
+            collection=cls.collection,
+            title="Detail image",
+            permalink="https://img.example.com/detail.jpg",
+        )
+        cls.url = reverse("images:image_detail", args=[cls.image.id])
+        cls.user_count = 0
+
+    def make_user(self):
+        type(self).user_count += 1
+        return User.objects.create_user(f"detail_user_{self.user_count}")
+
+    def add_activity(self, hours_ago):
+        """One more round of everything the page renders per item."""
+        when = timezone.now() - datetime.timedelta(hours=hours_ago)
+        georeference = Georeference.objects.create(
+            image=self.image,
+            point=Point(-77.43, 37.54, srid=4326),
+            confidence="high",
+            direction=90,
+            georeferenced_by=self.make_user(),
+        )
+        Georeference.objects.filter(pk=georeference.pk).update(georeferenced_at=when)
+        aerial = AerialGeoreference.objects.create(
+            image=self.image,
+            polygon=self.SQUARE,
+            confidence="medium",
+            georeferenced_by=self.make_user(),
+        )
+        for _ in range(2):
+            GeoreferenceValidation.objects.create(
+                georeference=georeference,
+                validated_by=self.make_user(),
+                validation="correct",
+            )
+            AerialGeoreferenceValidation.objects.create(
+                georeference=aerial,
+                validated_by=self.make_user(),
+                validation="uncertain",
+            )
+        Comment.objects.create(
+            image=self.image, commented_by=self.make_user(), text="A comment"
+        )
+        Image.objects.create(
+            collection=self.collection,
+            title=f"Duplicate {hours_ago}",
+            permalink=f"https://img.example.com/duplicate-{hours_ago}.jpg",
+            duplicate_of=self.image,
+        )
+        return georeference
+
+    def count_queries(self):
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        return len(queries), response
+
+    def test_query_count_does_not_grow_with_activity(self):
+        self.add_activity(hours_ago=10)
+        baseline, _ = self.count_queries()
+
+        for hours_ago in (9, 8, 7):
+            self.add_activity(hours_ago)
+        busier, response = self.count_queries()
+
+        self.assertEqual(busier, baseline)
+        self.assertContains(response, "Timeline")
+        self.assertContains(response, "4 images marked as duplicates of this one")
+
+    def test_page_shows_the_most_recent_georeference(self):
+        self.add_activity(hours_ago=5)
+        latest = self.add_activity(hours_ago=1)
+        self.add_activity(hours_ago=3)
+
+        _, response = self.count_queries()
+
+        self.assertEqual(response.context["georeference"], latest)
+        self.assertContains(response, f"id: {latest.id},")
+        self.assertContains(
+            response,
+            reverse("images:validate_georeference", args=[latest.id]),
+        )
