@@ -16,6 +16,8 @@ Usage:
 - Scale-based visibility: {% include 'images/partials/map_display.html' with enable_scale_visibility=True %}
 - Regional source/collection maps: pass map_region explicitly to filter image tiles.
   Set ignore_region_view=True for a global fallback despite a selected navbar region.
+- Initial viewport from a specific region: pass view_region to start on that region's
+  bounds/centerpoint instead of the navbar region's (explicit center/zoom still win).
 - Auto-zoom to contents: {% include 'images/partials/map_display.html' with zoom_to_contents=True %}
 {% endcomment %}
 
@@ -82,7 +84,8 @@ document.addEventListener('DOMContentLoaded', function() {
     {% endif %}
 
     // Map center, in precedence order: an explicit center passed by the
-    // caller, then the region picked in the navbar (its admin-set
+    // caller, then a view_region passed by the caller, then the region
+    // picked in the navbar (its admin-set
     // centerpoint, else its Wikidata P625 coordinate — Region resolves
     // that), then the sitewide default from SiteSettings. Compared
     // against None, not truthiness, so a deliberate 0 still counts.
@@ -92,6 +95,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // with a comma decimal separator would silently split the array.
     {% if center_lng is not None and center_lat is not None %}
     const mapCenter = [{{ center_lng|unlocalize }}, {{ center_lat|unlocalize }}];
+    {% elif view_region %}
+    const mapCenter = [{{ view_region.coordinate_location.x|unlocalize }}, {{ view_region.coordinate_location.y|unlocalize }}];
     {% elif current_region and not ignore_region_view %}
     const mapCenter = [{{ current_region.coordinate_location.x|unlocalize }}, {{ current_region.coordinate_location.y|unlocalize }}];
     {% else %}
@@ -102,6 +107,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // setting. Explicit content and embed parameters retain precedence.
     {% if center_lng is not None and center_lat is not None or zoom_level is not None %}
     const mapBounds = null;
+    {% elif view_region %}
+    const mapBounds = {% if view_region.map_bbox %}{{ view_region.map_bbox }}{% else %}null{% endif %};
     {% elif region_map_bounds and not ignore_region_view %}
     const mapBounds = {{ region_map_bounds }};
     {% else %}

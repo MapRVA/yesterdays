@@ -148,7 +148,7 @@
                     </h5>
                 </div>
                 <div class="card-body p-0">
-                    {% include 'images/partials/map_display.html' with collection_id=collection.id map_id='collection-map' height='60vh' zoom_to_contents=True map_region=browse_region ignore_region_view=region_fallback %}
+                    {% include 'images/partials/map_display.html' with collection_id=collection.id map_id='collection-map' height='60vh' zoom_to_contents=True map_region=browse_region view_region=map_view_region ignore_region_view=region_fallback %}
                 </div>
             </div>
         {% endif %}

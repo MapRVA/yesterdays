@@ -1814,6 +1814,36 @@ class CollectionDetailRegionFilterTests(TestCase):
             "Collection has no images in your selected region. Showing all images from Collection.",
         )
 
+    def test_map_view_defaults_to_collection_region_then_source_region(self):
+        self.assertIsNone(
+            self.client.get(self.collection.get_absolute_url()).context[
+                "map_view_region"
+            ]
+        )
+        self.source.region = self.other
+        self.source.save()
+        response = self.client.get(self.collection.get_absolute_url())
+        self.assertEqual(response.context["map_view_region"], self.other)
+        self.collection.region = self.state
+        self.collection.save()
+        response = self.client.get(self.collection.get_absolute_url())
+        self.assertEqual(response.context["map_view_region"], self.state)
+
+    def test_map_view_prefers_browse_region_over_collection_region(self):
+        self.collection.region = self.other
+        self.collection.save()
+        self.client.cookies[REGION_COOKIE_NAME] = self.city.slug
+        response = self.client.get(self.collection.get_absolute_url())
+        self.assertEqual(response.context["map_view_region"], self.city)
+
+    def test_map_view_uses_collection_region_on_fallback(self):
+        self.collection.region = self.other
+        self.collection.save()
+        self.client.cookies[REGION_COOKIE_NAME] = self.empty.slug
+        response = self.client.get(self.collection.get_absolute_url())
+        self.assertTrue(response.context["region_fallback"])
+        self.assertEqual(response.context["map_view_region"], self.other)
+
     def test_empty_collection_keeps_empty_state_and_banner(self):
         self.collection.images.all().delete()
         self.refresh_stats()

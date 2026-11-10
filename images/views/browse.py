@@ -307,7 +307,7 @@ def collection_detail(request, source_slug, collection_slug):
     """Detail view for a specific public collection"""
     source = get_object_or_404(Source, slug=source_slug, public=True)
     collection = get_object_or_404(
-        Collection.objects.select_related("stats"),
+        Collection.objects.select_related("stats", "region", "source__region"),
         source=source,
         slug=collection_slug,
         public=True,
@@ -393,6 +393,10 @@ def collection_detail(request, source_slug, collection_slug):
         "collection": collection,
         "browse_region": region,
         "region_fallback": region_fallback,
+        # Where the map starts before zooming to its contents: the browse
+        # region when one applies, else the collection's own (inherited
+        # from its source when unset), rather than the sitewide default.
+        "map_view_region": region or collection.effective_region,
         "georeference_url": georeference_url,
         "page_obj": page_obj,
         "total_images": total_images,
