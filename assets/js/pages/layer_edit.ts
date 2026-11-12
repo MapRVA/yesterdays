@@ -47,6 +47,8 @@ interface LayerEditor {
   _setStatus(status: PreviewStatus, text?: string): void;
 }
 
+const BBOX_PLACEHOLDER = "{bbox-epsg-3857}";
+
 // Mirrors MapLayer.url_shape_error() closely enough to avoid firing tile
 // requests that can't succeed. The model remains the authority on save.
 function urlShapeError(type: MapLayerType, url: string): string | null {
@@ -55,15 +57,16 @@ function urlShapeError(type: MapLayerType, url: string): string | null {
   if (!/^https?:\/\//.test(trimmed)) return "Waiting for a valid tile URL";
   switch (type) {
     case "xyz":
-      return ["{z}", "{x}", "{y}"].every((p) => trimmed.includes(p))
+      return trimmed.includes(BBOX_PLACEHOLDER) ||
+        ["{z}", "{x}", "{y}"].every((p) => trimmed.includes(p))
         ? null
-        : "Waiting for a valid tile URL ({z}/{x}/{y} placeholders required)";
+        : `Waiting for a valid tile URL ({z}/{x}/{y} or ${BBOX_PLACEHOLDER} placeholders required)`;
     case "pmtiles":
       return trimmed.endsWith(".pmtiles")
         ? null
         : "Waiting for a valid tile URL (must end in .pmtiles)";
     case "style":
-      return trimmed.includes("{z}")
+      return trimmed.includes("{z}") || trimmed.includes(BBOX_PLACEHOLDER)
         ? "Waiting for a valid style URL (not a tile template)"
         : null;
   }

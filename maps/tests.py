@@ -19,6 +19,11 @@ from .models import LayerCollection, MapLayer
 
 PMTILES_URL = "https://example.com/tiles/richmond-1876.pmtiles"
 XYZ_URL = "https://example.com/tiles/{z}/{x}/{y}.png"
+XYZ_BBOX_URL = (
+    "https://example.com/arcgis/rest/services/Imagery/ImageServer/exportImage"
+    "?f=image&format=jpg&bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857"
+    "&size=256,256"
+)
 STYLE_URL = "https://example.com/styles/basemap.json"
 MIN_ZOOM = 10
 TEST_POINT = Point(-77.4366667, 37.5408333, srid=4326)
@@ -441,6 +446,20 @@ class MapLayerCleanTests(TestCase):
             type="xyz",
             url="https://example.com/{z}/{x}",
         )
+        with self.assertRaises(ValidationError) as ctx:
+            layer.full_clean()
+        self.assertIn("url", ctx.exception.message_dict)
+
+    def test_xyz_url_accepts_bbox_placeholder(self):
+        MapLayer(
+            name="Imagery",
+            slug="imagery",
+            type="xyz",
+            url=XYZ_BBOX_URL,
+        ).full_clean()
+
+    def test_style_url_must_not_be_a_bbox_template(self):
+        layer = MapLayer(name="Base", slug="base", type="style", url=XYZ_BBOX_URL)
         with self.assertRaises(ValidationError) as ctx:
             layer.full_clean()
         self.assertIn("url", ctx.exception.message_dict)

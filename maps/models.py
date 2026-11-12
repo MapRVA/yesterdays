@@ -7,6 +7,9 @@ from django.db import models
 from django.urls import reverse
 from django.utils.text import slugify
 
+# MapLibre substitutes each tile's EPSG:3857 bounds for this token.
+BBOX_PLACEHOLDER = "{bbox-epsg-3857}"
+
 
 def validate_layer_polygon(polygon):
     if polygon is None:
@@ -236,11 +239,17 @@ class MapLayer(models.Model):
         if not url:
             return None
         if layer_type == "xyz":
+            # MapLibre fills either tile coordinates or the tile's Web Mercator
+            # bounds; the latter suits WMS and ArcGIS exportImage endpoints.
+            if BBOX_PLACEHOLDER in url:
+                return None
             missing = [p for p in ("{z}", "{x}", "{y}") if p not in url]
             if missing:
                 return (
                     "XYZ tile URLs must contain the {z}, {x} and {y} placeholders "
-                    f"(missing {', '.join(missing)})."
+                    f"(missing {', '.join(missing)}), or a {BBOX_PLACEHOLDER} "
+                    "placeholder for bounding-box endpoints such as WMS or "
+                    "ArcGIS exportImage."
                 )
         elif layer_type == "pmtiles":
             if not url.endswith(".pmtiles"):
@@ -249,7 +258,7 @@ class MapLayer(models.Model):
                     "are added automatically."
                 )
         elif layer_type == "style":
-            if "{z}" in url:
+            if "{z}" in url or BBOX_PLACEHOLDER in url:
                 return (
                     "MapLibre Style URLs must point at a style document, "
                     "not a tile template."
