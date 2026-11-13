@@ -497,6 +497,55 @@ class MapLayerCleanTests(TestCase):
             min_zoom=MIN_ZOOM,
         ).full_clean()
 
+    def test_style_layer_accepts_image_handler(self):
+        MapLayer(
+            name="Americana",
+            slug="americana",
+            type="style",
+            url=STYLE_URL,
+            image_handler="americana",
+        ).full_clean()
+
+    def test_image_handler_requires_style_type(self):
+        layer = MapLayer(
+            name="Streets",
+            slug="streets",
+            type="xyz",
+            url=XYZ_URL,
+            image_handler="americana",
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            layer.full_clean()
+        self.assertIn("image_handler", ctx.exception.message_dict)
+
+    def test_unknown_image_handler_is_rejected(self):
+        layer = MapLayer(
+            name="Base",
+            slug="base",
+            type="style",
+            url=STYLE_URL,
+            image_handler="unknown",
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            layer.full_clean()
+        self.assertIn("image_handler", ctx.exception.message_dict)
+
+    def test_payload_includes_image_handler_only_when_set(self):
+        MapLayer.objects.create(
+            name="Americana",
+            slug="americana",
+            type="style",
+            url=STYLE_URL,
+            image_handler="americana",
+        )
+        MapLayer.objects.create(name="Streets", slug="streets", type="xyz", url=XYZ_URL)
+        layers = {
+            layer["slug"]: layer
+            for layer in _build_map_layers_data()["primary_layers"]
+        }
+        self.assertEqual(layers["americana"]["image_handler"], "americana")
+        self.assertNotIn("image_handler", layers["streets"])
+
     def test_style_in_collection_is_rejected(self):
         layer = MapLayer(
             name="Base",
@@ -757,6 +806,32 @@ class MapLayerFormTests(TestCase):
         self.assertTrue(form.is_valid(), form.errors)
         self.assertIsNone(form.save().polygon)
         self.assertIsNone(form.instance.min_zoom)
+
+    def test_global_style_keeps_image_handler(self):
+        form = MapLayerForm(
+            self._data(
+                slug="americana",
+                collection="",
+                type="style",
+                url=STYLE_URL,
+                image_handler="americana",
+            )
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.save().image_handler, "americana")
+
+    def test_hidden_image_handler_is_dropped(self):
+        # The template hides the handler for non-style and collection layers,
+        # so a choice left over from switching type is ignored, not an error.
+        cases = {
+            "raster": {"slug": "global", "collection": "", "type": "xyz", "url": XYZ_URL},
+            "collection": {"slug": "sheet"},
+        }
+        for label, overrides in cases.items():
+            with self.subTest(label):
+                form = MapLayerForm(self._data(image_handler="americana", **overrides))
+                self.assertTrue(form.is_valid(), form.errors)
+                self.assertEqual(form.cleaned_data["image_handler"], "")
 
     def test_bound_polygon_survives_other_errors(self):
         polygon = Polygon.from_bbox((-77.48, 37.50, -77.40, 37.58))

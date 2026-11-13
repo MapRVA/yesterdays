@@ -9,6 +9,8 @@ import maplibregl from "maplibre-gl";
 import type { FeatureCollection, MultiPolygon, Polygon } from "geojson";
 import { imageGrid } from "../components/image_grid";
 import { initialMapStyle } from "../components/layer_control";
+import { styleImageHandlers } from "../components/layer_control/image_handlers";
+import { initialPrimaryLayer } from "../components/layer_control/initial_style";
 import { primaryColor } from "../components/map_display/colors";
 import "../components/map_display/pmtiles_protocol";
 import { initialMapView } from "../constants/map";
@@ -158,6 +160,8 @@ window.Alpine.data("aerialsPage", function (): AerialsPage {
         ...initialMapView(),
       });
       map = newMap;
+      // No LayerControl here, so attach the base layer's image handler directly
+      void styleImageHandlers(newMap).use(initialPrimaryLayer());
       newMap.addControl(new maplibregl.NavigationControl());
       newMap.addControl(new maplibregl.FullscreenControl());
 

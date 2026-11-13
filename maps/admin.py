@@ -70,7 +70,10 @@ class MapLayerAdmin(admin.ModelAdmin):
                 )
             },
         ),
-        ("Map Data", {"fields": ("type", "url", "attribution", "extent")}),
+        (
+            "Map Data",
+            {"fields": ("type", "url", "image_handler", "attribution", "extent")},
+        ),
         ("Links", {"fields": ("source_link", "iiif_link", "oim_link")}),
         (
             "System Information",

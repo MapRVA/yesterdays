@@ -34,6 +34,10 @@ import {
   setupRasterBaseLayer,
 } from "./base_layers";
 import {
+  styleImageHandlers,
+  type ImageHandlerSource,
+} from "./image_handlers";
+import {
   DEFAULT_SIMPLE_RADIUS,
   updateImageLayerVisibility,
   updateSimpleCircleRadius,
@@ -90,6 +94,7 @@ export class LayerControl implements IControl {
   private currentBaseLayer: string | null = null;
   private currentOverlay: OverlayLayerConfig | null = null;
   private readonly initialStyle: string | StyleSpecification;
+  private readonly initialLayer: PrimaryLayerData | null;
   // True while a non-initial MapLibre style is loaded, so the next base layer
   // change knows it has to swap the initial style back in first
   private nonDefaultStyleActive = false;
@@ -100,6 +105,9 @@ export class LayerControl implements IControl {
   // True from the moment a style swap starts until the map settles, so the
   // control button reports the swap instead of the layer it is switching to
   private swapping = false;
+  // Bumped by every style swap, so a swap still waiting on its image handler
+  // can tell it has been superseded by a later one
+  private swapGeneration = 0;
 
   private map: MapLibreMap | undefined;
   private mapId = "";
@@ -113,6 +121,7 @@ export class LayerControl implements IControl {
 
   constructor(options: LayerControlOptions = {}) {
     this.initialStyle = initialMapStyle();
+    this.initialLayer = initialPrimaryLayer();
     this.options = {
       showImageLayerToggle: options.showImageLayerToggle ?? false,
       overlayLayerIds: options.overlayLayerIds ?? [],
@@ -125,6 +134,9 @@ export class LayerControl implements IControl {
   onAdd(map: MapLibreMap): HTMLElement {
     this.map = map;
     this.mapId = map.getContainer().id;
+    // The initial style was handed to the map's constructor and is still
+    // loading, so its image handler is in place before tiles need images.
+    void styleImageHandlers(map).use(this.initialLayer);
 
     this.container = document.createElement("div");
     this.container.className =
@@ -303,7 +315,7 @@ export class LayerControl implements IControl {
           type: "style",
           url: layer.url,
           setupLayer: () => {},
-          activate: () => this.activateStyle(layer.url),
+          activate: () => this.activateStyle(layer),
           deactivate: () => {},
         };
       } else {
@@ -419,7 +431,9 @@ export class LayerControl implements IControl {
     if (this.nonDefaultStyleActive) {
       // Returning from a non-initial style — restore it, then show the raster
       this.nonDefaultStyleActive = false;
-      this.swapStyle(this.initialStyle, () => this.showRasterBase(layerId));
+      this.swapStyle(this.initialStyle, this.initialLayer, () =>
+        this.showRasterBase(layerId),
+      );
       return;
     }
     this.showRasterBase(layerId);
@@ -446,7 +460,7 @@ export class LayerControl implements IControl {
     if (this.nonDefaultStyleActive) {
       // Returning from a non-initial style — restore the initial style
       this.nonDefaultStyleActive = false;
-      this.swapStyle(this.initialStyle);
+      this.swapStyle(this.initialStyle, this.initialLayer);
       return;
     }
 
@@ -464,24 +478,23 @@ export class LayerControl implements IControl {
     );
   }
 
-  private activateStyle(styleUrl: string): void {
+  private activateStyle(layer: PrimaryLayerData): void {
     this.nonDefaultStyleActive = true;
-    this.swapStyle(styleUrl);
+    this.swapStyle(layer.url, layer);
   }
 
   /**
    * Swap the map style and restore the raster base layers and the active tile
-   * overlay, both of which setStyle() destroys.
+   * overlay, both of which setStyle() destroys. `imageSource` is the base
+   * layer whose image handler (if any) the new style needs.
    */
   private swapStyle(
     style: string | StyleSpecification,
+    imageSource: ImageHandlerSource | null,
     afterRestore?: () => void,
   ): void {
     const map = this.map;
     if (!map) return;
-
-    // Captured before the swap, since switching resets the overlay state
-    const savedOverlay = this.currentOverlay;
 
     // Rebuilding a style's layers blocks the main thread for seconds on large
     // styles; report that on the button before the freeze starts
@@ -489,6 +502,29 @@ export class LayerControl implements IControl {
       this.swapping = swapping;
       this.renderLayerLabel();
     });
+
+    const generation = ++this.swapGeneration;
+    const handlerReady = styleImageHandlers(map).use(imageSource);
+    if (!imageSource?.image_handler) {
+      this.applyStyle(map, style, afterRestore);
+      return;
+    }
+    // The handler must be in place before the new style asks for images. It
+    // loads once per map and style, so only the first switch waits on it.
+    void handlerReady.then(() => {
+      if (generation === this.swapGeneration && this.map === map) {
+        this.applyStyle(map, style, afterRestore);
+      }
+    });
+  }
+
+  private applyStyle(
+    map: MapLibreMap,
+    style: string | StyleSpecification,
+    afterRestore?: () => void,
+  ): void {
+    // Captured before the swap, since switching resets the overlay state
+    const savedOverlay = this.currentOverlay;
 
     map.setStyle(style);
 

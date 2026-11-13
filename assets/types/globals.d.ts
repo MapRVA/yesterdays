@@ -1,5 +1,6 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type {
+  ImageHandlerKey,
   MapLayersData,
   MapLayerType,
 } from "../js/components/layer_control/types";
@@ -54,6 +55,7 @@ declare global {
     name: string;
     type: MapLayerType;
     url: string;
+    imageHandler: ImageHandlerKey | "";
     attribution: string;
     collection: string;
   }

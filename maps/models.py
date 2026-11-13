@@ -10,6 +10,14 @@ from django.utils.text import slugify
 # MapLibre substitutes each tile's EPSG:3857 bounds for this token.
 BBOX_PLACEHOLDER = "{bbox-epsg-3857}"
 
+# Frontend handlers for images a MapLibre style asks for at runtime (its
+# "styleimagemissing" events). Each key must match an entry in
+# assets/js/components/layer_control/image_handlers/index.ts.
+IMAGE_HANDLER_CHOICES = [
+    ("", "None"),
+    ("americana", "OpenStreetMap Americana (route shields and POI icons)"),
+]
+
 
 def validate_layer_polygon(polygon):
     if polygon is None:
@@ -82,6 +90,17 @@ class MapLayer(models.Model):
     )
     url = models.URLField(
         help_text="URL to the tile source (PMTiles file or XYZ endpoint)"
+    )
+    image_handler = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        choices=IMAGE_HANDLER_CHOICES,
+        help_text=(
+            "Draws images the style generates at runtime instead of loading "
+            "them from its sprite, such as route shields. Only applies to "
+            "MapLibre Style layers."
+        ),
     )
     source_link = models.URLField(
         blank=True, help_text="Optional URL to the source of this map layer"
@@ -224,6 +243,15 @@ class MapLayer(models.Model):
                         "is_default": "Only Global layers (without a collection) can be the default."
                     }
                 )
+
+        if self.image_handler and self.type != "style":
+            raise ValidationError(
+                {
+                    "image_handler": (
+                        "Image handlers only apply to MapLibre Style layers."
+                    )
+                }
+            )
 
         url_error = self.url_shape_error(self.type, self.url)
         if url_error:

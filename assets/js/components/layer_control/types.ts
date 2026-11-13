@@ -3,6 +3,10 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 // Layer kinds from maps.models.MapLayer.TYPE_CHOICES.
 export type MapLayerType = "pmtiles" | "xyz" | "style";
 
+// Runtime image handlers from maps.models.IMAGE_HANDLER_CHOICES (blank there
+// means none, and is omitted from the payload).
+export type ImageHandlerKey = "americana";
+
 // Shape of window.MAP_LAYERS_DATA, serialized into templates/base.html by
 // images/context_processors.py::_build_map_layers_data(), and the collection
 // metadata fetched from its overlay_tiles as the viewport changes.
@@ -13,6 +17,7 @@ export interface PrimaryLayerData {
   url: string;
   is_default: boolean;
   attribution?: string;
+  image_handler?: ImageHandlerKey;
 }
 
 export interface OverlayLayerData {

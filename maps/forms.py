@@ -43,7 +43,7 @@ class MapLayerForm(forms.ModelForm):
             "Basic Information",
             ("name", "slug", "collection", "region", "order"),
         ),
-        ("Map Data", ("type", "url")),
+        ("Map Data", ("type", "url", "image_handler")),
         ("Minimum Zoom", ("min_zoom",)),
         (
             "Additional Metadata",
@@ -61,6 +61,7 @@ class MapLayerForm(forms.ModelForm):
             "order",
             "type",
             "url",
+            "image_handler",
             "attribution",
             "description",
             "source_link",
@@ -112,6 +113,11 @@ class MapLayerForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
+        # The template hides the handler unless a Global style layer is being
+        # edited, so drop a stale choice left over from switching type or
+        # collection rather than reporting an error on a hidden field.
+        if cleaned.get("type") != "style" or cleaned.get("collection") is not None:
+            cleaned["image_handler"] = ""
         if (
             cleaned.get("collection") is not None
             and "polygon" in cleaned

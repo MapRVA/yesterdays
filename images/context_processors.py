@@ -23,6 +23,8 @@ def _build_map_layers_data():
         }
         if layer.attribution:
             layer_data["attribution"] = layer.attribution
+        if layer.image_handler:
+            layer_data["image_handler"] = layer.image_handler
         primary_layers.append(layer_data)
 
     return {

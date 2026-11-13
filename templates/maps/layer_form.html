@@ -10,6 +10,7 @@
         name: "{{ form.name.value|default:''|escapejs }}",
         type: "{{ form.type.value|default:'pmtiles'|escapejs }}",
         url: "{{ form.url.value|default:''|escapejs }}",
+        imageHandler: "{{ form.image_handler.value|default:''|escapejs }}",
         collection: "{{ form.collection.value|default:''|escapejs }}",
         attribution: "{{ form.attribution.value|default:''|escapejs }}"
     };
@@ -47,7 +48,7 @@
                     <div class="card-header"><h2 class="h6 mb-0">{{ title }}</h2></div>
                     <div class="card-body">
                         {% for field in fields %}
-                            <div class="mb-3">
+                            <div class="mb-3"{% if field.name == 'image_handler' %} x-show="type === 'style' && !collection" x-cloak{% endif %}>
                                 {% if field.field.widget.input_type == 'checkbox' %}
                                     <div class="form-check">
                                         {{ field }}
@@ -65,6 +66,12 @@
                                         </select>
                                     {% elif field.name == 'type' %}
                                         <select name="{{ field.html_name }}" id="{{ field.id_for_label }}" class="form-select" x-model="type" @change="render()">
+                                            {% for value, label in field.field.choices %}
+                                                <option value="{{ value }}">{{ label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    {% elif field.name == 'image_handler' %}
+                                        <select name="{{ field.html_name }}" id="{{ field.id_for_label }}" class="form-select" x-model="imageHandler" @change="render()">
                                             {% for value, label in field.field.choices %}
                                                 <option value="{{ value }}">{{ label }}</option>
                                             {% endfor %}

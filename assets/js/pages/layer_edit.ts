@@ -11,7 +11,11 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 import type { Polygon } from "geojson";
 import { LayerExtentEditor } from "../components/layer_extent_editor";
 import { LayerMinZoomPicker } from "../components/layer_min_zoom_picker";
-import type { MapLayerType } from "../components/layer_control/types";
+import { styleImageHandlers } from "../components/layer_control/image_handlers";
+import type {
+  ImageHandlerKey,
+  MapLayerType,
+} from "../components/layer_control/types";
 import {
   onColorSchemeChange,
   protomapsStyleUrl,
@@ -29,6 +33,7 @@ type PreviewStatus = "ok" | "waiting" | "error";
 interface LayerEditor {
   type: MapLayerType;
   url: string;
+  imageHandler: ImageHandlerKey | "";
   attribution: string;
   collection: string;
   minZoom: number | null;
@@ -43,7 +48,7 @@ interface LayerEditor {
   prepareSubmit(event: SubmitEvent): void;
   destroy(): void;
   _syncZoomPicker(): void;
-  _buildMap(style: string): MapLibreMap;
+  _buildMap(style: string, imageHandler: ImageHandlerKey | ""): MapLibreMap;
   _setStatus(status: PreviewStatus, text?: string): void;
 }
 
@@ -84,6 +89,7 @@ document.addEventListener("alpine:init", () => {
     let editor: LayerExtentEditor | null = null;
     let zoomPicker: LayerMinZoomPicker | null = null;
     let styleUrl: string | null = null;
+    let previewImageHandler: ImageHandlerKey | "" = "";
     let polygon = polygonData.polygon;
     let hasCollection = Boolean(config?.collection);
     const minZoomInput = document.querySelector<HTMLInputElement>(
@@ -126,6 +132,7 @@ document.addEventListener("alpine:init", () => {
     return {
       type: config?.type ?? "pmtiles",
       url: config?.url ?? "",
+      imageHandler: config?.imageHandler ?? "",
       attribution: config?.attribution ?? "",
       collection: config?.collection ?? "",
       minZoom: initialMinZoom,
@@ -146,7 +153,7 @@ document.addEventListener("alpine:init", () => {
         });
       },
 
-      _buildMap(style: string): MapLibreMap {
+      _buildMap(style: string, imageHandler: ImageHandlerKey | ""): MapLibreMap {
         const container = document.getElementById("layer-preview-map");
         if (!container) throw new Error("Missing #layer-preview-map");
         const map = new maplibregl.Map({
@@ -154,6 +161,12 @@ document.addEventListener("alpine:init", () => {
           style,
           ...initialMapView(),
         });
+        if (imageHandler) {
+          void styleImageHandlers(map).use({
+            url: style,
+            image_handler: imageHandler,
+          });
+        }
         map.addControl(new maplibregl.NavigationControl());
         map.addControl(new maplibregl.FullscreenControl());
         map.on("error", (event) => {
@@ -176,18 +189,35 @@ document.addEventListener("alpine:init", () => {
           const shapeError = urlShapeError(this.type, url);
           const wantStyleMode = this.type === "style" && !shapeError;
           const nextStyleUrl = wantStyleMode ? url : null;
+          // Images the handler skipped stay missing from tiles already laid
+          // out, so a handler change rebuilds the map like a URL change does.
+          const nextImageHandler =
+            wantStyleMode && !hasCollection ? this.imageHandler : "";
 
           // Tear down Geoman before replacing its map. The form owns geometry
           // throughout, including when a style URL fails to load.
-          if (map && nextStyleUrl !== styleUrl) {
+          if (
+            map &&
+            (nextStyleUrl !== styleUrl ||
+              nextImageHandler !== previewImageHandler)
+          ) {
             const camera = { center: map.getCenter(), zoom: map.getZoom() };
             await stopEditor();
             map.remove();
-            map = this._buildMap(nextStyleUrl ?? protomapsStyleUrl());
+            map = this._buildMap(
+              nextStyleUrl ?? protomapsStyleUrl(),
+              nextImageHandler,
+            );
             map.jumpTo(camera);
           }
-          if (!map) map = this._buildMap(nextStyleUrl ?? protomapsStyleUrl());
+          if (!map) {
+            map = this._buildMap(
+              nextStyleUrl ?? protomapsStyleUrl(),
+              nextImageHandler,
+            );
+          }
           styleUrl = nextStyleUrl;
+          previewImageHandler = nextImageHandler;
           const currentMap = map;
 
           if (!hasCollection && editor) await stopEditor();
