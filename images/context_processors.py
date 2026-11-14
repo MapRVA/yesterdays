@@ -52,6 +52,7 @@ def site_settings(request):
         "tile_version": get_tile_version(),
         "DIRECTORIES_ENABLED": settings.DIRECTORIES_ENABLED,
         "map_layers_json": json.dumps(_build_map_layers_data()),
+        "time_slider_min_year": settings.TIME_SLIDER_MIN_YEAR,
     }
 
 

@@ -265,6 +265,13 @@ CACHES = {
 MAP_LAYER_TILE_MAX_ZOOM = 9
 MAP_LAYER_TILE_CACHE_SECONDS = int(os.getenv("MAP_LAYER_TILE_CACHE_SECONDS", "3600"))
 
+# Earliest year on the map's date-range slider: the oldest surviving
+# photograph, Niépce's View from the Window at Le Gras (June–July 1827). The
+# slider runs to the current year, taken in the browser. Both ends are
+# open-ended, so images dated outside the range still match a filter that
+# reaches that end.
+TIME_SLIDER_MIN_YEAR = 1827
+
 # Read database password from mounted secret if available
 db_password_file = os.getenv("DB_PASSWORD_FILE", "/etc/georef-db/password")
 if os.path.exists(db_password_file):

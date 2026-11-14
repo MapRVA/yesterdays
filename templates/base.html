@@ -19,6 +19,7 @@
         window.SEARCH_BBOX = {% if region_search_bbox %}{{ region_search_bbox }}{% else %}null{% endif %};
         window.ADMIN_EMAIL = {% if admin_email %}"{{ admin_email }}"{% else %}null{% endif %};
         window.MAP_LAYERS_DATA = {{ map_layers_json|safe }};
+        window.TIME_SLIDER_MIN_YEAR = {% if time_slider_min_year %}{{ time_slider_min_year }}{% else %}null{% endif %};
     </script>
 
     <!-- Global bundle (Alpine.js + site-wide scripts) - loads first to set up window.Alpine -->
@@ -181,6 +182,7 @@
         <div class="container">
             <div class="row">
                 <div class="col-md-6">
+                    {% block footer_start %}{% endblock %}
                 </div>
                 <div class="col-md-6 text-md-end">
                     <p class="mb-0">

@@ -18,6 +18,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 </head>
 <body>
-    {% include 'images/partials/map_display.html' with height='100vh' width='100vw' border_radius='0' image_id=image_id collection_id=collection_id source_id=source_id subject_id=subject_id center_lng=center_lng center_lat=center_lat zoom_level=zoom_level include_geocoder=include_geocoder enable_scale_visibility=enable_scale_visibility zoom_to_contents=zoom_to_contents geolocate=geolocate hash=hash map_id=map_id %}
+    {% include 'images/partials/map_display.html' with height='100vh' width='100vw' border_radius='0' image_id=image_id collection_id=collection_id source_id=source_id subject_id=subject_id center_lng=center_lng center_lat=center_lat zoom_level=zoom_level include_geocoder=include_geocoder enable_scale_visibility=enable_scale_visibility zoom_to_contents=zoom_to_contents geolocate=geolocate hash=hash map_id=map_id attribution_placement='map' %}
 </body>
 </html>

@@ -9,6 +9,7 @@ import "../../../styles/components/map-display.css";
 import "./pmtiles_protocol";
 import { initialMapStyle, LayerControl } from "../layer_control";
 import { addResponsiveGeocoder } from "../responsive_geocoder";
+import { addCornerAttribution, mountExternalAttribution } from "./attribution";
 import { boundsFromAerialGeometry } from "./bounds";
 import { primaryColor, dangerColor } from "./colors";
 import { setupMapDataLayers } from "./data_layers";
@@ -17,6 +18,11 @@ import { registerImageInteractions } from "./interactions";
 import { LAYER_IDS, OVERLAY_LAYER_IDS } from "./layer_ids";
 import { installToggleOtherImages } from "./other_images_toggle";
 import { buildScaleHelpers } from "./scale_visibility";
+import {
+  DEFAULT_HISTOGRAM_SOURCE,
+  DEFAULT_TIME_SLIDER_TARGETS,
+  TimeSliderControl,
+} from "./time_slider_control";
 import type {
   MapDisplayConfig,
   MapDisplayContext,
@@ -45,6 +51,8 @@ export function initializeMap(config: MapDisplayConfig): maplibregl.Map {
     zoomToContents = false,
     directionImageUrl = null,
     currentImageDirection = null,
+    attributionContainerId = null,
+    timeSliderCollapsed = true,
   } = config;
 
   const resolved: ResolvedMapDisplayConfig = {
@@ -65,6 +73,8 @@ export function initializeMap(config: MapDisplayConfig): maplibregl.Map {
     zoomToContents,
     directionImageUrl,
     currentImageDirection,
+    attributionContainerId,
+    timeSliderCollapsed,
   };
 
   // Setup PMTiles protocol
@@ -75,6 +85,8 @@ export function initializeMap(config: MapDisplayConfig): maplibregl.Map {
     container: mapId,
     style: initialMapStyle(),
     hash: hash,
+    // Added below: outside the map when the page provides a place for it
+    attributionControl: false,
     ...initialMapView({ center, zoom, bounds }),
   });
 
@@ -101,6 +113,9 @@ export function initializeMap(config: MapDisplayConfig): maplibregl.Map {
       // slider's date range
       ctx.timeSlider?.applyFilter();
     },
+    // The date slider only filters the image layers, so it goes with them
+    // (keeping its range for when they come back)
+    onImageLayersToggle: (visible) => ctx.timeSlider?.setVisible(visible),
   });
   ctx.layerControl = layerControl;
   const navControl = new maplibregl.NavigationControl();
@@ -108,8 +123,6 @@ export function initializeMap(config: MapDisplayConfig): maplibregl.Map {
 
   map.addControl(layerControl, "top-right");
 
-  // Add navigation and fullscreen controls after time slider will be added
-  // These will be positioned below the time slider
   map.addControl(navControl, "top-right");
   map.addControl(fullscreenControl, "top-right");
 
@@ -119,6 +132,15 @@ export function initializeMap(config: MapDisplayConfig): maplibregl.Map {
       trackUserLocation: true,
     });
     map.addControl(geolocateControl, "top-right");
+  }
+
+  const attributionContainer = attributionContainerId
+    ? document.getElementById(attributionContainerId)
+    : null;
+  if (attributionContainer) {
+    mountExternalAttribution(map, attributionContainer, fullscreenControl);
+  } else {
+    addCornerAttribution(map);
   }
 
   // Map load handler
@@ -153,7 +175,18 @@ export function initializeMap(config: MapDisplayConfig): maplibregl.Map {
       }
     }
 
-    // Handle initial feature loading for time slider and zoom
+    // Date-range filter over a fixed span (not on single-image maps)
+    if (!imageId) {
+      const timeSlider = new TimeSliderControl(
+        mapId,
+        DEFAULT_TIME_SLIDER_TARGETS,
+        DEFAULT_HISTOGRAM_SOURCE,
+        { collapsed: timeSliderCollapsed },
+      );
+      map.addControl(timeSlider, "bottom-right");
+      ctx.timeSlider = timeSlider;
+    }
+
     watchInitialFeatures(ctx);
 
     registerImageInteractions(ctx);

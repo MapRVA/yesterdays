@@ -128,6 +128,7 @@ export class LayerControl implements IControl {
       beforeLayerId: options.beforeLayerId ?? null,
       onBaseLayerChange: options.onBaseLayerChange ?? null,
       onStyleSwap: options.onStyleSwap ?? null,
+      onImageLayersToggle: options.onImageLayersToggle ?? null,
     };
   }
 
@@ -604,6 +605,7 @@ export class LayerControl implements IControl {
     this.applyImageLayerState();
     this.imagePanel?.setImageLayersActive(this.imageLayersVisible);
     this.imagePanel?.setControlsEnabled(this.imageLayersVisible);
+    this.options.onImageLayersToggle?.(this.imageLayersVisible);
   }
 
   private setImageDisplayStyle(style: ImageDisplayStyle): void {

@@ -16,19 +16,14 @@ import {
   LayerControl,
 } from "../../components/layer_control";
 import { initImageViewer } from "../../components/image_viewer";
-import {
-  computeYearRange,
-  watchFirstSourceFeatures,
-} from "../../components/map_display/features";
-import {
-  insertTimeSlider,
-  TimeSliderControl,
-} from "../../components/map_display/time_slider_control";
+import { addCornerAttribution } from "../../components/map_display/attribution";
+import { TimeSliderControl } from "../../components/map_display/time_slider_control";
 import { addResponsiveGeocoder } from "../../components/responsive_geocoder";
 import { initialMapView } from "../../constants/map";
 import { initSubjectEditor } from "../../components/subject_editor.js";
 import {
   CONTEXT_LAYER_IDS,
+  contextImageExtraFilter,
   contextTimeSliderTargets,
   createContextImagesController,
   initContextDisplayControls,
@@ -165,6 +160,8 @@ function initializeGeoreferenceInterface(
   const mapOptions: MapOptions = {
     container: "mymap",
     style: initialMapStyle(),
+    // Added below, in the bottom-left corner: the date slider has the right
+    attributionControl: false,
   };
 
   if (allHintCoords.length > 1) {
@@ -183,6 +180,7 @@ function initializeGeoreferenceInterface(
   }
 
   const map = new maplibregl.Map(mapOptions);
+  addCornerAttribution(map);
 
   const state: GeoreferenceState = {
     pinPlaced: false,
@@ -249,30 +247,20 @@ function initializeGeoreferenceInterface(
 
     restoreOverlayState(ctx);
 
-    // Add the date slider once the first context images load and reveal a
-    // filterable date range (mirrors the sitewide maps)
-    watchFirstSourceFeatures(
-      map,
+    // Date-range filter for the context images (mirrors the sitewide maps),
+    // hidden along with them
+    const timeSlider = new TimeSliderControl(
+      map.getContainer().id,
+      contextTimeSliderTargets(image),
       {
         sourceId: "context-images",
         sourceLayer: "image_points",
-        fallbackLayerId: CONTEXT_LAYER_IDS.circles,
-      },
-      (features) => {
-        const range = computeYearRange(features);
-        if (!range || range.minYear >= range.maxYear) return;
-        const timeSlider = new TimeSliderControl(
-          range.minYear,
-          range.maxYear,
-          map.getContainer().id,
-          contextTimeSliderTargets(image),
-        );
-        insertTimeSlider(map, timeSlider);
-        // The slider may arrive while context images are hidden
-        timeSlider.setVisible(state.contextDisplayMode !== "hidden");
-        ctx.timeSlider = timeSlider;
+        filter: contextImageExtraFilter(image),
       },
     );
+    map.addControl(timeSlider, "bottom-right");
+    timeSlider.setVisible(state.contextDisplayMode !== "hidden");
+    ctx.timeSlider = timeSlider;
   });
 
   map.on("click", (e) => {

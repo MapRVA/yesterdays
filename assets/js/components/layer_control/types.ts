@@ -55,6 +55,8 @@ export interface LayerControlOptions {
   onBaseLayerChange?: ((layerKey: string) => void) | null;
   // Called after a style swap, before the overlay tile layer is restored
   onStyleSwap?: ((map: MapLibreMap) => void | Promise<void>) | null;
+  // Called when the "Georeferenced Images" overlay is switched on or off
+  onImageLayersToggle?: ((visible: boolean) => void) | null;
 }
 
 // LayerControlOptions after defaults are applied in the constructor.
@@ -64,6 +66,7 @@ export interface ResolvedLayerControlOptions {
   beforeLayerId: string | null;
   onBaseLayerChange: ((layerKey: string) => void) | null;
   onStyleSwap: ((map: MapLibreMap) => void | Promise<void>) | null;
+  onImageLayersToggle: ((visible: boolean) => void) | null;
 }
 
 interface BaseLayerCommon {

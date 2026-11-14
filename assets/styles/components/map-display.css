@@ -52,159 +52,396 @@
     }
 }
 
-/* Time Slider Control */
-.time-slider-control {
-    background-color: #fff;
-    font-size: 0.9rem;
-    border-radius: 0.375rem;
-    border: 1px solid rgba(0, 0, 0, 0.1);
-    box-shadow: none;
+/* Time Slider Control: a collapsible Bootstrap card in the bottom-right
+   corner. Colors come from Bootstrap's variables, so it follows $primary and
+   the dark-mode palette. */
+.time-slider-ctrl {
+    width: 26rem;
+    max-width: calc(100vw - 20px);
 }
 
-/* Toolbar with toggle and close buttons */
-.time-slider-toolbar {
+/* Collapsed, the card is just its header, so shrink it to fit */
+.time-slider-ctrl.time-slider-collapsed {
+    width: auto;
+}
+
+/* Phones: stretch the expanded card across the bottom of the map, keeping
+   the usual MapLibre control inset on every side (plus the iPhone home-bar
+   inset below); collapsed, it stays a small header in the corner. The corner
+   container is stretched across the map so the card can fill it; anything
+   in the bottom-left corner (the fullscreen credit) is lifted above the card
+   by its published height. */
+@media (max-width: 767.98px) {
+    .maplibregl-ctrl-bottom-right:has(> .time-slider-ctrl:not(.time-slider-collapsed)) {
+        left: 0;
+    }
+
+    .maplibregl-ctrl-bottom-right > .time-slider-ctrl:not(.time-slider-collapsed) {
+        float: none;
+        width: auto;
+        max-width: none;
+        margin: 0 10px calc(10px + env(safe-area-inset-bottom));
+    }
+
+    .maplibregl-ctrl-bottom-right > .time-slider-ctrl.time-slider-collapsed {
+        margin-bottom: calc(10px + env(safe-area-inset-bottom));
+    }
+
+    /* While its width animates, keep the card against the right edge */
+    .maplibregl-ctrl-bottom-right > .time-slider-ctrl.time-slider-resizing {
+        float: right;
+    }
+
+    .maplibregl-map .maplibregl-ctrl-bottom-left {
+        bottom: var(--time-slider-height, 0px);
+    }
+}
+
+.time-slider-card {
+    --thumb: 1rem;
+    --track: 0.5rem;
+    /* The range's box, with the track centered in it */
+    --range: 1.5rem;
+    /* How far the scale tucks up under the range's box */
+    --scale-overlap: 0.125rem;
+    font-size: 0.875rem;
+}
+
+/* The header doubles as the collapse toggle */
+.time-slider-header {
     display: flex;
-    justify-content: flex-end;
     align-items: center;
-    height: 32px;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.375rem 0.625rem;
+    border-width: 0 0 var(--bs-card-border-width) 0;
+    color: var(--bs-body-color);
+    text-align: start;
+    cursor: pointer;
 }
 
-/* Shared button styles */
-.time-slider-toggle,
-.time-slider-close {
-    background-color: transparent;
-    border: none;
-    color: #495057;
-    width: 32px;
-    height: 32px;
-    cursor: pointer;
-    transition: all 0.15s ease-in-out;
-    display: flex;
+/* MapLibre tints every button in a control on hover and press
+   (.maplibregl-ctrl button:not(:disabled):hover/:active, a faint black
+   wash), outranking Bootstrap's own button states. Restore them: otherwise
+   the reset button's hover turns its icon white on a near-white card. */
+.time-slider-card .time-slider-header:not(:disabled):hover,
+.time-slider-card .time-slider-header:not(:disabled):active {
+    background-color: var(--bs-tertiary-bg);
+}
+
+.time-slider-card .btn:not(:disabled):hover {
+    background-color: var(--bs-btn-hover-bg);
+}
+
+.time-slider-card .btn:not(:disabled):active {
+    background-color: var(--bs-btn-active-bg);
+}
+
+.time-slider-header:focus-visible {
+    outline: 0;
+    box-shadow: inset 0 0 0 0.2rem rgba(var(--bs-primary-rgb), 0.25);
+}
+
+/* Collapsed: the header is the whole card, so round it all the way and drop
+   its bottom border. */
+.time-slider-header.collapsed {
+    border-bottom-width: 0;
+    border-radius: var(--bs-card-inner-border-radius);
+}
+
+.time-slider-chevron {
+    font-size: 0.75rem;
+    color: var(--bs-secondary-color);
+    transition: transform 0.2s ease-in-out;
+}
+
+.time-slider-header:not(.collapsed) .time-slider-chevron {
+    transform: rotate(180deg);
+}
+
+/* The selected range, shown only while collapsed (expanded, the From/To
+   inputs say it). Tied to the card's width state rather than the header's
+   .collapsed class, so it appears as the card narrows, not mid-collapse. */
+.time-slider-ctrl:not(.time-slider-collapsed) .time-slider-pill {
+    display: none;
+}
+
+/* Histogram of the images in view per year, standing on the track: it
+   reaches down into the range's box to the track's top edge. The SVG's x
+   axis is in years and stretches to the thumb-inset width, so each bar sits
+   over its year's thumb position. A primary copy of the bars, clipped to the
+   selected years, lies over the grey one. */
+.time-slider-histogram {
+    position: relative;
+    height: 2.5rem;
+    margin: 0 calc(var(--thumb) / 2) calc((var(--track) - var(--range)) / 2);
+}
+
+.time-slider-histogram svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.time-slider-histogram-base {
+    fill: var(--bs-gray-400);
+}
+
+.time-slider-histogram-selected {
+    fill: var(--bs-primary);
+}
+
+@media (prefers-color-scheme: dark) {
+    .time-slider-histogram-base {
+        fill: var(--bs-gray-700);
+    }
+}
+
+.time-slider-histogram-empty {
+    display: none;
+    position: absolute;
+    inset: 0;
     align-items: center;
     justify-content: center;
+    font-size: 0.75rem;
+    color: var(--bs-secondary-color);
 }
 
-.time-slider-toggle:hover,
-.time-slider-close:hover {
-    background-color: #f8f9fa;
-}
-
-.time-slider-toggle:focus,
-.time-slider-close:focus {
-    outline: none;
-    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
-}
-
-/* Hide close button when collapsed, hide toggle when expanded */
-.time-slider-close {
-    display: none;
-}
-
-.time-slider-control:has(.collapse.show) .time-slider-close,
-.time-slider-control:has(.collapsing) .time-slider-close {
+.time-slider-histogram.empty .time-slider-histogram-empty {
     display: flex;
 }
 
-.time-slider-control:has(.collapse.show) .time-slider-toggle,
-.time-slider-control:has(.collapsing) .time-slider-toggle {
-    display: none;
-}
-
-/* Collapsible body - no animation */
-.time-slider-control .collapse,
-.time-slider-control .collapsing {
-    padding: 0 0.5rem 0.5rem 0.5rem;
-}
-
-.time-slider-control .collapsing {
-    transition: none;
-    height: auto !important;
-}
-
-/* Header layout - in toolbar, hidden when collapsed */
-.time-slider-header {
-    display: none;
-    flex-grow: 1;
-    padding-left: 0.5rem;
-    font-weight: 500;
-    font-size: 0.8rem;
-    color: #495057;
-}
-
-.time-slider-control:has(.collapse.show) .time-slider-header,
-.time-slider-control:has(.collapsing) .time-slider-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.time-slider-label {
-    color: #495057;
-}
-
-.time-slider-range-label {
-    font-weight: 600;
-}
-
-.time-slider-container {
+/* Dual-thumb range: two Bootstrap .form-range inputs stacked over a shared
+   track. Only the thumbs take pointer events, so each stays draggable. Year
+   positions are inset by half a thumb, as in the scale and histogram (a
+   thumb at either end reaches the card's padding edge). The track's rounded
+   ends are centered on the first and last years, and the fill, spanning
+   --start..--end (0–1), ends at the thumb centers. */
+.time-slider-range {
     position: relative;
-    height: 24px;
-    width: 250px;
+    height: var(--range);
 }
 
-.slider-track {
+.time-slider-track,
+.time-slider-fill {
     position: absolute;
-    height: 4px;
-    background: #ddd;
-    width: 100%;
-    top: 10px;
-    border-radius: 2px;
-    z-index: 1;
+    top: 50%;
+    height: var(--track);
+    border-radius: 1rem;
+    transform: translateY(-50%);
 }
 
-.slider-range {
-    position: absolute;
-    height: 4px;
-    background: #0d6efd;
-    top: 10px;
-    border-radius: 2px;
-    z-index: 2;
+.time-slider-track {
+    left: calc(var(--thumb) / 2 - var(--track) / 2);
+    right: calc(var(--thumb) / 2 - var(--track) / 2);
+    background-color: var(--bs-gray-400);
 }
 
-.time-slider-container input[type="range"] {
+@media (prefers-color-scheme: dark) {
+    .time-slider-track {
+        background-color: var(--bs-gray-700);
+    }
+}
+
+.time-slider-fill {
+    left: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--start, 0));
+    width: calc((100% - var(--thumb)) * (var(--end, 1) - var(--start, 0)));
+    background-color: var(--bs-primary);
+}
+
+.time-slider-range .form-range {
     position: absolute;
-    width: 100%;
+    inset: 0;
     pointer-events: none;
-    -webkit-appearance: none;
-    background: transparent;
-    height: 24px;
-    top: 0;
-    margin: 0;
-    z-index: 3;
     touch-action: none;
 }
 
-.time-slider-container input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    pointer-events: all;
-    width: 20px;
-    height: 20px;
-    background: #0d6efd;
-    border-radius: 50%;
-    cursor: pointer;
-    border: 2px solid white;
-    box-shadow: 0 0 2px rgba(0, 0, 0, 0.3);
+.time-slider-range .form-range::-webkit-slider-runnable-track {
+    background-color: transparent;
 }
 
-.time-slider-container input[type="range"]::-moz-range-thumb {
-    pointer-events: all;
-    width: 16px;
-    height: 16px;
-    background: #0d6efd;
-    border-radius: 50%;
-    cursor: pointer;
-    border: 2px solid white;
-    box-shadow: 0 0 2px rgba(0, 0, 0, 0.3);
+.time-slider-range .form-range::-moz-range-track {
+    background-color: transparent;
+}
+
+/* A ring in the card color separates the thumbs from the primary fill */
+.time-slider-range .form-range::-webkit-slider-thumb {
+    pointer-events: auto;
+    box-shadow: 0 0 0 2px var(--bs-card-bg, var(--bs-body-bg));
+}
+
+.time-slider-range .form-range::-moz-range-thumb {
+    pointer-events: auto;
+    box-shadow: 0 0 0 2px var(--bs-card-bg, var(--bs-body-bg));
+}
+
+.time-slider-range .form-range:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 2px var(--bs-card-bg, var(--bs-body-bg)),
+        0 0 0 0.3rem rgba(var(--bs-primary-rgb), 0.35);
+}
+
+.time-slider-range .form-range:focus-visible::-moz-range-thumb {
+    box-shadow: 0 0 0 2px var(--bs-card-bg, var(--bs-body-bg)),
+        0 0 0 0.3rem rgba(var(--bs-primary-rgb), 0.35);
+}
+
+/* Keep grabbed handles solid primary (Bootstrap lightens them on :active) */
+.time-slider-range .form-range::-webkit-slider-thumb:active {
+    background-color: var(--bs-primary);
+}
+
+.time-slider-range .form-range::-moz-range-thumb:active {
+    background-color: var(--bs-primary);
+}
+
+/* Graduations under the track: decade ticks (half-century ticks longer),
+   inset by half a thumb like the fill so a tick sits under the thumb center
+   at its year. Ticks inside the selected range take the primary color. */
+.time-slider-scale {
+    position: relative;
+    height: 0.625rem;
+    margin: calc(-1 * var(--scale-overlap)) calc(var(--thumb) / 2) 0;
+}
+
+/* Positioned by layoutScale(), snapped to whole device pixels; --pos
+   (0–1) places them until then. */
+.time-slider-tick {
+    position: absolute;
+    top: 0;
+    left: calc(var(--pos) * 100% - 0.5px);
+    width: 1px;
+    height: 0.3125rem;
+    background-color: var(--bs-gray-500);
+}
+
+.time-slider-tick.major {
+    height: 0.5rem;
+}
+
+.time-slider-tick.end {
+    height: 0.625rem;
+}
+
+.time-slider-tick.in-range {
+    background-color: var(--bs-primary);
+}
+
+@media (prefers-color-scheme: dark) {
+    .time-slider-tick {
+        background-color: var(--bs-gray-600);
+    }
+
+    .time-slider-tick.in-range {
+        background-color: var(--bs-primary-text-emphasis);
+    }
+}
+
+/* The scale's end years, flush with the track's ends like the bubbles and
+   the From/To inputs, so nothing reaches into the card's padding. The year
+   bubbles (below) hang over this row and the scale; layoutScale() hides an
+   end year a bubble covers. The row is tall enough to clear the bubbles. */
+.time-slider-labels {
+    position: relative;
+    height: 1.2rem;
+}
+
+.time-slider-bound {
+    position: absolute;
+    top: 0;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    color: var(--bs-secondary-color);
+    font-variant-numeric: tabular-nums;
+}
+
+.time-slider-bound[data-role="min-label"] {
+    left: 0;
+}
+
+.time-slider-bound[data-role="max-label"] {
+    right: 0;
+}
+
+/* A year bubble under each handle: a Bootstrap tooltip in the primary color,
+   arrow up, its tip on the top of the scale's graduations. layoutScale()
+   places them across in pixels and merges them when they'd touch. */
+.time-slider-bubble {
+    --bs-tooltip-bg: var(--bs-primary);
+    --bs-tooltip-color: #fff;
+    --bs-tooltip-opacity: 1;
+    --bs-tooltip-font-size: 0.75rem;
+    --bs-tooltip-padding-y: 0.125rem;
+    --bs-tooltip-padding-x: 0.375rem;
+    position: absolute;
+    top: calc(100% - var(--scale-overlap) + var(--bs-tooltip-arrow-height));
+    margin: 0;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    pointer-events: none;
+}
+
+/* The bubble's body and arrow, in place of Bootstrap's background and
+   arrow: one SVG outline from the tip's height down, drawn by layoutScale()
+   (time_slider_bubble.ts). Pushed toward an end, the arrow's outer side flows
+   into the rounded corner rather than overhanging it. One shape, so its edge
+   is antialiased once, with no seam where arrow meets body. The text sits on
+   top. */
+.time-slider-bubble-shape {
+    position: absolute;
+    top: calc(-1 * var(--bs-tooltip-arrow-height));
+    left: 0;
+    width: 100%;
+    height: calc(100% + var(--bs-tooltip-arrow-height));
+    overflow: visible;
+    fill: var(--bs-tooltip-bg);
+}
+
+.time-slider-bubble .tooltip-inner {
+    position: relative;
+    background-color: transparent;
+}
+
+/* Four-digit years: hide the number spinners and center the text */
+.time-slider-year {
+    text-align: center;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.time-slider-year::-webkit-outer-spin-button,
+.time-slider-year::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+/* Map attribution outside the map (see map_display/attribution.ts): a caption
+   under the map, or the /map/ page footer. Strips MapLibre's in-map control
+   chrome; while fullscreen the credit moves into the map and keeps it. */
+.map-attribution {
+    font-size: 0.75rem;
+    font-style: italic;
+    color: var(--bs-secondary-color);
+}
+
+.map-attribution-caption {
+    padding: 0.25rem 0.5rem;
+}
+
+.map-attribution > .maplibregl-ctrl-attrib {
+    float: none;
+    margin: 0;
+    padding: 0;
+    background: none;
+}
+
+.map-attribution .maplibregl-ctrl-attrib a {
+    color: var(--bs-link-color);
+}
+
+.map-attribution .maplibregl-ctrl-attrib a:hover {
+    color: var(--bs-link-hover-color);
 }
 
 /* Bootstrap-style MapLibre Controls */

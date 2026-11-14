@@ -19,12 +19,22 @@ Usage:
 - Initial viewport from a specific region: pass view_region to start on that region's
   bounds/centerpoint instead of the navbar region's (explicit center/zoom still win).
 - Auto-zoom to contents: {% include 'images/partials/map_display.html' with zoom_to_contents=True %}
+- Attribution: shown by default as a caption directly under the map. Pass
+  attribution_container_id to render it into an element the page provides
+  instead (the /map/ page uses its footer), or attribution_placement='map' to
+  keep it in the map's bottom-left corner (the iframe embed, which has no room
+  below). Either way it moves into the map while fullscreen.
+- Date-range slider: starts collapsed; pass time_slider_collapsed=False to start
+  it open (the /map/ page does).
 {% endcomment %}
 
 <!-- Load bundled map display module (includes all CSS) -->
 {% vite_asset 'assets/js/components/map_display/index.ts' %}
 
 <div id="{{ map_id|default:'map-display' }}"></div>
+{% if not attribution_container_id and attribution_placement != 'map' %}
+<div id="{{ map_id|default:'map-display' }}-attribution" class="map-attribution map-attribution-caption"></div>
+{% endif %}
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -144,7 +154,9 @@ document.addEventListener('DOMContentLoaded', function() {
         aerialGeoreference: {% if aerial_georeference %}{{ aerial_georeference.polygon.geojson|safe }}{% else %}null{% endif %},
         zoomToContents: {{ zoom_to_contents|yesno:"true,false,false" }},
         directionImageUrl: '{% static "images/surveillance-direction.png" %}',
-        currentImageDirection: {% if current_image_direction is not None and current_image_direction != "" %}{{ current_image_direction }}{% else %}null{% endif %}
+        currentImageDirection: {% if current_image_direction is not None and current_image_direction != "" %}{{ current_image_direction }}{% else %}null{% endif %},
+        attributionContainerId: {% if attribution_container_id %}'{{ attribution_container_id|escapejs }}'{% elif attribution_placement == 'map' %}null{% else %}mapId + '-attribution'{% endif %},
+        timeSliderCollapsed: {% if time_slider_collapsed is False %}false{% else %}true{% endif %}
     });
 });
 </script>

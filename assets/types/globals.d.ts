@@ -37,6 +37,17 @@ declare global {
       ): BootstrapModal;
       getInstance(element: Element): BootstrapModal | null;
     };
+    Collapse: {
+      getOrCreateInstance(
+        element: Element,
+        options?: Record<string, unknown>,
+      ): BootstrapCollapse;
+    };
+  }
+
+  interface BootstrapCollapse {
+    show(): void;
+    hide(): void;
   }
 
   // The single layer previewed on the map layer detail page, serialized by
@@ -76,6 +87,8 @@ declare global {
     ADMIN_EMAIL?: string | null;
 
     MAP_LAYERS_DATA?: MapLayersData;
+    // Earliest year on the map's date-range slider (settings.TIME_SLIDER_MIN_YEAR)
+    TIME_SLIDER_MIN_YEAR?: number | null;
     MAP_LAYER?: PreviewMapLayer;
     layerEditConfig?: LayerEditConfig;
 

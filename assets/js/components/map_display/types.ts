@@ -38,6 +38,11 @@ export interface MapDisplayConfig {
   zoomToContents?: boolean;
   directionImageUrl?: string;
   currentImageDirection?: number | null;
+  // Element to show the attribution in, outside the map (a caption under
+  // it, or the page footer); null keeps it in the map's bottom-left corner.
+  attributionContainerId?: string | null;
+  // Whether the date-range slider starts collapsed
+  timeSliderCollapsed?: boolean;
 }
 
 // MapDisplayConfig after defaults are applied in initializeMap().
@@ -59,6 +64,8 @@ export interface ResolvedMapDisplayConfig {
   zoomToContents: boolean;
   directionImageUrl: string | null;
   currentImageDirection: number | null;
+  attributionContainerId: string | null;
+  timeSliderCollapsed: boolean;
 }
 
 // Shared state threaded through the map_display modules for one map instance.
