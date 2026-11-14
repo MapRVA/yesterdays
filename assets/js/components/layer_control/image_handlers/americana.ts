@@ -11,6 +11,7 @@ import {
   transposeImageData,
   type RouteParser,
   type ShieldSpecification,
+  type SpriteRepository,
   type StringPredicate,
 } from "@americana/maplibre-shield-generator";
 import type {
@@ -27,6 +28,23 @@ type ShieldEvent = Parameters<
   ReturnType<ShieldRenderer["getStyleImageMissingHandler"]>
 >[0];
 type ShieldStyleImage = Parameters<typeof transposeImageData>[1];
+
+/**
+ * The generator's own MapLibre sprite repository drops the image options
+ * when it replaces a shield (as it does for every shield drawn before the
+ * shield font loaded), so a 2x shield comes back at pixelRatio 1: twice the
+ * size and upscaled, which looks blocky. This one keeps the options.
+ */
+function mapSpriteRepository(map: MapLibreMap): SpriteRepository {
+  return {
+    getSprite: (id) => map.style.getImage(id) as unknown as ShieldStyleImage,
+    putSprite(id, image, options, update) {
+      const data = image as Parameters<MapLibreMap["addImage"]>[1];
+      if (update && map.hasImage(id)) map.removeImage(id);
+      map.addImage(id, data, options);
+    },
+  };
+}
 
 // Americana's hosted web fonts for shield text. shields.json names the family
 // (options.shieldFont); the generator draws with it on a canvas, so it has to
@@ -108,6 +126,41 @@ function addRecoloredIcon(
   );
 }
 
+// MapLibre's default text-size
+const DEFAULT_TEXT_SIZE = 16;
+
+/**
+ * Americana places its shields as images inside text-field. MapLibre samples
+ * those with NEAREST filtering whenever the camera is still and text-size
+ * doesn't depend on zoom, without checking that the image's pixel ratio
+ * matches the display's (it does check for ordinary icons). On a fractional
+ * display, such as 1.25 or 1.5, the shields are scaled, and NEAREST drops
+ * whole pixel rows and columns: they look fine mid-zoom and blocky at rest.
+ * A zoom-dependent text-size that never actually changes forces LINEAR
+ * filtering without changing the layout.
+ */
+function smoothScaledShields(map: MapLibreMap, renderer: ShieldRenderer): void {
+  // At a matching ratio, NEAREST is pixel-exact and LINEAR would only blur
+  if (map.getPixelRatio() === renderer.pixelRatio()) return;
+  for (const id of map.getLayersOrder()) {
+    if (map.getLayer(id)?.type !== "symbol") continue;
+    const textField = map.getLayoutProperty(id, "text-field") as unknown;
+    if (!JSON.stringify(textField ?? null).includes('"image"')) continue;
+    const size = (map.getLayoutProperty(id, "text-size") ??
+      DEFAULT_TEXT_SIZE) as unknown;
+    if (typeof size !== "number") continue;
+    map.setLayoutProperty(id, "text-size", [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      0,
+      size,
+      24,
+      size,
+    ]);
+  }
+}
+
 export async function createAmericanaHandler(
   map: MapLibreMap,
   styleUrl: string,
@@ -131,7 +184,10 @@ export async function createAmericanaHandler(
   // when the dispatcher forwards an event — that is, while this style is
   // active.
   let forwarding = false;
+  // renderOnRepository() keeps the first repository it's given, so ours has
+  // to go in before renderOnMaplibreGL() installs the generator's own.
   const renderer = new ShieldRenderer(shields, routeParser)
+    .renderOnRepository(mapSpriteRepository(map))
     .filterImageID((imageId) => forwarding && imageId.startsWith("shield"))
     .filterNetwork(networkPredicate)
     .renderOnMaplibreGL(map as unknown as ShieldMap) as ShieldRenderer;
@@ -156,9 +212,11 @@ export async function createAmericanaHandler(
       }
     },
 
-    // Country labels look their names up in global state, falling back to
-    // "(USA)"-style codes when it's unset.
     onStyleLoad(): void {
+      smoothScaledShields(map, renderer);
+
+      // Country labels look their names up in global state, falling back to
+      // "(USA)"-style codes when it's unset.
       const state = getGlobalStateForLocalization(getLocales(), {
         uppercaseCountryNames: true,
       });
