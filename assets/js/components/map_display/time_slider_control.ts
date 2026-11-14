@@ -155,7 +155,7 @@ export class TimeSliderControl implements maplibregl.IControl {
           <i class="fas fa-calendar-days text-primary-emphasis" aria-hidden="true"></i>
           <span class="fw-semibold">Filter by date range</span>
           <span class="badge rounded-pill text-bg-primary time-slider-pill" data-role="pill" hidden></span>
-          <i class="fas fa-chevron-down time-slider-chevron ms-auto" aria-hidden="true"></i>
+          <i class="fas fa-chevron-up time-slider-chevron ms-auto" aria-hidden="true"></i>
         </button>
         <div class="collapse ${collapsed ? "" : "show"}" id="${bodyId}">
           <div class="card-body p-2">
