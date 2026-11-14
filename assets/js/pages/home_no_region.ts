@@ -19,6 +19,7 @@ import "../../styles/pages/activity.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import maplibregl from "maplibre-gl";
+import { addCollapsedAttribution } from "../components/map_display/attribution";
 import {
   onColorSchemeChange,
   protomapsStyleUrl,
@@ -119,7 +120,9 @@ function initHeroMap(container: HTMLElement): maplibregl.Map | undefined {
     center: [lng, lat],
     zoom: HERO_ZOOM,
     interactive: false,
+    attributionControl: false,
   });
+  addCollapsedAttribution(map);
 
   // style.load, not load: it fires again after each setStyle below, and a
   // style swap discards sources, layers, and registered images, so this

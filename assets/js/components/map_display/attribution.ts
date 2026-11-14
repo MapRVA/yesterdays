@@ -53,3 +53,16 @@ export function addCornerAttribution(map: maplibregl.Map): void {
     "bottom-left",
   );
 }
+
+/**
+ * For the tiny map in the homepage hero, it doesn't make sense to
+ * start with an expanded attribution
+ */
+export function addCollapsedAttribution(map: maplibregl.Map): void {
+  const control = new maplibregl.AttributionControl({
+    compact: true,
+    customAttribution: MAPLIBRE_CREDIT,
+  });
+  map.addControl(control);
+  control._updateCompactMinimize();
+}
