@@ -159,6 +159,19 @@
     transform: rotate(180deg);
 }
 
+/* The height phase's half of the expand/collapse ease-in-out (see
+   EASE_IN_HALF/EASE_OUT_HALF in time_slider_control.ts). Expanding, it's the
+   second phase, so it decelerates; collapsing, it's the first, so it
+   accelerates. Bootstrap updates the header's .collapsed class as the height
+   transition begins, so it tells the two apart. */
+.time-slider-header:not(.collapsed) + .collapsing {
+    transition-timing-function: cubic-bezier(0.29, 0.5, 0.58, 1);
+}
+
+.time-slider-header.collapsed + .collapsing {
+    transition-timing-function: cubic-bezier(0.42, 0, 0.71, 0.5);
+}
+
 /* The selected range, shown only while collapsed (expanded, the From/To
    inputs say it). Tied to the card's width state rather than the header's
    .collapsed class, so it appears as the card narrows, not mid-collapse. */

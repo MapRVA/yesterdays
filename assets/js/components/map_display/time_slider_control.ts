@@ -48,6 +48,15 @@ const DEFAULT_MIN_YEAR = 1827;
 // interval rather than on every input event.
 const FILTER_INTERVAL_MS = 250;
 
+// Expanding (width, then height) and collapsing (height, then width) each run
+// as one ease-in-out, cubic-bezier(0.42, 0, 0.58, 1), split at its midpoint
+// across the two phases: the first phase takes the accelerating half and the
+// second the decelerating half, so the motion carries through from one phase
+// to the next instead of settling to a stop between them. The height phase's
+// halves are set in map-display.css.
+const EASE_IN_HALF = "cubic-bezier(0.42, 0, 0.71, 0.5)";
+const EASE_OUT_HALF = "cubic-bezier(0.29, 0.5, 0.58, 1)";
+
 export interface TimeSliderOptions {
   // Whether the card starts collapsed. Collapsed by default, since it crowds
   // a small embedded map; the full /map/ page opens it.
@@ -290,6 +299,7 @@ export class TimeSliderControl implements maplibregl.IControl {
         event.preventDefault();
         this.animateWidth(
           () => this._outerContainer.classList.remove("time-slider-collapsed"),
+          EASE_IN_HALF,
           () =>
             window.bootstrap.Collapse.getOrCreateInstance(this._body, {
               toggle: false,
@@ -298,8 +308,9 @@ export class TimeSliderControl implements maplibregl.IControl {
       }
     });
     this._body.addEventListener("hidden.bs.collapse", () => {
-      this.animateWidth(() =>
-        this._outerContainer.classList.add("time-slider-collapsed"),
+      this.animateWidth(
+        () => this._outerContainer.classList.add("time-slider-collapsed"),
+        EASE_OUT_HALF,
       );
     });
     // The histogram isn't recounted while collapsed; catch up on expanding
@@ -309,10 +320,10 @@ export class TimeSliderControl implements maplibregl.IControl {
   /**
    * Apply a class change that resizes the card, animating its width from the
    * old size to the new one (both measured, since CSS can't transition to or
-   * from `width: auto`), then call `done`. A change made mid-animation starts
-   * from wherever the card had got to.
+   * from `width: auto`) along `easing`, then call `done`. A change made
+   * mid-animation starts from wherever the card had got to.
    */
-  animateWidth(change: () => void, done?: () => void): void {
+  animateWidth(change: () => void, easing: string, done?: () => void): void {
     const el = this._outerContainer;
     // Measured before cancelling, which would snap back to the old width
     const from = el.getBoundingClientRect().width;
@@ -334,7 +345,7 @@ export class TimeSliderControl implements maplibregl.IControl {
     el.classList.add("time-slider-resizing");
     const animation = el.animate(
       [{ width: `${from}px` }, { width: `${to}px` }],
-      { duration: 200, easing: "ease-in-out" },
+      { duration: 200, easing },
     );
     this._widthAnimation = animation;
     animation.onfinish = () => {
