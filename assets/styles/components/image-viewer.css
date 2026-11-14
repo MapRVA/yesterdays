@@ -15,6 +15,16 @@
     height: auto;
 }
 
+/* WebKit resolves a child's height:100% against the aspect-ratio height before
+   max-height clamps it, so OSD's container (inline height:100%) grew taller than
+   #osd-viewer and tall images rendered shifted down. Absolute positioning sizes
+   it from the viewer's actual box (OSD makes it relative). */
+#osd-viewer > .openseadragon-container {
+    position: absolute !important;
+    inset: 0;
+    height: auto !important;
+}
+
 #osd-viewer.fullpage {
     height: 100%;
     max-height: none;
