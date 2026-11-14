@@ -35,6 +35,11 @@ export const DEFAULT_HISTOGRAM_SOURCE: TimeSliderHistogramSource = {
 // loaded images, so the scale doesn't shift as the map pans.
 const DEFAULT_MIN_YEAR = 1827;
 
+// The shortest gap between filter updates while the range is being adjusted.
+// Refiltering the map's layers is costly, so a drag refreshes the map at this
+// interval rather than on every input event.
+const FILTER_INTERVAL_MS = 250;
+
 export interface TimeSliderOptions {
   // Whether the card starts collapsed. Collapsed by default, since it crowds
   // a small embedded map; the full /map/ page opens it.
@@ -100,6 +105,9 @@ export class TimeSliderControl implements maplibregl.IControl {
   _resizeObserver: ResizeObserver | undefined;
   // The card's width animation between collapsed and expanded, if running
   _widthAnimation: Animation | undefined;
+  // Throttles range changes into map filter updates (see scheduleFilter)
+  _filterTimer: number | undefined;
+  _lastFilterAt = -Infinity;
 
   constructor(
     mapId: string,
@@ -563,7 +571,24 @@ export class TimeSliderControl implements maplibregl.IControl {
     this._startSlider.value = String(s);
     this._endSlider.value = String(e);
     this.updateView();
-    this.applyFilter();
+    this.scheduleFilter();
+  }
+
+  /**
+   * Apply the filter now if it hasn't been applied within the last
+   * FILTER_INTERVAL_MS, otherwise once that interval is up. The control
+   * itself updates on every change; only the map's refiltering is spaced
+   * out. A pending update reads the range when it fires, so the final
+   * position always lands.
+   */
+  scheduleFilter() {
+    if (this._filterTimer !== undefined) return;
+    const wait = this._lastFilterAt + FILTER_INTERVAL_MS - performance.now();
+    if (wait <= 0) {
+      this.applyFilter();
+    } else {
+      this._filterTimer = window.setTimeout(() => this.applyFilter(), wait);
+    }
   }
 
   // Graduations every 10 years (every 50 when that would crowd the track),
@@ -635,6 +660,11 @@ export class TimeSliderControl implements maplibregl.IControl {
   // Also called from outside after style swaps recreate the target layers
   // with their base filters, which would otherwise silently drop the range.
   applyFilter() {
+    // Applying now covers any pending update
+    window.clearTimeout(this._filterTimer);
+    this._filterTimer = undefined;
+    this._lastFilterAt = performance.now();
+
     const map = this._map;
     if (!map) return;
 
@@ -679,6 +709,8 @@ export class TimeSliderControl implements maplibregl.IControl {
     this._map?.getContainer().style.removeProperty("--time-slider-height");
     this._map?.off("moveend", this._markStale);
     window.clearTimeout(this._refreshTimer);
+    window.clearTimeout(this._filterTimer);
+    this._filterTimer = undefined;
     this._map?.off("sourcedata", this._onSourceData);
     this._map?.off("idle", this._onIdle);
     this._map?.off("resize", this._onResize);
