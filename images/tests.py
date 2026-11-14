@@ -1998,6 +1998,30 @@ class CollectionDetailRegionFilterTests(TestCase):
             self.client.get(url, {"region": "deleted-region"}).status_code, 404
         )
 
+    @override_settings(MAP_TILE_DETAIL_MIN_ZOOM=12)
+    def test_tiles_add_popup_details_only_from_detail_zoom(self):
+        Georeference.objects.create(
+            image=self.city_image, point=Point(-77.43, 37.54), confidence="high"
+        )
+        with connection.cursor() as cursor:
+            cursor.execute("REFRESH MATERIALIZED VIEW public_georeferences_mvt")
+
+        def tile(z, x, y):
+            url = reverse("images:vector_tiles", kwargs={"v": 1, "z": z, "x": x, "y": y})
+            response = self.client.get(url, {"image": self.city_image.pk})
+            self.assertTrue(response.content)
+            # MVT stores property keys as plain strings.
+            return response.content
+
+        low = tile(11, 583, 793)
+        high = tile(12, 1167, 1586)
+        for key in (b"fuzzy_start_decdate", b"scale", b"direction"):
+            self.assertIn(key, low)
+            self.assertIn(key, high)
+        for key in (b"thumbnail", b"original_date", b"confidence"):
+            self.assertNotIn(key, low)
+            self.assertIn(key, high)
+
     def test_georeference_queue_combines_region_collection_and_difficulty(self):
         Image.objects.filter(pk=self.city_image.pk).update(difficulty="easy")
         url = reverse("images:georeference_interface")

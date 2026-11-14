@@ -265,6 +265,11 @@ CACHES = {
 MAP_LAYER_TILE_MAX_ZOOM = 9
 MAP_LAYER_TILE_CACHE_SECONDS = int(os.getenv("MAP_LAYER_TILE_CACHE_SECONDS", "3600"))
 
+# Image-point tiles below this zoom carry only what the client filters and
+# styles on (id, fuzzy dates, scale, direction); popup details (thumbnail,
+# display date, ...) are added from this zoom on, and fetched on demand below it.
+MAP_TILE_DETAIL_MIN_ZOOM = int(os.getenv("MAP_TILE_DETAIL_MIN_ZOOM", "12"))
+
 # Earliest year on the map's date-range slider: the oldest surviving
 # photograph, Niépce's View from the Window at Le Gras (June–July 1827). The
 # slider runs to the current year, taken in the browser. Both ends are

@@ -6,9 +6,44 @@ import type { MapGeoJSONFeature } from "maplibre-gl";
 // properties as `any`, so this shape is asserted at the boundary in
 // buildPopupWrapper().
 interface ImagePopupProperties {
-  id: string;
-  thumbnail: string;
+  id: string | number;
+  thumbnail?: string | null;
   original_date?: string | null;
+}
+
+interface ImageApiDetail {
+  thumbnail: string | null;
+  permalink: string;
+  original_date: string | null;
+}
+
+// Tiles below MAP_TILE_DETAIL_MIN_ZOOM carry no popup details, so those are
+// fetched from the image API, once per image per page load.
+const detailCache = new Map<string, Promise<ImagePopupProperties>>();
+
+function loadPopupDetails(
+  properties: ImagePopupProperties,
+): Promise<ImagePopupProperties> {
+  if (properties.thumbnail) return Promise.resolve(properties);
+  const key = String(properties.id);
+  let pending = detailCache.get(key);
+  if (!pending) {
+    pending = fetch(`/api/v2/images/${encodeURIComponent(key)}/`)
+      .then((response) => {
+        if (!response.ok) throw new Error(`Image ${key}: ${response.status}`);
+        return response.json() as Promise<ImageApiDetail>;
+      })
+      .then((image) => ({
+        id: properties.id,
+        // Same fallback as the tile view's COALESCE(thumbnail, permalink).
+        thumbnail: image.thumbnail || image.permalink,
+        original_date: image.original_date,
+      }));
+    // Let a failed lookup be retried on the next click.
+    pending.catch(() => detailCache.delete(key));
+    detailCache.set(key, pending);
+  }
+  return pending;
 }
 
 // Build DOM content for a single image feature popup.
@@ -20,21 +55,12 @@ function buildPopupContent(properties: ImagePopupProperties): HTMLDivElement {
   imgLink.href = imgEntry;
 
   const img = document.createElement("img");
-  img.src = properties.thumbnail;
   img.className = "popup-image";
   imgLink.appendChild(img);
   container.appendChild(imgLink);
 
   const footer = document.createElement("div");
   footer.className = "d-flex align-items-center justify-content-between mt-1";
-
-  if (properties.original_date) {
-    const dateSpan = document.createElement("span");
-    dateSpan.className = "text-muted";
-    dateSpan.innerHTML =
-      '<i class="fas fa-calendar me-1"></i>' + properties.original_date;
-    footer.appendChild(dateSpan);
-  }
 
   const link = document.createElement("a");
   link.href = imgEntry;
@@ -43,6 +69,23 @@ function buildPopupContent(properties: ImagePopupProperties): HTMLDivElement {
   footer.appendChild(link);
 
   container.appendChild(footer);
+
+  loadPopupDetails(properties)
+    .then((details) => {
+      if (details.thumbnail) img.src = details.thumbnail;
+      if (details.original_date) {
+        const dateSpan = document.createElement("span");
+        dateSpan.className = "text-muted";
+        const icon = document.createElement("i");
+        icon.className = "fas fa-calendar me-1";
+        dateSpan.append(icon, details.original_date);
+        footer.prepend(dateSpan);
+      }
+    })
+    .catch(() => {
+      // The View link still works; just go without a preview.
+      img.remove();
+    });
 
   return container;
 }

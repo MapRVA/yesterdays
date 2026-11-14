@@ -396,6 +396,25 @@ def _make_tile_response(
     return response
 
 
+# Image-point tile columns: filtering (id, fuzzy dates), scale visibility, and
+# direction icons need the base set at every zoom; the detail set is for popups.
+_TILE_BASE_COLUMNS = (
+    "image_id AS id",
+    "fuzzy_start_decdate",
+    "fuzzy_end_decdate",
+    "scale",
+    "direction",
+)
+_TILE_DETAIL_COLUMNS = (
+    "thumbnail",
+    "original_date",
+    "edtf_date",
+    "start_decdate",
+    "end_decdate",
+    "confidence",
+)
+
+
 def _generate_tile(
     z,
     x,
@@ -485,21 +504,17 @@ def _generate_tile(
             "WHERE ST_Intersects(point_3857, ST_TileEnvelope(%s, %s, %s))"
         )
 
+    # Low zooms hold the most points per tile, so they get only the columns the
+    # client filters and styles on; popups fetch the rest on demand.
+    columns = _TILE_BASE_COLUMNS
+    if z >= settings.MAP_TILE_DETAIL_MIN_ZOOM:
+        columns += _TILE_DETAIL_COLUMNS
+
     sql = f"""
         SELECT ST_AsMVT(mvtgeoms.*, 'image_points') as mvt FROM (
             SELECT
                 ST_AsMVTGeom(point_3857, ST_TileEnvelope(%s, %s, %s)) AS geom,
-                image_id as id,
-                thumbnail,
-                original_date,
-                edtf_date,
-                start_decdate,
-                fuzzy_start_decdate,
-                end_decdate,
-                fuzzy_end_decdate,
-                scale,
-                direction,
-                confidence
+                {", ".join(columns)}
             FROM public_georeferences_mvt
             {where_clause_sql}
         ) mvtgeoms
