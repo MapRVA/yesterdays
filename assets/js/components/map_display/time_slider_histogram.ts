@@ -18,6 +18,10 @@ export interface TimeSliderHistogramSource {
  * it overlaps, so every image contributes a total weight of 1. Weight falling
  * outside the range folds into the end bins, matching the slider's open ends
  * ("1827 and earlier", "this year and later"). Undated images are skipped.
+ *
+ * Low-zoom tiles hold clusters, not images: one feature per tile-grid cell
+ * and fuzzy start/end, standing for `n` images that share them. A cluster
+ * adds its interval n times over, which is exactly what its images would add.
  */
 export function computeYearHistogram(
   map: maplibregl.Map,
@@ -33,37 +37,42 @@ export function computeYearHistogram(
     filter: source.filter ?? undefined,
   });
   const bounds = map.getBounds();
-  // A point near a tile edge appears in each tile whose buffer holds it
+  // An image on a tile edge appears in both tiles. Clusters (no id) never do:
+  // the server gives each edge point to exactly one tile.
   const seen = new Set<unknown>();
 
   for (const feature of features) {
     const props = feature.properties;
     const start = props.fuzzy_start_decdate;
     if (typeof start !== "number") continue;
-    if (seen.has(props.id)) continue;
+    const id = props.id;
+    if (id !== undefined && seen.has(id)) continue;
     if (feature.geometry.type !== "Point") continue;
     const point = feature.geometry.coordinates as [number, number];
     if (!bounds.contains(point)) continue;
-    seen.add(props.id);
+    if (id !== undefined) seen.add(id);
 
     const rawEnd = props.fuzzy_end_decdate;
     const end = typeof rawEnd === "number" && rawEnd > start ? rawEnd : start;
-    addInterval(bins, minYear, maxYear, start, end);
+    const count = typeof props.n === "number" ? props.n : 1;
+    addInterval(bins, minYear, maxYear, start, end, count);
   }
   return bins;
 }
 
-// Spread one image's unit weight over [start, end), year bins [y, y + 1).
+// Spread `count` images' unit weights over [start, end), year bins
+// [y, y + 1).
 function addInterval(
   bins: Float64Array,
   minYear: number,
   maxYear: number,
   start: number,
   end: number,
+  count: number,
 ): void {
   const last = bins.length - 1;
   const add = (bin: number, weight: number) => {
-    bins[bin] = (bins[bin] ?? 0) + weight;
+    bins[bin] = (bins[bin] ?? 0) + weight * count;
   };
 
   if (end <= start) {

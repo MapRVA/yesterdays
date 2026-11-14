@@ -48,6 +48,14 @@ export interface ImagePointLayerOptions {
   minzoom?: number;
 }
 
+// Tiles up to settings.MAP_TILE_CLUSTER_MAX_ZOOM hold clusters (one feature
+// per tile-grid cell and fuzzy dates, counted in `n`) rather than images, so
+// only the heatmap may read them; the detail circles start a zoom above.
+const DETAIL_CIRCLE_MIN_ZOOM = Math.max(
+  8,
+  (window.MAP_TILE_CLUSTER_MAX_ZOOM ?? 8) + 1,
+);
+
 function circleFilter(
   extraFilter: ExpressionSpecification | null,
 ): FilterSpecification {
@@ -111,7 +119,9 @@ export function heatmapLayer(
     filter: circleFilter(extraFilter),
     layout: { visibility },
     paint: {
-      "heatmap-weight": 0.35,
+      // Weight per image: a cluster of n images counts n times, which the
+      // heatmap's additive density makes identical to drawing each image.
+      "heatmap-weight": ["*", 0.35, ["coalesce", ["get", "n"], 1]],
       "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 4, 6, 10, 20],
       "heatmap-color": [
         "interpolate",
@@ -141,7 +151,7 @@ export function detailCircleLayer(
     opacity = 1,
     extraFilter = null,
     visibility = "visible",
-    minzoom = 8,
+    minzoom = DETAIL_CIRCLE_MIN_ZOOM,
   } = options;
   return {
     id,

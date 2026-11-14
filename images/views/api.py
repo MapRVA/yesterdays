@@ -332,6 +332,9 @@ def vector_tiles_endpoint(request, z, x, y, v=None):
     enable_scale_filter = (
         request.GET.get("enable_scale_filter", "false").lower() == "true"
     )
+    # Clients that need each image (ids, directions) at every zoom opt out of
+    # low-zoom clustering. Not a filter: the tile still holds every image.
+    points = request.GET.get("points", "").lower() in ("1", "true")
     image_id = request.GET.get("image")
     collection_id = request.GET.get("collection")
     source_id = request.GET.get("source")
@@ -369,6 +372,7 @@ def vector_tiles_endpoint(request, z, x, y, v=None):
         album_id,
         georeferenced_by,
         region=region,
+        points=points,
     )
 
     return _make_tile_response(mvt_data, is_filtered, versioned=v is not None)
@@ -427,8 +431,16 @@ def _generate_tile(
     album_id,
     georeferenced_by=None,
     region=None,
+    points=False,
 ) -> bytes:
-    """Generate MVT tile from database."""
+    """Generate MVT tile from database.
+
+    Up to MAP_TILE_CLUSTER_MAX_ZOOM (unless ``points``), images that land on
+    the same tile-grid cell with the same fuzzy dates become one feature with
+    a count ``n``. The client only ever sees the snapped cell, the heatmap
+    sums weight × n, and the date filter keeps or drops whole clusters, so the
+    map renders exactly as it would from the individual images.
+    """
 
     # Build WHERE conditions for filtering
     where_conditions = []
@@ -495,32 +507,63 @@ def _generate_tile(
         )
         where_params.append(georeferenced_by)
 
-    where_clause = " AND ".join(where_conditions)
+    where_conditions.append("ST_Intersects(point_3857, envelope)")
 
-    if where_clause:
-        where_clause_sql = f"WHERE {where_clause} AND ST_Intersects(point_3857, ST_TileEnvelope(%s, %s, %s))"
-    else:
-        where_clause_sql = (
-            "WHERE ST_Intersects(point_3857, ST_TileEnvelope(%s, %s, %s))"
+    if not points and z <= settings.MAP_TILE_CLUSTER_MAX_ZOOM:
+        # Half-open tile bounds: a point on an edge shared by two tiles belongs
+        # to exactly one of them, so clusters never need deduplicating.
+        where_conditions.append(
+            "ST_X(point_3857) >= ST_XMin(envelope)"
+            " AND ST_X(point_3857) < ST_XMax(envelope)"
+            " AND ST_Y(point_3857) > ST_YMin(envelope)"
+            " AND ST_Y(point_3857) <= ST_YMax(envelope)"
         )
+        sql = f"""
+            SELECT ST_AsMVT(clusters.*, 'image_points') AS mvt FROM (
+                SELECT
+                    ST_Point(cell_x, cell_y) AS geom,
+                    fuzzy_start_decdate,
+                    fuzzy_end_decdate,
+                    count(*) AS n
+                FROM (
+                    SELECT
+                        ST_X(geom) AS cell_x,
+                        ST_Y(geom) AS cell_y,
+                        fuzzy_start_decdate,
+                        fuzzy_end_decdate
+                    FROM (
+                        SELECT
+                            ST_AsMVTGeom(point_3857, envelope) AS geom,
+                            fuzzy_start_decdate,
+                            fuzzy_end_decdate
+                        FROM public_georeferences_mvt,
+                            ST_TileEnvelope(%s, %s, %s) AS envelope
+                        WHERE {" AND ".join(where_conditions)}
+                    ) snapped
+                    WHERE geom IS NOT NULL
+                ) cells
+                GROUP BY cell_x, cell_y, fuzzy_start_decdate, fuzzy_end_decdate
+            ) clusters
+        """
+    else:
+        # Low zooms hold the most points per tile, so they get only the
+        # columns the client filters and styles on; popups fetch the rest on
+        # demand.
+        columns = _TILE_BASE_COLUMNS
+        if z >= settings.MAP_TILE_DETAIL_MIN_ZOOM:
+            columns += _TILE_DETAIL_COLUMNS
+        sql = f"""
+            SELECT ST_AsMVT(mvtgeoms.*, 'image_points') AS mvt FROM (
+                SELECT
+                    ST_AsMVTGeom(point_3857, envelope) AS geom,
+                    {", ".join(columns)}
+                FROM public_georeferences_mvt,
+                    ST_TileEnvelope(%s, %s, %s) AS envelope
+                WHERE {" AND ".join(where_conditions)}
+            ) mvtgeoms
+        """
 
-    # Low zooms hold the most points per tile, so they get only the columns the
-    # client filters and styles on; popups fetch the rest on demand.
-    columns = _TILE_BASE_COLUMNS
-    if z >= settings.MAP_TILE_DETAIL_MIN_ZOOM:
-        columns += _TILE_DETAIL_COLUMNS
-
-    sql = f"""
-        SELECT ST_AsMVT(mvtgeoms.*, 'image_points') as mvt FROM (
-            SELECT
-                ST_AsMVTGeom(point_3857, ST_TileEnvelope(%s, %s, %s)) AS geom,
-                {", ".join(columns)}
-            FROM public_georeferences_mvt
-            {where_clause_sql}
-        ) mvtgeoms
-    """
-
-    query_params = [z, x, y] + where_params + [z, x, y]
+    query_params = [z, x, y] + where_params
 
     with connection.cursor() as cursor:
         cursor.execute(sql, query_params)

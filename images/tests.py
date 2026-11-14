@@ -1,5 +1,6 @@
 import datetime
 import json
+import math
 import re
 import tempfile
 import threading
@@ -9,6 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+import mapbox_vector_tile
 import numpy as np
 import requests
 from django.conf import settings
@@ -1997,30 +1999,6 @@ class CollectionDetailRegionFilterTests(TestCase):
         self.assertEqual(
             self.client.get(url, {"region": "deleted-region"}).status_code, 404
         )
-
-    @override_settings(MAP_TILE_DETAIL_MIN_ZOOM=12)
-    def test_tiles_add_popup_details_only_from_detail_zoom(self):
-        Georeference.objects.create(
-            image=self.city_image, point=Point(-77.43, 37.54), confidence="high"
-        )
-        with connection.cursor() as cursor:
-            cursor.execute("REFRESH MATERIALIZED VIEW public_georeferences_mvt")
-
-        def tile(z, x, y):
-            url = reverse("images:vector_tiles", kwargs={"v": 1, "z": z, "x": x, "y": y})
-            response = self.client.get(url, {"image": self.city_image.pk})
-            self.assertTrue(response.content)
-            # MVT stores property keys as plain strings.
-            return response.content
-
-        low = tile(11, 583, 793)
-        high = tile(12, 1167, 1586)
-        for key in (b"fuzzy_start_decdate", b"scale", b"direction"):
-            self.assertIn(key, low)
-            self.assertIn(key, high)
-        for key in (b"thumbnail", b"original_date", b"confidence"):
-            self.assertNotIn(key, low)
-            self.assertIn(key, high)
 
     def test_georeference_queue_combines_region_collection_and_difficulty(self):
         Image.objects.filter(pk=self.city_image.pk).update(difficulty="easy")
@@ -5441,3 +5419,155 @@ class ImageDetailQueryCountTests(TestCase):
             response,
             reverse("images:validate_georeference", args=[latest.id]),
         )
+
+
+def tile_for(lon, lat, z):
+    """The (x, y) of the web-mercator tile holding lon/lat at zoom z."""
+    n = 2**z
+    x = int((lon + 180) / 360 * n)
+    y = int((1 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2 * n)
+    return x, y
+
+
+@override_settings(MAP_TILE_CLUSTER_MAX_ZOOM=8, MAP_TILE_DETAIL_MIN_ZOOM=12)
+class ImagePointTileTests(TestCase):
+    """The image_points vector tiles: clustered at low zoom, per image above."""
+
+    LON, LAT = -77.43, 37.54
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.source = Source.objects.create(
+            name="Src", slug="src", url="https://example.com", description=""
+        )
+        cls.collection = Collection.objects.create(
+            source=cls.source, name="Main", slug="main"
+        )
+        cls.other_collection = Collection.objects.create(
+            source=cls.source, name="Other", slug="other"
+        )
+
+    def add_image(self, dates=None, collection=None, point=None, direction=90):
+        start, end = dates or (None, None)
+        image = Image.objects.create(
+            collection=collection or self.collection,
+            title="Image",
+            permalink="https://img.example.com/image.jpg",
+        )
+        # save() derives the fuzzy dates from edtf_date; set them directly.
+        Image.objects.filter(pk=image.pk).update(
+            fuzzy_start_decdate=start, fuzzy_end_decdate=end
+        )
+        Georeference.objects.create(
+            image=image,
+            point=point or Point(self.LON, self.LAT),
+            direction=direction,
+            confidence="high",
+        )
+        return image
+
+    def refresh_view(self):
+        with connection.cursor() as cursor:
+            cursor.execute("REFRESH MATERIALIZED VIEW public_georeferences_mvt")
+
+    def get_tile(self, z, x=None, y=None, **params):
+        if x is None:
+            x, y = tile_for(self.LON, self.LAT, z)
+        url = reverse("images:vector_tiles", kwargs={"v": 1, "z": z, "x": x, "y": y})
+        return self.client.get(url, params)
+
+    def features(self, z, x=None, y=None, **params):
+        response = self.get_tile(z, x, y, **params)
+        self.assertEqual(response.status_code, 200)
+        if not response.content:
+            return []
+        return mapbox_vector_tile.decode(response.content)["image_points"]["features"]
+
+    def test_images_sharing_cell_and_dates_merge_into_one_counted_feature(self):
+        self.add_image((1920, 1920))
+        self.add_image((1920, 1920))
+        self.add_image((1920, 1930))
+        self.add_image()
+        self.refresh_view()
+
+        features = self.features(3)
+        by_dates = {
+            (
+                f["properties"].get("fuzzy_start_decdate"),
+                f["properties"].get("fuzzy_end_decdate"),
+            ): f["properties"]
+            for f in features
+        }
+        self.assertEqual(len(features), 3)
+        self.assertEqual(by_dates[(1920, 1920)]["n"], 2)
+        self.assertEqual(by_dates[(1920, 1930)]["n"], 1)
+        # Undated images cluster together too; null dates are simply absent.
+        self.assertEqual(by_dates[(None, None)], {"n": 1})
+        self.assertEqual(
+            set(by_dates[(1920, 1920)]),
+            {"fuzzy_start_decdate", "fuzzy_end_decdate", "n"},
+        )
+        self.assertEqual(sum(f["properties"]["n"] for f in features), 4)
+        # One cell: every cluster sits on the same snapped point.
+        self.assertEqual(len({tuple(f["geometry"]["coordinates"]) for f in features}), 1)
+
+    def test_points_opt_out_and_higher_zooms_return_each_image(self):
+        images = [self.add_image((1920, 1920)) for _ in range(3)]
+        self.refresh_view()
+        expected_ids = {image.pk for image in images}
+
+        response = self.get_tile(3, points=1)
+        # Not a filter: the opt-out keeps the long versioned edge cache.
+        self.assertEqual(
+            response["Cache-Control"], "public, max-age=86400, s-maxage=604800"
+        )
+        for features in (self.features(3, points=1), self.features(9)):
+            self.assertEqual({f["properties"]["id"] for f in features}, expected_ids)
+            self.assertNotIn("n", features[0]["properties"])
+
+    def test_filters_apply_before_clustering(self):
+        self.add_image((1920, 1920))
+        self.add_image((1920, 1920))
+        self.add_image((1920, 1920), collection=self.other_collection)
+        self.refresh_view()
+
+        self.assertEqual(
+            [f["properties"]["n"] for f in self.features(3)], [3]
+        )
+        self.assertEqual(
+            [
+                f["properties"]["n"]
+                for f in self.features(3, collection=self.collection.pk)
+            ],
+            [2],
+        )
+
+    def test_point_on_a_shared_tile_edge_belongs_to_one_clustered_tile(self):
+        # Longitude 0 is the edge between z1 tiles x=0 and x=1.
+        self.add_image((1920, 1920), point=Point(0, 10))
+        self.refresh_view()
+
+        clustered = self.features(1, 0, 0) + self.features(1, 1, 0)
+        self.assertEqual(sum(f["properties"]["n"] for f in clustered), 1)
+
+    @override_settings(MAP_TILE_CLUSTER_MAX_ZOOM=-1)
+    def test_negative_cluster_zoom_disables_clustering(self):
+        image = self.add_image((1920, 1920))
+        self.add_image((1920, 1920))
+        self.refresh_view()
+
+        features = self.features(0)
+        self.assertEqual(len(features), 2)
+        self.assertIn(image.pk, {f["properties"]["id"] for f in features})
+
+    def test_popup_details_are_added_only_from_detail_zoom(self):
+        self.add_image((1920, 1920))
+        self.refresh_view()
+
+        (low,) = self.features(11)
+        (high,) = self.features(12)
+        base = {"id", "fuzzy_start_decdate", "fuzzy_end_decdate", "scale", "direction"}
+        self.assertEqual(set(low["properties"]), base)
+        # Null columns (original/EDTF dates here) are left out of the tile.
+        self.assertEqual(set(high["properties"]), base | {"thumbnail", "confidence"})
+

@@ -53,20 +53,31 @@ function watchFirstSourceFeatures(
   });
 }
 
-// With zoomToContents, watches for the images source's first load and fits
-// the map to its features.
+// With zoomToContents, watches for the first load of whichever image source
+// the display style uses (clustered for the heatmap, per image for the simple
+// style) and fits the map to its features. Clusters sit on their images'
+// tile-grid cell, so they bound the contents just as well.
 export function watchInitialFeatures(ctx: MapDisplayContext): void {
   const { map, config } = ctx;
   if (!config.zoomToContents) return;
 
-  watchFirstSourceFeatures(
-    map,
+  let fitted = false;
+  const watches: SourceFeaturesWatch[] = [
     {
       sourceId: SOURCE_IDS.images,
       sourceLayer: "image_points",
       fallbackLayerId: LAYER_IDS.imageCircles,
     },
-    (features) => {
+    {
+      sourceId: SOURCE_IDS.imagePoints,
+      sourceLayer: "image_points",
+      fallbackLayerId: LAYER_IDS.imageCirclesSimple,
+    },
+  ];
+  for (const watch of watches) {
+    watchFirstSourceFeatures(map, watch, (features) => {
+      if (fitted) return;
+      fitted = true;
       if (features.length > 0) {
         const bounds = new maplibregl.LngLatBounds();
         features.forEach(function (feature) {
@@ -78,6 +89,6 @@ export function watchInitialFeatures(ctx: MapDisplayContext): void {
           maxZoom: 15,
         });
       }
-    },
-  );
+    });
+  }
 }

@@ -129,6 +129,7 @@ export class LayerControl implements IControl {
       onBaseLayerChange: options.onBaseLayerChange ?? null,
       onStyleSwap: options.onStyleSwap ?? null,
       onImageLayersToggle: options.onImageLayersToggle ?? null,
+      onImageStyleChange: options.onImageStyleChange ?? null,
     };
   }
 
@@ -608,10 +609,16 @@ export class LayerControl implements IControl {
     this.options.onImageLayersToggle?.(this.imageLayersVisible);
   }
 
+  /** The current image display style (heatmap or simple). */
+  get displayStyle(): ImageDisplayStyle {
+    return this.imageDisplayStyle;
+  }
+
   private setImageDisplayStyle(style: ImageDisplayStyle): void {
     this.imageDisplayStyle = style;
     this.applyImageLayerState();
     this.imagePanel?.setRadiusVisible(style === "simple");
+    this.options.onImageStyleChange?.(style);
   }
 
   private setSimpleCircleRadius(radius: number): void {

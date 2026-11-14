@@ -30,6 +30,14 @@ export const DEFAULT_HISTOGRAM_SOURCE: TimeSliderHistogramSource = {
   sourceLayer: "image_points",
 };
 
+// The same images from the per-image source the simple style reads: only the
+// source behind the visible layers has tiles loaded, so the histogram follows
+// the display style.
+export const POINTS_HISTOGRAM_SOURCE: TimeSliderHistogramSource = {
+  sourceId: SOURCE_IDS.imagePoints,
+  sourceLayer: "image_points",
+};
+
 // The slider's fixed span: from settings.TIME_SLIDER_MIN_YEAR (the oldest
 // surviving photograph) to the current year. Fixed rather than fitted to the
 // loaded images, so the scale doesn't shift as the map pans.
@@ -693,6 +701,14 @@ export class TimeSliderControl implements maplibregl.IControl {
 
       map.setFilter(target.layerId, clauses.length ? ["all", ...clauses] : null);
     }
+  }
+
+  // Count a different source, e.g. when the display style switches to layers
+  // reading another one.
+  setHistogramSource(source: TimeSliderHistogramSource) {
+    if (source.sourceId === this._histogramSource.sourceId) return;
+    this._histogramSource = source;
+    this._markStale();
   }
 
   // Show or hide the whole control (e.g. while the layers it filters are

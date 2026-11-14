@@ -39,6 +39,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "mapbox-vector-tile>=2.2.0",
     "pytest-django>=4.14.0",
     "pytest>=9.1.1",
 ]

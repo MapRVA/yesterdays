@@ -57,6 +57,8 @@ export interface LayerControlOptions {
   onStyleSwap?: ((map: MapLibreMap) => void | Promise<void>) | null;
   // Called when the "Georeferenced Images" overlay is switched on or off
   onImageLayersToggle?: ((visible: boolean) => void) | null;
+  // Called when the image display style (heatmap or simple) changes
+  onImageStyleChange?: ((style: ImageDisplayStyle) => void) | null;
 }
 
 // LayerControlOptions after defaults are applied in the constructor.
@@ -67,6 +69,7 @@ export interface ResolvedLayerControlOptions {
   onBaseLayerChange: ((layerKey: string) => void) | null;
   onStyleSwap: ((map: MapLibreMap) => void | Promise<void>) | null;
   onImageLayersToggle: ((visible: boolean) => void) | null;
+  onImageStyleChange: ((style: ImageDisplayStyle) => void) | null;
 }
 
 interface BaseLayerCommon {

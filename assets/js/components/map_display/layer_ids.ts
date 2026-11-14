@@ -2,6 +2,9 @@
 // layer_control/ imports these to decide layer stacking and visibility.
 export const SOURCE_IDS = {
   images: "images",
+  // The same tiles requested with `points=1`: one feature per image at every
+  // zoom, for the simple style (popups need ids; arrows show at all zooms).
+  imagePoints: "image-points",
   currentImage: "current-image",
   aerialPolygon: "aerial-polygon",
 } as const;

@@ -21,8 +21,16 @@ import { buildScaleHelpers } from "./scale_visibility";
 import {
   DEFAULT_HISTOGRAM_SOURCE,
   DEFAULT_TIME_SLIDER_TARGETS,
+  POINTS_HISTOGRAM_SOURCE,
   TimeSliderControl,
 } from "./time_slider_control";
+import type { ImageDisplayStyle } from "../layer_control/types";
+
+// The histogram counts the source behind the visible image layers: the
+// clustered one for the heatmap style, the per-image one for the simple style.
+function histogramSourceFor(style: ImageDisplayStyle) {
+  return style === "simple" ? POINTS_HISTOGRAM_SOURCE : DEFAULT_HISTOGRAM_SOURCE;
+}
 import type {
   MapDisplayConfig,
   MapDisplayContext,
@@ -116,6 +124,8 @@ export function initializeMap(config: MapDisplayConfig): maplibregl.Map {
     // The date slider only filters the image layers, so it goes with them
     // (keeping its range for when they come back)
     onImageLayersToggle: (visible) => ctx.timeSlider?.setVisible(visible),
+    onImageStyleChange: (style) =>
+      ctx.timeSlider?.setHistogramSource(histogramSourceFor(style)),
   });
   ctx.layerControl = layerControl;
   const navControl = new maplibregl.NavigationControl();
@@ -180,7 +190,7 @@ export function initializeMap(config: MapDisplayConfig): maplibregl.Map {
       const timeSlider = new TimeSliderControl(
         mapId,
         DEFAULT_TIME_SLIDER_TARGETS,
-        DEFAULT_HISTOGRAM_SOURCE,
+        histogramSourceFor(layerControl.displayStyle),
         { collapsed: timeSliderCollapsed },
       );
       map.addControl(timeSlider, "bottom-right");

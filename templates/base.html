@@ -20,6 +20,7 @@
         window.ADMIN_EMAIL = {% if admin_email %}"{{ admin_email }}"{% else %}null{% endif %};
         window.MAP_LAYERS_DATA = {{ map_layers_json|safe }};
         window.TIME_SLIDER_MIN_YEAR = {% if time_slider_min_year %}{{ time_slider_min_year }}{% else %}null{% endif %};
+        window.MAP_TILE_CLUSTER_MAX_ZOOM = {% if map_tile_cluster_max_zoom is not None %}{{ map_tile_cluster_max_zoom }}{% else %}null{% endif %};
     </script>
 
     <!-- Global bundle (Alpine.js + site-wide scripts) - loads first to set up window.Alpine -->

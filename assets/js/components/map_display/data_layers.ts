@@ -10,6 +10,13 @@ import {
 import { DIRECTION_SPRITE_ID, LAYER_IDS, SOURCE_IDS } from "./layer_ids";
 import type { MapDisplayContext } from "./types";
 
+// Low-zoom image tiles are clustered; `points=1` asks for every image instead.
+// Plain string concatenation, since the template's {z}/{x}/{y} must not be
+// URL-encoded.
+export function withPointsParam(tilesUrl: string): string {
+  return tilesUrl + (tilesUrl.includes("?") ? "&" : "?") + "points=1";
+}
+
 // Reusable function to add all image/overlay sources and layers to the map.
 // Called on initial load and after style swaps to restore layers.
 export async function setupMapDataLayers(ctx: MapDisplayContext): Promise<void> {
@@ -45,6 +52,14 @@ export async function setupMapDataLayers(ctx: MapDisplayContext): Promise<void> 
       minzoom: 0,
       maxzoom: 14,
     });
+    // MapLibre only loads a source while one of its layers is visible, so
+    // this costs nothing until the simple style is switched on.
+    map.addSource(SOURCE_IDS.imagePoints, {
+      type: "vector",
+      tiles: [withPointsParam(tilesUrl)],
+      minzoom: 0,
+      maxzoom: 14,
+    });
 
     // Start hidden if in showOtherImages mode (toggle controls visibility)
     const initialVisibility = showOtherImages ? "none" : "visible";
@@ -77,7 +92,11 @@ export async function setupMapDataLayers(ctx: MapDisplayContext): Promise<void> 
     map.addLayer(detailCircleLayer(LAYER_IDS.imageCircles, layerOptions));
 
     // === Simple style layers (hidden by default) ===
-    const simpleLayerOptions = { ...layerOptions, visibility: "none" as const };
+    const simpleLayerOptions = {
+      ...layerOptions,
+      source: SOURCE_IDS.imagePoints,
+      visibility: "none" as const,
+    };
 
     // Add simple direction markers (rendered under simple circles)
     if (map.hasImage(DIRECTION_SPRITE_ID)) {

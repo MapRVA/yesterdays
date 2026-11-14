@@ -53,6 +53,7 @@ def site_settings(request):
         "DIRECTORIES_ENABLED": settings.DIRECTORIES_ENABLED,
         "map_layers_json": json.dumps(_build_map_layers_data()),
         "time_slider_min_year": settings.TIME_SLIDER_MIN_YEAR,
+        "map_tile_cluster_max_zoom": settings.MAP_TILE_CLUSTER_MAX_ZOOM,
     }
 
 

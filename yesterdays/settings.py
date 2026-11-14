@@ -270,6 +270,12 @@ MAP_LAYER_TILE_CACHE_SECONDS = int(os.getenv("MAP_LAYER_TILE_CACHE_SECONDS", "36
 # display date, ...) are added from this zoom on, and fetched on demand below it.
 MAP_TILE_DETAIL_MIN_ZOOM = int(os.getenv("MAP_TILE_DETAIL_MIN_ZOOM", "12"))
 
+# Image-point tiles up to this zoom merge images sharing a tile-grid cell and
+# fuzzy dates into one feature with a count, which only the heatmap draws: the
+# detail circles start one zoom above (and are transparent until z9), and
+# clients needing each image request `points=1`. Negative disables clustering.
+MAP_TILE_CLUSTER_MAX_ZOOM = int(os.getenv("MAP_TILE_CLUSTER_MAX_ZOOM", "8"))
+
 # Earliest year on the map's date-range slider: the oldest surviving
 # photograph, Niépce's View from the Window at Le Gras (June–July 1827). The
 # slider runs to the current year, taken in the browser. Both ends are

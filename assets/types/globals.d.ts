@@ -89,6 +89,9 @@ declare global {
     MAP_LAYERS_DATA?: MapLayersData;
     // Earliest year on the map's date-range slider (settings.TIME_SLIDER_MIN_YEAR)
     TIME_SLIDER_MIN_YEAR?: number | null;
+    // Highest zoom of clustered image-point tiles
+    // (settings.MAP_TILE_CLUSTER_MAX_ZOOM; negative = no clustering)
+    MAP_TILE_CLUSTER_MAX_ZOOM?: number | null;
     MAP_LAYER?: PreviewMapLayer;
     layerEditConfig?: LayerEditConfig;
 

@@ -10,6 +10,7 @@ import {
   protomapsStyleUrl,
 } from "../../components/map_display/basemap";
 import { primaryColor } from "../../components/map_display/colors";
+import { withPointsParam } from "../../components/map_display/data_layers";
 import { initialMapView } from "../../constants/map";
 import { registerSubjectInteractions } from "./interactions";
 import { addCustomLayers } from "./layers";
@@ -32,7 +33,8 @@ document.addEventListener("DOMContentLoaded", () => {
   if (!wrapper || !container) return;
 
   const urls: SubjectsMapUrls = {
-    imageTiles: toTileTemplate(wrapper.dataset.tilesUrl ?? ""),
+    // Every image, not low-zoom clusters: highlighting matches image ids.
+    imageTiles: withPointsParam(toTileTemplate(wrapper.dataset.tilesUrl ?? "")),
     osmElementTiles: toTileTemplate(wrapper.dataset.osmElementsUrl ?? ""),
     osmElementMinZoom: Number(wrapper.dataset.osmElementsMinZoom ?? 0),
   };
