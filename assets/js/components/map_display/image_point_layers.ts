@@ -7,6 +7,7 @@ import type {
   CircleLayerSpecification,
   ExpressionSpecification,
   FilterSpecification,
+  HeatmapLayerSpecification,
   SymbolLayerSpecification,
 } from "maplibre-gl";
 import { DIRECTION_SPRITE_ID } from "./layer_ids";
@@ -65,23 +66,35 @@ function directionFilter(
 // interface can re-apply them via setPaintProperty when its display mode
 // changes, without recreating the layers.
 
-function heatmapOpacityRamp(opacity: number): ExpressionSpecification {
-  return ["interpolate", ["exponential", 5], ["zoom"], 14, opacity, 17, 0];
+// "#rrggbb" or "#rgb" → "rgba(r,g,b,alpha)". The heatmap ramp needs the marker
+// color at several alphas, which a hex string can't express. Colors come from
+// Bootstrap's --bs-* properties (always hex); anything else is passed through
+// unchanged, so it renders opaque rather than failing.
+function withAlpha(color: string, alpha: number): string {
+  const hex = color.replace(/^#/, "");
+  const full =
+    hex.length === 3 ? [...hex].map((c) => c + c).join("") : hex;
+  if (!/^[0-9a-f]{6}$/i.test(full)) return color;
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 export function detailOpacityRamp(opacity: number): ExpressionSpecification {
-  return ["interpolate", ["exponential", 1.5], ["zoom"], 7, 0, 10, opacity];
+  return ["interpolate", ["linear"], ["zoom"], 9, 0, 11, opacity];
 }
 
 export function detailColorRamp(color: string): ExpressionSpecification {
   return ["interpolate", ["linear"], ["zoom"], 14, "#fff", 15, color];
 }
 
-/** Blurred background circles: a heatmap effect that fades out at high zoom. */
-export function heatmapCircleLayer(
+/**
+ * Density heatmap drawn under the detail circles. The color ramp tops out at
+ * half opacity, so the base map stays legible beneath dense areas.
+ */
+export function heatmapLayer(
   id: string,
   options: ImagePointLayerOptions,
-): CircleLayerSpecification {
+): HeatmapLayerSpecification {
   const {
     source,
     sourceLayer,
@@ -92,27 +105,26 @@ export function heatmapCircleLayer(
   } = options;
   return {
     id,
-    type: "circle",
+    type: "heatmap",
     source,
     ...sourceLayerSpec(sourceLayer),
     filter: circleFilter(extraFilter),
-    maxzoom: 17,
     layout: { visibility },
     paint: {
-      "circle-blur": ["interpolate", ["linear"], ["zoom"], 14.5, 1.5, 16, 3],
-      "circle-opacity": heatmapOpacityRamp(opacity),
-      "circle-radius": [
+      "heatmap-weight": 0.35,
+      "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 4, 6, 10, 20],
+      "heatmap-color": [
         "interpolate",
-        ["exponential", 2],
-        ["zoom"],
-        10,
-        25,
-        20,
-        100,
+        ["exponential", 0.05],
+        ["heatmap-density"],
+        0,
+        withAlpha(color, 0),
+        0.05,
+        withAlpha(color, 0.4),
+        0.5,
+        withAlpha(color, 0.5),
       ],
-      "circle-color": color,
-      "circle-pitch-alignment": "map",
-      "circle-pitch-scale": "map",
+      "heatmap-opacity": opacity,
     },
   };
 }
@@ -129,7 +141,7 @@ export function detailCircleLayer(
     opacity = 1,
     extraFilter = null,
     visibility = "visible",
-    minzoom = 7,
+    minzoom = 8,
   } = options;
   return {
     id,
@@ -165,7 +177,7 @@ export function detailCircleLayer(
       ],
       "circle-color": detailColorRamp(color),
       "circle-stroke-color": "#fff",
-      "circle-stroke-opacity": opacity,
+      "circle-stroke-opacity": detailOpacityRamp(opacity),
       "circle-stroke-width": [
         "interpolate",
         ["linear"],

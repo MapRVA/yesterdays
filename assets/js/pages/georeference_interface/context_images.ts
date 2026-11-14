@@ -27,9 +27,9 @@ import type {
 
 // Stacking order: directions (bottom), circles (top). Keep map_layers.ts
 // OVERLAY_LAYER_IDS and the shared layer_control/layer_classification.ts
-// lists in sync with these. The sitewide maps' low-zoom heatmap layer has no
-// counterpart here: context images are gated at CONTEXT_MIN_ZOOM, above which
-// the heatmap has already faded out.
+// lists in sync with these. The sitewide maps' density heatmap layer has no
+// counterpart here: context images only appear from CONTEXT_MIN_ZOOM, where
+// individual points are legible without a density overview.
 export const CONTEXT_LAYER_IDS = {
   directions: "context-image-directions",
   circles: "context-image-circles",

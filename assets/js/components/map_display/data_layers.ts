@@ -2,7 +2,7 @@ import type { ExpressionSpecification } from "maplibre-gl";
 import {
   detailCircleLayer,
   directionSymbolLayer,
-  heatmapCircleLayer,
+  heatmapLayer,
   simpleCircleLayer,
   simpleDirectionSymbolLayer,
   type ImagePointLayerOptions,
@@ -63,8 +63,8 @@ export async function setupMapDataLayers(ctx: MapDisplayContext): Promise<void> 
       visibility: initialVisibility,
     };
 
-    // Add blurred background circles (heatmap effect, fades out at higher zoom)
-    map.addLayer(heatmapCircleLayer(LAYER_IDS.imageHeatmap, layerOptions));
+    // Add density heatmap (underneath the direction markers and detail circles)
+    map.addLayer(heatmapLayer(LAYER_IDS.imageHeatmap, layerOptions));
 
     // Add direction markers (fade in at higher zoom, rendered under circles)
     if (map.hasImage(DIRECTION_SPRITE_ID)) {
