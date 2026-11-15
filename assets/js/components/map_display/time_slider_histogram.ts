@@ -99,7 +99,7 @@ function addInterval(
 /**
  * An SVG path tracing the histogram as adjoining bars, in a viewBox where x is
  * years from minYear (bin i centered on x = i, so bars line up with the
- * slider's thumb positions) and y runs 0 (tallest bin) to 1 (baseline).
+ * scale's year ticks) and y runs 0 (tallest bin) to 1 (baseline).
  * Empty when there's nothing to draw.
  *
  * Heights are logarithmic, ln(1 + count) against the tallest bin's, so one

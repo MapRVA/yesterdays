@@ -98,12 +98,11 @@
 }
 
 .time-slider-card {
-    --thumb: 1rem;
-    --track: 0.5rem;
-    /* The range's box, with the track centered in it */
-    --range: 1.5rem;
-    /* How far the scale tucks up under the range's box */
-    --scale-overlap: 0.125rem;
+    /* Year positions run between the plot's edges inset by this much,
+       leaving the end years' bubbles room for their arrows (insetPx() in
+       time_slider_control.ts assumes 0.5rem) */
+    --inset: 0.5rem;
+    --histogram-height: 2.5rem;
     font-size: 0.875rem;
 }
 
@@ -179,15 +178,22 @@
     display: none;
 }
 
-/* Histogram of the images in view per year, standing on the track: it
-   reaches down into the range's box to the track's top edge. The SVG's x
-   axis is in years and stretches to the thumb-inset width, so each bar sits
-   over its year's thumb position. A primary copy of the bars, clipped to the
+/* The histogram, its scale, and the year bubbles that pick the range. No
+   text selection, so dragging a bubble doesn't highlight the years. */
+.time-slider-plot {
+    position: relative;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* Histogram of the images in view per year, standing on the scale's axis.
+   The SVG's x axis is in years and stretches to the inset width, so each bar
+   sits over its year's tick. A primary copy of the bars, clipped to the
    selected years, lies over the grey one. */
 .time-slider-histogram {
     position: relative;
-    height: 2.5rem;
-    margin: 0 calc(var(--thumb) / 2) calc((var(--track) - var(--range)) / 2);
+    height: var(--histogram-height);
+    margin: 0 var(--inset);
 }
 
 .time-slider-histogram svg {
@@ -225,96 +231,31 @@
     display: flex;
 }
 
-/* Dual-thumb range: two Bootstrap .form-range inputs stacked over a shared
-   track. Only the thumbs take pointer events, so each stays draggable. Year
-   positions are inset by half a thumb, as in the scale and histogram (a
-   thumb at either end reaches the card's padding edge). The track's rounded
-   ends are centered on the first and last years, and the fill, spanning
-   --start..--end (0–1), ends at the thumb centers. */
-.time-slider-range {
-    position: relative;
-    height: var(--range);
-}
-
-.time-slider-track,
-.time-slider-fill {
-    position: absolute;
-    top: 50%;
-    height: var(--track);
-    border-radius: 1rem;
-    transform: translateY(-50%);
-}
-
-.time-slider-track {
-    left: calc(var(--thumb) / 2 - var(--track) / 2);
-    right: calc(var(--thumb) / 2 - var(--track) / 2);
-    background-color: var(--bs-gray-400);
-}
-
-@media (prefers-color-scheme: dark) {
-    .time-slider-track {
-        background-color: var(--bs-gray-700);
-    }
-}
-
-.time-slider-fill {
-    left: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--start, 0));
-    width: calc((100% - var(--thumb)) * (var(--end, 1) - var(--start, 0)));
-    background-color: var(--bs-primary);
-}
-
-.time-slider-range .form-range {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    touch-action: none;
-}
-
-.time-slider-range .form-range::-webkit-slider-runnable-track {
-    background-color: transparent;
-}
-
-.time-slider-range .form-range::-moz-range-track {
-    background-color: transparent;
-}
-
-/* A ring in the card color separates the thumbs from the primary fill */
-.time-slider-range .form-range::-webkit-slider-thumb {
-    pointer-events: auto;
-    box-shadow: 0 0 0 2px var(--bs-card-bg, var(--bs-body-bg));
-}
-
-.time-slider-range .form-range::-moz-range-thumb {
-    pointer-events: auto;
-    box-shadow: 0 0 0 2px var(--bs-card-bg, var(--bs-body-bg));
-}
-
-.time-slider-range .form-range:focus-visible::-webkit-slider-thumb {
-    box-shadow: 0 0 0 2px var(--bs-card-bg, var(--bs-body-bg)),
-        0 0 0 0.3rem rgba(var(--bs-primary-rgb), 0.35);
-}
-
-.time-slider-range .form-range:focus-visible::-moz-range-thumb {
-    box-shadow: 0 0 0 2px var(--bs-card-bg, var(--bs-body-bg)),
-        0 0 0 0.3rem rgba(var(--bs-primary-rgb), 0.35);
-}
-
-/* Keep grabbed handles solid primary (Bootstrap lightens them on :active) */
-.time-slider-range .form-range::-webkit-slider-thumb:active {
-    background-color: var(--bs-primary);
-}
-
-.time-slider-range .form-range::-moz-range-thumb:active {
-    background-color: var(--bs-primary);
-}
-
-/* Graduations under the track: decade ticks (half-century ticks longer),
-   inset by half a thumb like the fill so a tick sits under the thumb center
-   at its year. Ticks inside the selected range take the primary color. */
+/* Graduations under the histogram: decade ticks (half-century ticks
+   longer), inset like the histogram so a tick sits under its year's bar.
+   Ticks inside the selected range take the primary color. */
 .time-slider-scale {
     position: relative;
     height: 0.625rem;
-    margin: calc(-1 * var(--scale-overlap)) calc(var(--thumb) / 2) 0;
+    margin: 0 var(--inset);
+}
+
+/* The baseline the bars stand on and the ticks hang from, drawn like a
+   tick: 1px, in the ticks' grey. It reaches half a year past the first and
+   last years, like their bars. */
+.time-slider-axis {
+    position: absolute;
+    top: 0;
+    left: calc(-100% * var(--half-bin));
+    right: calc(-100% * var(--half-bin));
+    height: 1px;
+    background-color: var(--bs-gray-500);
+}
+
+@media (prefers-color-scheme: dark) {
+    .time-slider-axis {
+        background-color: var(--bs-gray-600);
+    }
 }
 
 /* Positioned by layoutScale(), snapped to whole device pixels; --pos
@@ -350,7 +291,7 @@
     }
 }
 
-/* The scale's end years, flush with the track's ends like the bubbles and
+/* The scale's end years, flush with the plot's edges like the bubbles and
    the From/To inputs, so nothing reaches into the card's padding. The year
    bubbles (below) hang over this row and the scale; layoutScale() hides an
    end year a bubble covers. The row is tall enough to clear the bubbles. */
@@ -376,9 +317,9 @@
     right: 0;
 }
 
-/* A year bubble under each handle: a Bootstrap tooltip in the primary color,
-   arrow up, its tip on the top of the scale's graduations. layoutScale()
-   places them across in pixels and merges them when they'd touch. */
+/* The handles: a year bubble for each end of the range, a Bootstrap tooltip
+   in the primary color, arrow up, its tip on the axis. layoutScale() places
+   them across in pixels and merges them when they'd touch. */
 .time-slider-bubble {
     --bs-tooltip-bg: var(--bs-primary);
     --bs-tooltip-color: #fff;
@@ -387,12 +328,49 @@
     --bs-tooltip-padding-y: 0.125rem;
     --bs-tooltip-padding-x: 0.375rem;
     position: absolute;
-    top: calc(100% - var(--scale-overlap) + var(--bs-tooltip-arrow-height));
+    top: calc(var(--histogram-height) + var(--bs-tooltip-arrow-height));
     margin: 0;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
     font-weight: 600;
-    pointer-events: none;
+    cursor: ew-resize;
+    touch-action: none;
+}
+
+/* A grab area beyond the small bubble, mostly upward (over the histogram)
+   so it doesn't reach the From/To inputs below; larger for touch */
+.time-slider-bubble::before {
+    content: "";
+    position: absolute;
+    inset: -0.5rem -0.25rem -0.125rem;
+}
+
+@media (pointer: coarse) {
+    .time-slider-bubble::before {
+        inset: -1rem -0.5rem -0.25rem;
+    }
+}
+
+/* Mid-drag the pointer can wander off the bubble; keep the resize cursor */
+.time-slider-plot.time-slider-dragging {
+    cursor: ew-resize;
+}
+
+.time-slider-bubble:focus {
+    outline: 0;
+}
+
+/* The focus ring follows the bubble's outline, arrow included: a wide
+   translucent stroke painted under the fill, so only its outer half shows */
+.time-slider-bubble:focus-visible .time-slider-bubble-shape {
+    stroke: rgba(var(--bs-primary-rgb), 0.35);
+    stroke-width: 0.5rem;
+    paint-order: stroke;
+}
+
+.time-slider-bubble:hover .time-slider-bubble-shape,
+.time-slider-dragging .time-slider-bubble-shape {
+    filter: brightness(0.9);
 }
 
 /* The bubble's body and arrow, in place of Bootstrap's background and
