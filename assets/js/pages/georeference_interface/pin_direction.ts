@@ -35,6 +35,84 @@ function destinationPoint(
   return [toDeg(lng2), toDeg(lat2)];
 }
 
+/**
+ * Initial compass bearing (degrees clockwise from north) of the great circle
+ * from one [lng, lat] point to another.
+ */
+function initialBearing(
+  from: [number, number],
+  to: [number, number],
+): number {
+  const toRad = (d: number): number => (d * Math.PI) / 180;
+  const lat1 = toRad(from[1]);
+  const lat2 = toRad(to[1]);
+  const dLng = toRad(to[0] - from[0]);
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x =
+    Math.cos(lat1) * Math.sin(lat2) -
+    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return (Math.atan2(y, x) * 180) / Math.PI;
+}
+
+function normalizeDegrees(deg: number): number {
+  const d = deg % 360;
+  return d < 0 ? d + 360 : d;
+}
+
+// The pin's [lng, lat] from the coordinate inputs, or null if it isn't placed.
+function pinLngLat(ctx: GeoreferenceContext): [number, number] | null {
+  if (!ctx.state.pinPlaced) return null;
+  const lat = parseFloat(ctx.els.latitudeInput.value);
+  const lng = parseFloat(ctx.els.longitudeInput.value);
+  return isNaN(lat) || isNaN(lng) ? null : [lng, lat];
+}
+
+// Screen distance, in pixels, used to sample the direction around the pin.
+// Short enough to stay well below the horizon on a steeply tilted map.
+const SCREEN_SAMPLE_PX = 20;
+
+/**
+ * On-screen angle (degrees clockwise from straight up) at which a compass
+ * direction from the pin is drawn. Projecting through the map, instead of
+ * just subtracting its bearing, keeps the joystick lined up with the
+ * direction cone when the map is tilted as well as rotated.
+ */
+function directionToScreenAngle(
+  ctx: GeoreferenceContext,
+  direction: number,
+): number {
+  const { map } = ctx;
+  const pin = pinLngLat(ctx);
+  if (!pin) return direction - map.getBearing();
+
+  const metersPerPixel =
+    (40075016.686 * Math.cos((pin[1] * Math.PI) / 180)) /
+    (512 * 2 ** map.getZoom());
+  const from = map.project(pin);
+  const to = map.project(
+    destinationPoint(pin, direction, metersPerPixel * SCREEN_SAMPLE_PX),
+  );
+  return (Math.atan2(to.x - from.x, from.y - to.y) * 180) / Math.PI;
+}
+
+// Inverse of directionToScreenAngle().
+function screenAngleToDirection(
+  ctx: GeoreferenceContext,
+  screenAngle: number,
+): number {
+  const { map } = ctx;
+  const pin = pinLngLat(ctx);
+  if (!pin) return normalizeDegrees(screenAngle + map.getBearing());
+
+  const radians = (screenAngle * Math.PI) / 180;
+  const from = map.project(pin);
+  const to = map.unproject([
+    from.x + Math.sin(radians) * SCREEN_SAMPLE_PX,
+    from.y - Math.cos(radians) * SCREEN_SAMPLE_PX,
+  ]);
+  return normalizeDegrees(initialBearing(pin, [to.lng, to.lat]));
+}
+
 export function updateCoordinates(
   ctx: GeoreferenceContext,
   lng: number,
@@ -161,17 +239,21 @@ export function updateJoystickHandle(
     y *= ratio;
   }
 
+  ctx.state.joystickDistance = Math.min(distance, maxRadius);
   ctx.els.joystickHandle.style.transform =
     "translate(calc(-50% + " + x + "px), calc(-50% + " + y + "px))";
 }
 
-// Snap the joystick handle to the container edge at the given bearing.
+// Place the joystick handle at the given bearing, on the container edge
+// unless a distance from the center is given. The joystick is oriented like
+// the map on screen, so the handle points the same way as the direction cone.
 export function setJoystickFromDirection(
   ctx: GeoreferenceContext,
   direction: number,
+  radius: number = getJoystickMaxRadius(ctx),
 ): void {
-  const radians = ((direction - 90) * Math.PI) / 180;
-  const radius = getJoystickMaxRadius(ctx);
+  const screenAngle = directionToScreenAngle(ctx, direction);
+  const radians = ((screenAngle - 90) * Math.PI) / 180;
   updateJoystickHandle(
     ctx,
     Math.cos(radians) * radius,
@@ -205,10 +287,10 @@ function handleJoystickMove(
   const x = clientX - centerX;
   const y = clientY - centerY;
 
-  // Calculate direction (0° is north)
-  const angle = (Math.atan2(y, x) * 180) / Math.PI;
-  let direction = (angle + 90) % 360;
-  if (direction < 0) direction += 360;
+  // The joystick is oriented like the map on screen, so convert the handle's
+  // on-screen angle to a compass direction (0° is north) through the map.
+  const screenAngle = (Math.atan2(y, x) * 180) / Math.PI + 90;
+  const direction = screenAngleToDirection(ctx, screenAngle);
 
   updateDirection(ctx, direction);
   updateJoystickHandle(ctx, x, y);
@@ -252,6 +334,20 @@ export function initJoystick(ctx: GeoreferenceContext): void {
 
   document.addEventListener("touchend", () => {
     state.isJoystickDragging = false;
+  });
+
+  // Keep the handle pointing the same way as the direction cone as the camera
+  // moves, swinging it around the center at its current distance. "move"
+  // rather than "rotate": on a tilted map, pitching and panning also change
+  // the cone's on-screen angle.
+  ctx.map.on("move", () => {
+    if (state.currentDirection !== null) {
+      setJoystickFromDirection(
+        ctx,
+        state.currentDirection,
+        state.joystickDistance,
+      );
+    }
   });
 }
 

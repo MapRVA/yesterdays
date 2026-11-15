@@ -75,6 +75,8 @@ export interface GeoreferenceState {
   pinPlaced: boolean;
   currentDirection: number | null;
   isJoystickDragging: boolean;
+  // Handle's current distance from the joystick center, in pixels
+  joystickDistance: number;
   bearingLineEnabled: boolean;
   osdCenterlineOverlay: HTMLElement | null;
   contextDisplayMode: ContextDisplayMode;

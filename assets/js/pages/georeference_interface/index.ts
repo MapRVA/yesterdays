@@ -186,6 +186,7 @@ function initializeGeoreferenceInterface(
     pinPlaced: false,
     currentDirection: null,
     isJoystickDragging: false,
+    joystickDistance: 0,
     bearingLineEnabled: false,
     osdCenterlineOverlay: null,
     contextDisplayMode: "ghost", // Default to ghost mode
