@@ -5872,9 +5872,9 @@ class TopGeoreferencersTests(ContributorFixturesMixin, TestCase):
         self.georef(self.img("B"), alice)
         self.assertEqual([p["name"] for p in self.top()["shown"]], ["bob", "alice"])
 
-    def test_users_without_pictures_and_overflow_become_more(self):
+    def test_users_without_pictures_rank_too_and_overflow_becomes_more(self):
         image = self.img("A")
-        # The top contributor has no picture, so they're counted, not shown
+        # The top contributor has no picture; they're shown with a stand-in
         self.georef(image, self.user("nopic", picture=False), n=10)
         for n in range(6):
             self.georef(image, self.user(f"u{n}"), n=6 - n)
@@ -5887,9 +5887,18 @@ class TopGeoreferencersTests(ContributorFixturesMixin, TestCase):
         result = self.top(limit=5)
 
         self.assertEqual(
-            [p["name"] for p in result["shown"]], ["u0", "u1", "u2", "u3", "u4"]
+            [p["name"] for p in result["shown"]], ["nopic", "u0", "u1", "u2", "u3"]
         )
-        self.assertEqual(result["more_count"], 2)  # nopic and u5
+        self.assertFalse(result["shown"][0]["picture_url"])
+        self.assertEqual(result["more_count"], 2)  # u4 and u5
+
+    def test_users_without_a_profile_page_become_more(self):
+        image = self.img("A")
+        self.georef(image, User.objects.create_user("no_osm_name"), n=3)
+        self.georef(image, self.user("alice"))
+        result = self.top()
+        self.assertEqual([p["name"] for p in result["shown"]], ["alice"])
+        self.assertEqual(result["more_count"], 1)
 
     def test_zeroed_rows_are_not_contributors(self):
         georef = self.georef(self.img("A"), self.user("alice"))
@@ -5945,8 +5954,16 @@ class TopGeoreferencersTests(ContributorFixturesMixin, TestCase):
         self.assertContains(response, "alice&#10;")
         self.assertNotContains(response, "bob&#10;")
 
-    def test_detail_page_without_pictures_reads_as_one_phrase(self):
+    def test_detail_page_draws_stand_in_without_picture(self):
         self.georef(self.img("A"), self.user("nopic", picture=False))
+        response = self.client.get(self.collection.get_absolute_url())
+        self.assertContains(response, 'class="avatar-stack-standin"')
+        self.assertContains(
+            response, f'href="{reverse("user_profile", args=["nopic"])}"'
+        )
+
+    def test_detail_page_with_no_one_to_picture_reads_as_one_phrase(self):
+        self.georef(self.img("A"), User.objects.create_user("no_osm_name"))
         response = self.client.get(self.collection.get_absolute_url())
         self.assertContains(response, "Georeferenced by 1 contributor</span>")
         self.assertNotContains(response, "avatar-stack-label")

@@ -17,16 +17,24 @@
 .avatar-stack-item {
   position: relative;
   display: inline-block;
+  box-sizing: content-box;
   width: var(--avatar-size);
   height: var(--avatar-size);
   border-radius: 50%;
-  /* A ring in the page colour separates overlapping avatars, in either theme */
-  box-shadow: 0 0 0 2px var(--bs-body-bg);
+  /* A ring in the page colour separates overlapping avatars, in either theme.
+     It's this element's own background showing around the picture, not a
+     box-shadow: a shadow and the picture are clipped to separate curves, and
+     Firefox antialiases them apart, leaving a hairline gap between the two.
+     Here the picture's edge blends into the solid ring instead. The negative
+     margin keeps the ring out of the layout, as a shadow would. */
+  padding: 2px;
+  margin: -2px;
+  background-color: var(--bs-body-bg);
   transition: transform 0.15s ease;
 }
 
 .avatar-stack-item + .avatar-stack-item {
-  margin-left: calc(var(--avatar-size) * -0.3);
+  margin-left: calc(var(--avatar-size) * -0.3 - 2px);
 }
 
 .avatar-stack-item:hover,
@@ -42,6 +50,19 @@
   height: 100%;
   border-radius: 50%;
   object-fit: cover;
+}
+
+/* Stand-in for contributors without a profile picture */
+.avatar-stack-standin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background-color: var(--bs-secondary-bg);
+  color: var(--bs-secondary-color);
+  font-size: calc(var(--avatar-size) * 0.5);
 }
 
 /* Tooltips are plain text (usernames are user-supplied), so honour the

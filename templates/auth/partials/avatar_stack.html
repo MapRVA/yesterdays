@@ -6,8 +6,9 @@ Usage:
 - With a label: {% include 'auth/partials/avatar_stack.html' with people=... more_count=... label='Georeferenced by' %}
 
 Parameters:
-- people (required): list of dicts with ``name``, ``url``, ``picture_url``,
-  and ``count`` (georeferences), first one drawn on top.
+- people (required): list of dicts with ``name``, ``url``, ``picture_url``
+  (optional; a stand-in icon is drawn without one), and ``count``
+  (georeferences), first one drawn on top.
   images.contributors.get_top_georeferencers builds this.
 - more_count (optional): how many people beyond those pictured.
 - label (optional): text before the avatars.
@@ -27,14 +28,18 @@ Renders nothing when there's no one to show.
                data-bs-custom-class="avatar-stack-tooltip"
                data-bs-title="{{ person.name }}&#10;{{ person.count }} georeference{{ person.count|pluralize }}"
                aria-label="{{ person.name }}, {{ person.count }} georeference{{ person.count|pluralize }}">
-                <img src="{{ person.picture_url }}" alt="" loading="lazy">
+                {% if person.picture_url %}
+                    <img src="{{ person.picture_url }}" alt="" loading="lazy">
+                {% else %}
+                    <span class="avatar-stack-standin"><i class="fas fa-user"></i></span>
+                {% endif %}
             </a>
         {% endfor %}
     </span>
     {% if more_count %}<span class="avatar-stack-more text-muted">+{{ more_count }} more</span>{% endif %}
 </div>
 {% elif more_count %}
-{# No pictures to show: one run of text, so nothing sits between label and count but a normal space #}
+{# No one to picture (no profile pages to link): one run of text, so nothing sits between label and count but a normal space #}
 <div class="avatar-stack" style="--avatar-size: {{ size|default:'1.5em' }};">
     <span class="avatar-stack-more text-muted">{% if label %}{{ label }} {% endif %}{{ more_count }} contributor{{ more_count|pluralize }}</span>
 </div>
