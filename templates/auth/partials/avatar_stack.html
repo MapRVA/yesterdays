@@ -28,11 +28,7 @@ Renders nothing when there's no one to show.
                data-bs-custom-class="avatar-stack-tooltip"
                data-bs-title="{{ person.name }}&#10;{{ person.count }} georeference{{ person.count|pluralize }}"
                aria-label="{{ person.name }}, {{ person.count }} georeference{{ person.count|pluralize }}">
-                {% if person.picture_url %}
-                    <img src="{{ person.picture_url }}" alt="" loading="lazy">
-                {% else %}
-                    <span class="avatar-stack-standin"><i class="fas fa-user"></i></span>
-                {% endif %}
+                {% include 'auth/partials/user_avatar.html' with picture_url=person.picture_url only %}
             </a>
         {% endfor %}
     </span>

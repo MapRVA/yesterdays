@@ -5957,7 +5957,7 @@ class TopGeoreferencersTests(ContributorFixturesMixin, TestCase):
     def test_detail_page_draws_stand_in_without_picture(self):
         self.georef(self.img("A"), self.user("nopic", picture=False))
         response = self.client.get(self.collection.get_absolute_url())
-        self.assertContains(response, 'class="avatar-stack-standin"')
+        self.assertContains(response, 'class="user-avatar-standin"')
         self.assertContains(
             response, f'href="{reverse("user_profile", args=["nopic"])}"'
         )
@@ -5984,3 +5984,35 @@ class TopGeoreferencersTests(ContributorFixturesMixin, TestCase):
         with CaptureQueriesContext(connection) as many:
             self.top()
         self.assertEqual(len(few), len(many))
+
+
+class UserAvatarTests(ContributorFixturesMixin, TestCase):
+    """The shared avatar partial, in the stack and the image page."""
+
+    def test_viewers_own_picture_never_stands_in_for_a_contributor(self):
+        self.georef(self.img("A"), self.user("nopic", picture=False))
+        self.client.force_login(self.user("viewer"))
+        response = self.client.get(self.collection.get_absolute_url())
+        self.assertContains(response, 'class="user-avatar-standin"')
+        self.assertNotContains(response, "viewer.png")
+
+    def test_image_page_shows_author_picture(self):
+        image = self.img("A")
+        self.georef(image, self.user("alice"))
+        response = self.client.get(image.get_absolute_url())
+        self.assertContains(response, 'src="https://r2.example.com/alice.png"')
+
+    def test_image_page_shows_stand_in_without_picture_or_author(self):
+        image = self.img("A")
+        self.georef(image, self.user("nopic", picture=False))
+        response = self.client.get(image.get_absolute_url())
+        self.assertContains(response, 'class="user-avatar-standin"')
+
+        anonymous = self.img("B")
+        with self.stats_events():
+            Georeference.objects.create(
+                image=anonymous, point=Point(-77.43, 37.54, srid=4326)
+            )
+        response = self.client.get(anonymous.get_absolute_url())
+        self.assertContains(response, 'class="user-avatar-standin"')
+        self.assertContains(response, "Anonymous")

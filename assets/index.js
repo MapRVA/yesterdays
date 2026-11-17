@@ -9,6 +9,7 @@ import * as bootstrap from "bootstrap";
 // Import global component styles
 import "./styles/main.css";
 import "./styles/components/image-cards.css";
+import "./styles/components/user-avatar.css";
 import "./styles/components/avatar-stack.css";
 
 // Import global utilities

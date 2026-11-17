@@ -364,14 +364,16 @@
                             <dl class="row">
                                 <dt class="col-sm-5">By:</dt>
                                 <dd class="col-sm-7">
-                                    <i class="fas fa-user me-1"></i>
-                                    {% if polygonal_georeference.georeferenced_by %}
-                                        <a href="{% url 'user_profile' polygonal_georeference.georeferenced_by.get_display_name %}" class="text-decoration-none">
-                                            {{ polygonal_georeference.georeferenced_by.get_display_name }}
-                                        </a>
-                                    {% else %}
-                                        Anonymous
-                                    {% endif %}
+                                    <span class="d-flex align-items-center gap-2">
+                                        {% include 'auth/partials/user_avatar.html' with avatar_user=polygonal_georeference.georeferenced_by only %}
+                                        {% if polygonal_georeference.georeferenced_by %}
+                                            <a href="{% url 'user_profile' polygonal_georeference.georeferenced_by.get_display_name %}" class="text-decoration-none">
+                                                {{ polygonal_georeference.georeferenced_by.get_display_name }}
+                                            </a>
+                                        {% else %}
+                                            Anonymous
+                                        {% endif %}
+                                    </span>
                                 </dd>
 
                                 <dt class="col-sm-5">Date:</dt>
@@ -436,14 +438,16 @@
                             <dl class="row">
                                 <dt class="col-sm-5">By:</dt>
                                 <dd class="col-sm-7">
-                                    <i class="fas fa-user me-1"></i>
-                                    {% if georeference.georeferenced_by %}
-                                        <a href="{% url 'user_profile' georeference.georeferenced_by.get_display_name %}" class="text-decoration-none">
-                                            {{ georeference.georeferenced_by.get_display_name }}
-                                        </a>
-                                    {% else %}
-                                        Anonymous
-                                    {% endif %}
+                                    <span class="d-flex align-items-center gap-2">
+                                        {% include 'auth/partials/user_avatar.html' with avatar_user=georeference.georeferenced_by only %}
+                                        {% if georeference.georeferenced_by %}
+                                            <a href="{% url 'user_profile' georeference.georeferenced_by.get_display_name %}" class="text-decoration-none">
+                                                {{ georeference.georeferenced_by.get_display_name }}
+                                            </a>
+                                        {% else %}
+                                            Anonymous
+                                        {% endif %}
+                                    </span>
                                 </dd>
 
                                 <dt class="col-sm-5">Date:</dt>

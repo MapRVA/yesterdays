@@ -1,0 +1,22 @@
+{% comment %}
+One user's profile picture in a circle, or a stand-in icon without one.
+
+Usage (always with `only`, so the logged-in `user` in the surrounding context
+can never stand in for the one meant):
+- From a user: {% include 'auth/partials/user_avatar.html' with avatar_user=georeference.georeferenced_by only %}
+- From a known URL: {% include 'auth/partials/user_avatar.html' with picture_url=person.picture_url only %}
+
+Parameters:
+- avatar_user (optional): the User to draw; None (e.g. anonymous) draws the stand-in.
+- picture_url (optional): the picture URL, when already known (skips a query).
+- size (optional): CSS size; otherwise the inherited --avatar-size, else 1.5em.
+{% endcomment %}
+{# firstof, not |default: a missing filter argument raises, a missing firstof one doesn't #}
+{% firstof picture_url avatar_user.get_profile_picture_url as picture %}
+<span class="user-avatar"{% if size %} style="--avatar-size: {{ size }};"{% endif %}>
+    {% if picture %}
+        <img src="{{ picture }}" alt="" loading="lazy">
+    {% else %}
+        <span class="user-avatar-standin"><i class="fas fa-user"></i></span>
+    {% endif %}
+</span>
