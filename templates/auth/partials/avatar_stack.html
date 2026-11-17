@@ -1,0 +1,41 @@
+{% comment %}
+A single line of overlapping profile pictures, followed by "+N more".
+
+Usage:
+- {% include 'auth/partials/avatar_stack.html' with people=georeferencers.shown more_count=georeferencers.more_count %}
+- With a label: {% include 'auth/partials/avatar_stack.html' with people=... more_count=... label='Georeferenced by' %}
+
+Parameters:
+- people (required): list of dicts with ``name``, ``url``, ``picture_url``,
+  and ``count`` (georeferences), first one drawn on top.
+  images.contributors.get_top_georeferencers builds this.
+- more_count (optional): how many people beyond those pictured.
+- label (optional): text before the avatars.
+- size (optional): CSS size for each avatar (default '1.5em', one line of body text).
+
+Renders nothing when there's no one to show.
+{% endcomment %}
+{% if people %}
+<div class="avatar-stack" style="--avatar-size: {{ size|default:'1.5em' }};">
+    {% if label %}<span class="avatar-stack-label text-muted">{{ label }}</span>{% endif %}
+    <span class="avatar-stack-avatars">
+        {% for person in people %}
+            <a href="{{ person.url }}"
+               class="avatar-stack-item"
+               style="z-index: {{ forloop.revcounter }};"
+               data-bs-toggle="tooltip"
+               data-bs-custom-class="avatar-stack-tooltip"
+               data-bs-title="{{ person.name }}&#10;{{ person.count }} georeference{{ person.count|pluralize }}"
+               aria-label="{{ person.name }}, {{ person.count }} georeference{{ person.count|pluralize }}">
+                <img src="{{ person.picture_url }}" alt="" loading="lazy">
+            </a>
+        {% endfor %}
+    </span>
+    {% if more_count %}<span class="avatar-stack-more text-muted">+{{ more_count }} more</span>{% endif %}
+</div>
+{% elif more_count %}
+{# No pictures to show: one run of text, so nothing sits between label and count but a normal space #}
+<div class="avatar-stack" style="--avatar-size: {{ size|default:'1.5em' }};">
+    <span class="avatar-stack-more text-muted">{% if label %}{{ label }} {% endif %}{{ more_count }} contributor{{ more_count|pluralize }}</span>
+</div>
+{% endif %}

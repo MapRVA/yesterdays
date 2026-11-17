@@ -5,8 +5,9 @@ Two independent concerns live here:
 
 - The public_georeferences_mvt materialized view, refreshed when a
   Georeference changes or a Collection's / Source's 'public' status does.
-- The denormalized stats tables, CollectionStats and CollectionRegionStats,
-  refreshed whenever images, georeferences, or region assignments change.
+- The denormalized stats tables, CollectionStats, CollectionRegionStats, and
+  CollectionContributorStats, refreshed whenever images, georeferences, or
+  region assignments change.
 """
 
 import logging
@@ -19,13 +20,17 @@ from regions.models import Region
 from .models import (
     AerialGeoreference,
     Collection,
+    CollectionContributorStats,
     CollectionRegionStats,
     CollectionStats,
     Georeference,
     Image,
     Source,
 )
-from .tasks import reconcile_collection_region_stats
+from .tasks import (
+    reconcile_collection_contributor_stats,
+    reconcile_collection_region_stats,
+)
 from .views.api import bump_tile_version
 
 logger = logging.getLogger(__name__)
@@ -106,15 +111,16 @@ def refresh_view_on_source_save(sender, instance, **kwargs):
 
 
 # ---------------------------------------------------------------------------
-# CollectionStats / CollectionRegionStats maintenance
+# CollectionStats / CollectionRegionStats / CollectionContributorStats
 #
 # Keep the denormalized per-collection statistics current the moment the
 # underlying data changes, so browse pages always show correct numbers
 # without running aggregate queries. Refreshes run on_commit, after the
 # write is visible to other transactions.
 #
-# Both tables refresh a whole collection at a time, so no handler has to work
-# out which regions a change moved images between.
+# Every table refreshes a whole collection at a time, so no handler has to
+# work out which regions a change moved images between. The one narrowing:
+# a georeference write refreshes only its author's contributor rows.
 # ---------------------------------------------------------------------------
 
 # Image fields that affect CollectionStats counts. Saves restricted (via
@@ -132,33 +138,39 @@ STATS_RELEVANT_IMAGE_FIELDS = {
 REGION_STATS_RELEVANT_IMAGE_FIELDS = STATS_RELEVANT_IMAGE_FIELDS | {"region"}
 
 
-def _refresh_stats_on_commit(collection_ids, *, include_sitewide=True):
+def _refresh_stats_on_commit(
+    collection_ids, *, include_sitewide=True, contributor_ids=None
+):
     """Queue a post-commit refresh of the denormalized stats tables.
 
-    Both tables refresh from a single callback: the collection-wide aggregate
+    All tables refresh from a single callback: the collection-wide aggregate
     is the expensive part and every triggering write pays for it either way.
     Changes that only move images between regions — a collection's or source's
     region assignment — pass include_sitewide=False, since no sitewide count
-    can have moved.
+    can have moved. Pass contributor_ids to limit the contributor refresh to
+    those users' rows; by default it covers everyone in the collections.
     """
     ids = [cid for cid in collection_ids if cid is not None]
     if not ids:
         return
+    if contributor_ids is not None:
+        contributor_ids = [uid for uid in contributor_ids if uid is not None]
 
-    targets = (
-        (CollectionStats, CollectionRegionStats)
-        if include_sitewide
-        else (CollectionRegionStats,)
-    )
+    refreshes = [
+        (CollectionRegionStats, {}),
+        (CollectionContributorStats, {"user_ids": contributor_ids}),
+    ]
+    if include_sitewide:
+        refreshes.insert(0, (CollectionStats, {}))
 
     def _refresh():
-        for model in targets:
+        for model, kwargs in refreshes:
             # Log but don't raise: the triggering write already committed, and
             # a failed refresh only means stale stats until the next event or
             # the periodic reconcile. Caught per table so one failing doesn't
-            # skip the other.
+            # skip the others.
             try:
-                model.refresh_for(ids)
+                model.refresh_for(ids, **kwargs)
             except Exception:
                 logger.warning(
                     f"Failed to refresh {model.__name__} for {ids}", exc_info=True
@@ -175,6 +187,23 @@ def _collection_id_of_image(image_id):
     )
 
 
+@receiver(pre_save, sender=Georeference)
+@receiver(pre_save, sender=AerialGeoreference)
+def capture_previous_georeference(sender, instance, **kwargs):
+    """Remember the image and author a georeference is moving away from.
+
+    Submissions are append-only, but merging duplicates re-points
+    georeferences at the kept image, which can sit in another collection.
+    """
+    instance._previous_image_author = None
+    if not instance._state.adding:
+        instance._previous_image_author = (
+            sender.objects.filter(pk=instance.pk)
+            .values_list("image_id", "georeferenced_by_id")
+            .first()
+        )
+
+
 @receiver(post_save, sender=Georeference)
 @receiver(post_delete, sender=Georeference)
 @receiver(post_save, sender=AerialGeoreference)
@@ -182,10 +211,20 @@ def _collection_id_of_image(image_id):
 def refresh_stats_on_georeference_change(sender, instance, **kwargs):
     """Refresh the image's collection stats when a georeference changes.
 
+    Only the author's contributor rows can change, so only those refresh —
+    plus the previous image's collection and author when an update moved it.
     On cascade deletes triggered by an Image delete the image row may already
     be gone; the Image post_delete handler covers the refresh in that case.
     """
-    _refresh_stats_on_commit([_collection_id_of_image(instance.image_id)])
+    collection_ids = {_collection_id_of_image(instance.image_id)}
+    user_ids = {instance.georeferenced_by_id}
+    previous = getattr(instance, "_previous_image_author", None)
+    if previous:
+        previous_image_id, previous_user_id = previous
+        if previous_image_id != instance.image_id:
+            collection_ids.add(_collection_id_of_image(previous_image_id))
+        user_ids.add(previous_user_id)
+    _refresh_stats_on_commit(collection_ids, contributor_ids=user_ids)
 
 
 @receiver(pre_save, sender=Image)
@@ -323,14 +362,17 @@ def reconcile_region_stats_on_region_save(sender, instance, **kwargs):
         return
 
     def _reconcile():
-        try:
-            reconcile_collection_region_stats.delay()
-        except Exception:
-            logger.warning(
-                "Failed to queue region stats reconcile after saving region "
-                f"{instance.pk}",
-                exc_info=True,
-            )
+        for task in (
+            reconcile_collection_region_stats,
+            reconcile_collection_contributor_stats,
+        ):
+            try:
+                task.delay()
+            except Exception:
+                logger.warning(
+                    f"Failed to queue {task.name} after saving region {instance.pk}",
+                    exc_info=True,
+                )
 
     transaction.on_commit(_reconcile)
 

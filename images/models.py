@@ -652,6 +652,184 @@ class CollectionRegionStats(models.Model):
                 )
 
 
+class CollectionContributorStats(models.Model):
+    """Denormalized per-collection, per-region, per-user georeference counts.
+
+    Backs the "Georeferenced by" avatar stack on source and collection pages
+    (images.contributors), which would otherwise aggregate every georeference
+    under the page on each request. Point and aerial georeferences both
+    count, every submission rather than every image (a user correcting their
+    own pin counts twice, as on the stats page); anonymous submissions and
+    georeferences of duplicate images count nowhere.
+
+    Rows with a NULL region are the collection-wide totals. Rows with a
+    region roll up exactly as CollectionRegionStats does — image ->
+    collection -> source, then up the P131 chain — so the region rows of a
+    page select the same images as Image.objects.in_region. Display names and
+    profile pictures are joined at read time, never copied here.
+
+    Kept current the same way as the other two stats tables: signal handlers
+    refresh on commit, the freshness guard lets the newest snapshot win,
+    pairs that lose their last georeference are written back as zeros, and
+    the periodic reconcile both heals drift and garbage-collects old zeros. A
+    georeference write refreshes only its author's rows; image, collection,
+    source, and region changes refresh whole collections.
+    """
+
+    collection = models.ForeignKey(
+        Collection, on_delete=models.CASCADE, related_name="contributor_stats"
+    )
+    region = models.ForeignKey(
+        "regions.Region",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="collection_contributor_stats",
+        help_text="Null for the collection-wide row",
+    )
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="collection_contributor_stats"
+    )
+    georeference_count = models.PositiveIntegerField(default=0)
+    # Tie-break between equal counts: whoever started first ranks higher
+    first_georeferenced_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = "collection contributor stats"
+        constraints = [
+            # NULLS NOT DISTINCT so the collection-wide (NULL region) row is
+            # unique too. Also the unique index ON CONFLICT infers in
+            # REFRESH_SQL, and the one reads use: they filter on collection
+            # and region.
+            models.UniqueConstraint(
+                fields=["collection", "region", "user"],
+                name="collectioncontributorstats_unique",
+                nulls_distinct=False,
+            ),
+        ]
+
+    def __str__(self):
+        where = f" in {self.region}" if self.region_id else ""
+        return f"{self.user} in {self.collection}{where}"
+
+    REFRESH_SQL = """
+    WITH region_expansion AS (
+        -- Kept in sync by hand with CollectionRegionStats.REFRESH_SQL; must
+        -- stay UNION (see the note there)
+        SELECT r.id AS region_id, r.id AS counts_toward_id
+        FROM regions_region r
+        UNION
+        SELECT ra.region_id, r2.id
+        FROM regions_regionancestor ra
+        JOIN regions_region r2 ON r2.wikidata_item_id = ra.ancestor_id
+    ),
+    georefs AS MATERIALIZED (
+        -- One row per counted georeference, with the region its image
+        -- resolves to
+        SELECT
+            c.id AS collection_id,
+            COALESCE(img.region_id, c.region_id, s.region_id) AS region_id,
+            g.georeferenced_by_id AS user_id,
+            g.georeferenced_at
+        FROM images_collection c
+        JOIN images_source s ON s.id = c.source_id
+        JOIN images_image img
+            ON img.collection_id = c.id AND img.duplicate_of_id IS NULL
+        JOIN (
+            SELECT image_id, georeferenced_by_id, georeferenced_at
+            FROM images_georeference
+            UNION ALL
+            SELECT image_id, georeferenced_by_id, georeferenced_at
+            FROM images_aerialgeoreference
+        ) g ON g.image_id = img.id
+        WHERE g.georeferenced_by_id IS NOT NULL {where_clause}
+    ),
+    computed AS (
+        SELECT
+            collection_id, NULL::bigint AS region_id, user_id,
+            COUNT(*) AS georeference_count,
+            MIN(georeferenced_at) AS first_georeferenced_at
+        FROM georefs
+        GROUP BY collection_id, user_id
+        UNION ALL
+        -- Inner join: an image with no effective region counts only toward
+        -- the collection-wide row above
+        SELECT
+            gr.collection_id, exp.counts_toward_id, gr.user_id,
+            COUNT(*), MIN(gr.georeferenced_at)
+        FROM georefs gr
+        JOIN region_expansion exp ON exp.region_id = gr.region_id
+        GROUP BY gr.collection_id, exp.counts_toward_id, gr.user_id
+    ),
+    targets AS (
+        SELECT * FROM computed
+        UNION ALL
+        -- Rows in scope that no longer have any georeferences, written back
+        -- as zeros rather than deleted, for the reason given in
+        -- CollectionRegionStats.REFRESH_SQL
+        SELECT s.collection_id, s.region_id, s.user_id, 0, NULL
+        FROM images_collectioncontributorstats s
+        WHERE {stale_scope}
+          AND s.georeference_count > 0
+          AND NOT EXISTS (
+              SELECT 1 FROM computed x
+              WHERE x.collection_id = s.collection_id
+                AND x.region_id IS NOT DISTINCT FROM s.region_id
+                AND x.user_id = s.user_id
+          )
+    )
+    INSERT INTO images_collectioncontributorstats (
+        collection_id, region_id, user_id, georeference_count,
+        first_georeferenced_at, updated_at
+    )
+    SELECT
+        collection_id, region_id, user_id, georeference_count,
+        first_georeferenced_at,
+        -- Snapshot time; see CollectionStats.REFRESH_SQL
+        STATEMENT_TIMESTAMP()
+    FROM targets
+    ON CONFLICT (collection_id, region_id, user_id) DO UPDATE SET
+        georeference_count = EXCLUDED.georeference_count,
+        first_georeferenced_at = EXCLUDED.first_georeferenced_at,
+        updated_at = EXCLUDED.updated_at
+    -- Freshest snapshot wins
+    WHERE images_collectioncontributorstats.updated_at < EXCLUDED.updated_at
+    """
+
+    @classmethod
+    def refresh_for(cls, collection_ids=None, user_ids=None):
+        """Recompute contributor rows in one upsert.
+
+        Pass collection ids to refresh just those collections, or None to
+        refresh every collection (reconcile). Pass user ids as well to limit
+        the refresh to those users' rows, which is all a georeference write
+        can change.
+        """
+        if collection_ids is not None and not collection_ids:
+            return
+        if user_ids is not None and not user_ids:
+            return
+        where, stale, params, stale_params = [], [], [], []
+        if collection_ids is not None:
+            where.append("c.id = ANY(%s)")
+            stale.append("s.collection_id = ANY(%s)")
+            params.append(list(collection_ids))
+            stale_params.append(list(collection_ids))
+        if user_ids is not None:
+            where.append("g.georeferenced_by_id = ANY(%s)")
+            stale.append("s.user_id = ANY(%s)")
+            params.append(list(user_ids))
+            stale_params.append(list(user_ids))
+        sql = cls.REFRESH_SQL.format(
+            where_clause="".join(f" AND {w}" for w in where),
+            stale_scope=" AND ".join(stale) or "TRUE",
+        )
+        # Bound in SQL-text order: {where_clause} appears before {stale_scope}
+        with connection.cursor() as cursor:
+            cursor.execute(sql, params + stale_params)
+
+
 class CollectionEmbeddingStats(models.Model):
     """
     Per-collection mean image embedding.

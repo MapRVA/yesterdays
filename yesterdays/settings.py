@@ -407,6 +407,7 @@ CELERY_TASK_ROUTES = {
     "images.tasks.cleanup_stale_import_slots": {"queue": "background"},
     "images.tasks.reconcile_collection_stats": {"queue": "background"},
     "images.tasks.reconcile_collection_region_stats": {"queue": "background"},
+    "images.tasks.reconcile_collection_contributor_stats": {"queue": "background"},
     "images.tasks.refresh_collection_embedding_stats": {"queue": "background"},
     "images.tasks.refresh_next_collection_embedding_stats": {"queue": "background"},
     "images.tasks.generate_embeddings_batch": {"queue": "background"},
@@ -486,6 +487,11 @@ CELERY_BEAT_SCHEDULE = {
         # the two heaviest full-table aggregates don't both fire off the same
         # beat-startup instant
         "schedule": crontab(minute=30),
+    },
+    "reconcile-collection-contributor-stats": {
+        "task": "images.tasks.reconcile_collection_contributor_stats",
+        # Hourly, offset from the two reconciles above
+        "schedule": crontab(minute=45),
     },
     "refresh-next-collection-embedding-stats": {
         "task": "images.tasks.refresh_next_collection_embedding_stats",

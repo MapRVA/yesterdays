@@ -9,6 +9,7 @@ import * as bootstrap from "bootstrap";
 // Import global component styles
 import "./styles/main.css";
 import "./styles/components/image-cards.css";
+import "./styles/components/avatar-stack.css";
 
 // Import global utilities
 import "./js/components/notifications.js";
@@ -284,6 +285,12 @@ window.getCsrfToken = function () {
 // 3. DOMContentLoaded fires and Alpine.start() initializes all components
 document.addEventListener("DOMContentLoaded", () => {
   Alpine.start();
+
+  // Bootstrap tooltips are opt-in; enable them for server-rendered markup
+  // that asks with data-bs-toggle="tooltip" (e.g. the avatar stack partial)
+  document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
+    bootstrap.Tooltip.getOrCreateInstance(el);
+  });
 });
 
 console.log("Vite bundle loaded with Alpine.js, Bootstrap, and Font Awesome");

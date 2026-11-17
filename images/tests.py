@@ -1,4 +1,5 @@
 import datetime
+import importlib
 import json
 import math
 import re
@@ -45,12 +46,14 @@ from images.management.commands.detect_addresses import (
 )
 from images import clip_client, policies
 from images.admin import SiteSettingsAdminForm
+from images.contributors import get_top_georeferencers
 from images.models import (
     AerialGeoreference,
     AerialGeoreferenceValidation,
     Album,
     AlbumImage,
     Collection,
+    CollectionContributorStats,
     CollectionRegionStats,
     CollectionStats,
     Comment,
@@ -66,10 +69,12 @@ from images.tasks import (
     embed_image_url,
     generate_embeddings_batch,
     process_image,
+    reconcile_collection_contributor_stats,
     reconcile_collection_region_stats,
     reconcile_collection_stats,
 )
 from images.utils import compass_label, get_confidence_breakdown, get_overall_stats
+from osm_auth.models import UserProfile
 from regions.context_processors import REGION_COOKIE_NAME, REGION_MAP_ZOOM
 from regions.models import Region, RegionAncestor
 from regions.tests import make_region
@@ -1532,6 +1537,9 @@ class CollectionRegionStatsTests(StatsEventsMixin, TestCase):
             patch(
                 "images.signals.reconcile_collection_region_stats.delay"
             ) as reconcile,
+            patch(
+                "images.signals.reconcile_collection_contributor_stats.delay"
+            ) as reconcile_contributors,
             self.captureOnCommitCallbacks(execute=True),
         ):
             item = WikidataItem.objects.create(wikidata_id="Q49231", title="Norfolk")
@@ -1542,6 +1550,7 @@ class CollectionRegionStatsTests(StatsEventsMixin, TestCase):
                 wikidata_item=item,
             )
         reconcile.assert_called_once()
+        reconcile_contributors.assert_called_once()
 
     # -- self-healing ------------------------------------------------------
 
@@ -5571,3 +5580,390 @@ class ImagePointTileTests(TestCase):
         # Null columns (original/EDTF dates here) are left out of the tile.
         self.assertEqual(set(high["properties"]), base | {"thumbnail", "confidence"})
 
+
+class ContributorFixturesMixin(StatsEventsMixin):
+    """Users, regions, and georeference helpers for the contributor tests.
+
+    Richmond's P131 chain reaches Virginia, so an image in Richmond counts
+    toward both.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        city_item, state_item = WikidataItem.objects.bulk_create(
+            [
+                WikidataItem(wikidata_id="Q43421", title="Richmond"),
+                WikidataItem(wikidata_id="Q1370", title="Virginia"),
+            ]
+        )
+        cls.city = make_region(
+            short_name="Richmond",
+            long_name="Richmond, Virginia",
+            slug="richmond",
+            wikidata_item=city_item,
+        )
+        cls.state = make_region(
+            short_name="Virginia",
+            long_name="Virginia",
+            slug="virginia",
+            wikidata_item=state_item,
+        )
+        RegionAncestor.objects.create(region=cls.city, ancestor=state_item)
+        cls.source = Source.objects.create(
+            name="Src", slug="src", url="https://example.com", description=""
+        )
+        cls.collection = Collection.objects.create(
+            source=cls.source, name="Col", slug="col", url="https://example.com"
+        )
+        cls.other = Collection.objects.create(
+            source=cls.source, name="Other", slug="other", url="https://example.com"
+        )
+
+    def user(self, name, picture=True):
+        user = User.objects.create_user(f"osm_{name}", first_name=name)
+        if picture:
+            UserProfile.objects.create(
+                user=user, profile_picture_url=f"https://r2.example.com/{name}.png"
+            )
+        return user
+
+    def georef(self, image, user, n=1):
+        with self.stats_events():
+            created = [
+                Georeference.objects.create(
+                    image=image,
+                    point=Point(-77.43, 37.54, srid=4326),
+                    confidence="high",
+                    georeferenced_by=user,
+                )
+                for _ in range(n)
+            ]
+        return created[0]
+
+    def aerial_georef(self, image, user):
+        with self.stats_events():
+            return AerialGeoreference.objects.create(
+                image=image,
+                polygon=Polygon(
+                    (
+                        (-77.44, 37.53),
+                        (-77.43, 37.53),
+                        (-77.43, 37.54),
+                        (-77.44, 37.53),
+                    ),
+                    srid=4326,
+                ),
+                confidence="medium",
+                georeferenced_by=user,
+            )
+
+    def set_region(self, obj, region):
+        with self.stats_events():
+            obj.region = region
+            obj.save()
+
+
+class CollectionContributorStatsTests(ContributorFixturesMixin, TestCase):
+    """The per-(collection, region, user) rows stay correct as georeferences,
+    images, and region assignments change."""
+
+    def rows(self, collection=None):
+        """{(region slug or None, username): count} for a collection."""
+        return {
+            (row.region.slug if row.region else None, row.user.first_name): (
+                row.georeference_count
+            )
+            for row in CollectionContributorStats.objects.filter(
+                collection=collection or self.collection
+            ).select_related("region", "user")
+        }
+
+    def test_georeference_create_and_delete(self):
+        alice = self.user("alice")
+        georef = self.georef(self.img("A"), alice)
+        self.assertEqual(self.rows(), {(None, "alice"): 1})
+
+        with self.stats_events():
+            georef.delete()
+        # Zeroed rather than deleted; the reconcile collects it later
+        self.assertEqual(self.rows(), {(None, "alice"): 0})
+
+    def test_counts_point_and_aerial_but_not_anonymous_or_duplicates(self):
+        alice = self.user("alice")
+        image = self.img("A")
+        self.georef(image, alice, n=2)
+        self.aerial_georef(self.img("Aerial", aerial=True), alice)
+        with self.stats_events():
+            Georeference.objects.create(
+                image=self.img("Anon"), point=Point(-77.43, 37.54, srid=4326)
+            )
+        self.georef(self.img("Dup", duplicate_of=image), alice)
+
+        self.assertEqual(self.rows(), {(None, "alice"): 3})
+
+    def test_first_georeferenced_at_is_the_earliest(self):
+        alice = self.user("alice")
+        first = self.georef(self.img("A"), alice)
+        self.georef(self.img("B"), alice)
+        row = CollectionContributorStats.objects.get(region=None)
+        self.assertEqual(row.first_georeferenced_at, first.georeferenced_at)
+
+    def test_region_rows_roll_up_the_p131_chain(self):
+        self.set_region(self.collection, self.city)
+        self.georef(self.img("A"), self.user("alice"))
+        self.assertEqual(
+            self.rows(),
+            {(None, "alice"): 1, ("richmond", "alice"): 1, ("virginia", "alice"): 1},
+        )
+
+    def test_image_without_region_counts_only_collection_wide(self):
+        self.georef(self.img("A"), self.user("alice"))
+        self.assertEqual(self.rows(), {(None, "alice"): 1})
+
+    def test_georeference_write_refreshes_only_its_author(self):
+        alice, bob = self.user("alice"), self.user("bob")
+        # Images first: an image save rightly refreshes every user's rows
+        first, second = self.img("A"), self.img("B")
+        self.georef(first, bob)
+        # Plant drift in bob's row: alice's write must not touch it
+        CollectionContributorStats.objects.filter(user=bob).update(
+            georeference_count=99
+        )
+        self.georef(second, alice)
+        self.assertEqual(self.rows(), {(None, "alice"): 1, (None, "bob"): 99})
+
+    def test_georeference_moved_to_another_collection(self):
+        # The duplicate-merge view re-points georeferences one at a time
+        alice = self.user("alice")
+        georef = self.georef(self.img("A"), alice)
+        with self.stats_events():
+            georef.image = self.img("B", collection=self.other)
+            georef.save()
+        self.assertEqual(self.rows(), {(None, "alice"): 0})
+        self.assertEqual(self.rows(self.other), {(None, "alice"): 1})
+
+    def test_georeference_reassigned_to_another_user(self):
+        alice, bob = self.user("alice"), self.user("bob")
+        georef = self.georef(self.img("A"), alice)
+        with self.stats_events():
+            georef.georeferenced_by = bob
+            georef.save()
+        self.assertEqual(self.rows(), {(None, "alice"): 0, (None, "bob"): 1})
+
+    def test_image_moved_to_another_collection(self):
+        image = self.img("A")
+        self.georef(image, self.user("alice"))
+        with self.stats_events():
+            image.collection = self.other
+            image.save()
+        self.assertEqual(self.rows(), {(None, "alice"): 0})
+        self.assertEqual(self.rows(self.other), {(None, "alice"): 1})
+
+    def test_image_region_change_moves_region_rows(self):
+        image = self.img("A")
+        self.georef(image, self.user("alice"))
+        with self.stats_events():
+            image.region = self.state
+            image.save(update_fields=["region"])
+        self.assertEqual(self.rows(), {(None, "alice"): 1, ("virginia", "alice"): 1})
+
+    def test_source_region_change_reaches_inheriting_collections(self):
+        self.georef(self.img("A"), self.user("alice"))
+        self.set_region(self.source, self.city)
+        self.assertEqual(
+            self.rows(),
+            {(None, "alice"): 1, ("richmond", "alice"): 1, ("virginia", "alice"): 1},
+        )
+
+    def test_reconcile_heals_drift_and_collects_aged_zeros(self):
+        alice, bob = self.user("alice"), self.user("bob")
+        self.georef(self.img("A"), alice)
+        CollectionContributorStats.objects.filter(user=alice).update(
+            georeference_count=99
+        )
+        CollectionContributorStats.objects.create(
+            collection=self.collection, user=bob, georeference_count=5
+        )
+
+        reconcile_collection_contributor_stats()
+        self.assertEqual(self.rows(), {(None, "alice"): 1, (None, "bob"): 0})
+
+        CollectionContributorStats.objects.update(
+            updated_at=timezone.now() - datetime.timedelta(days=2)
+        )
+        reconcile_collection_contributor_stats()
+        self.assertEqual(self.rows(), {(None, "alice"): 1})
+
+    def test_refresh_skips_rows_computed_from_newer_snapshot(self):
+        alice = self.user("alice")
+        self.georef(self.img("A"), alice)
+        CollectionContributorStats.objects.update(
+            georeference_count=99,
+            updated_at=timezone.now() + datetime.timedelta(hours=1),
+        )
+        CollectionContributorStats.refresh_for([self.collection.pk])
+        self.assertEqual(self.rows(), {(None, "alice"): 99})
+
+    def test_migration_backfill_matches_refresh(self):
+        self.set_region(self.collection, self.city)
+        alice, bob = self.user("alice"), self.user("bob")
+        self.georef(self.img("A"), alice, n=2)
+        self.georef(self.img("B", collection=self.other), bob)
+        self.aerial_georef(self.img("Aerial", aerial=True), bob)
+        expected = set(
+            CollectionContributorStats.objects.values_list(
+                "collection_id",
+                "region_id",
+                "user_id",
+                "georeference_count",
+                "first_georeferenced_at",
+            )
+        )
+
+        migration = importlib.import_module(
+            "images.migrations.0071_collectioncontributorstats"
+        )
+        CollectionContributorStats.objects.all().delete()
+        with connection.cursor() as cursor:
+            cursor.execute(migration.BACKFILL_COLLECTION_CONTRIBUTOR_STATS_SQL)
+
+        self.assertEqual(
+            set(
+                CollectionContributorStats.objects.values_list(
+                    "collection_id",
+                    "region_id",
+                    "user_id",
+                    "georeference_count",
+                    "first_georeferenced_at",
+                )
+            ),
+            expected,
+        )
+
+
+class TopGeoreferencersTests(ContributorFixturesMixin, TestCase):
+    """The avatar stack on source and collection pages."""
+
+    def top(self, collections=None, region=None, limit=5):
+        ids = [c.pk for c in collections or [self.collection]]
+        return get_top_georeferencers(ids, region, limit=limit)
+
+    def test_ranks_by_georeference_count_including_aerial(self):
+        alice, bob = self.user("alice"), self.user("bob")
+        self.georef(self.img("A"), alice, n=2)
+        self.georef(self.img("B"), bob, n=2)
+        self.aerial_georef(self.img("Aerial", aerial=True), bob)
+
+        result = self.top()
+
+        self.assertEqual([p["name"] for p in result["shown"]], ["bob", "alice"])
+        self.assertEqual([p["count"] for p in result["shown"]], [3, 2])
+        self.assertEqual(
+            result["shown"][0]["url"], reverse("user_profile", args=["bob"])
+        )
+        self.assertEqual(
+            result["shown"][0]["picture_url"], "https://r2.example.com/bob.png"
+        )
+        self.assertEqual(result["more_count"], 0)
+
+    def test_ties_go_to_whoever_started_first(self):
+        alice, bob = self.user("alice"), self.user("bob")
+        self.georef(self.img("A"), bob)
+        self.georef(self.img("B"), alice)
+        self.assertEqual([p["name"] for p in self.top()["shown"]], ["bob", "alice"])
+
+    def test_users_without_pictures_and_overflow_become_more(self):
+        image = self.img("A")
+        # The top contributor has no picture, so they're counted, not shown
+        self.georef(image, self.user("nopic", picture=False), n=10)
+        for n in range(6):
+            self.georef(image, self.user(f"u{n}"), n=6 - n)
+        with self.stats_events():
+            # Anonymous submissions aren't anyone's to show or count
+            Georeference.objects.create(
+                image=self.img("B"), point=Point(-77.43, 37.54, srid=4326)
+            )
+
+        result = self.top(limit=5)
+
+        self.assertEqual(
+            [p["name"] for p in result["shown"]], ["u0", "u1", "u2", "u3", "u4"]
+        )
+        self.assertEqual(result["more_count"], 2)  # nopic and u5
+
+    def test_zeroed_rows_are_not_contributors(self):
+        georef = self.georef(self.img("A"), self.user("alice"))
+        with self.stats_events():
+            georef.delete()
+        self.assertEqual(self.top(), {"shown": [], "more_count": 0})
+
+    def test_sums_across_collections(self):
+        alice, bob = self.user("alice"), self.user("bob")
+        self.georef(self.img("A"), alice, n=2)
+        self.georef(self.img("B", collection=self.other), alice, n=2)
+        self.georef(self.img("C", collection=self.other), bob, n=3)
+
+        result = self.top([self.collection, self.other])
+
+        self.assertEqual(
+            [(p["name"], p["count"]) for p in result["shown"]],
+            [("alice", 4), ("bob", 3)],
+        )
+        self.assertEqual([p["name"] for p in self.top()["shown"]], ["alice"])
+
+    def test_region_counts_only_images_in_that_region(self):
+        alice, bob = self.user("alice"), self.user("bob")
+        self.georef(self.img("A", region=self.city), alice)
+        self.georef(self.img("B"), bob, n=2)
+
+        self.assertEqual(
+            [p["name"] for p in self.top(region=self.state)["shown"]], ["alice"]
+        )
+        self.assertEqual([p["name"] for p in self.top()["shown"]], ["bob", "alice"])
+
+    def test_detail_pages_render_stack(self):
+        self.georef(self.img("A"), self.user("alice"))
+        profile_url = reverse("user_profile", args=["alice"])
+
+        for url in (
+            self.source.get_absolute_url(),
+            self.collection.get_absolute_url(),
+        ):
+            with self.subTest(url=url):
+                response = self.client.get(url)
+                self.assertContains(response, "Georeferenced by")
+                self.assertContains(response, f'href="{profile_url}"')
+                self.assertContains(response, 'alice&#10;1 georeference"')
+
+    def test_detail_pages_follow_selected_region(self):
+        self.georef(self.img("A", region=self.city), self.user("alice"))
+        self.georef(self.img("B", region=self.state), self.user("bob"))
+        self.client.cookies[REGION_COOKIE_NAME] = self.city.slug
+
+        response = self.client.get(self.collection.get_absolute_url())
+
+        self.assertContains(response, "alice&#10;")
+        self.assertNotContains(response, "bob&#10;")
+
+    def test_detail_page_without_pictures_reads_as_one_phrase(self):
+        self.georef(self.img("A"), self.user("nopic", picture=False))
+        response = self.client.get(self.collection.get_absolute_url())
+        self.assertContains(response, "Georeferenced by 1 contributor</span>")
+        self.assertNotContains(response, "avatar-stack-label")
+
+    def test_detail_page_without_georeferences_omits_stack(self):
+        self.img("A")
+        response = self.client.get(self.collection.get_absolute_url())
+        self.assertNotContains(response, "Georeferenced by")
+
+    def test_collection_page_query_count_is_flat(self):
+        image = self.img("A")
+        for n in range(8):
+            self.georef(image, self.user(f"u{n}"))
+        with CaptureQueriesContext(connection) as few:
+            self.top()
+        for n in range(8, 30):
+            self.georef(image, self.user(f"u{n}"))
+        with CaptureQueriesContext(connection) as many:
+            self.top()
+        self.assertEqual(len(few), len(many))

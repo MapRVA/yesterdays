@@ -20,6 +20,7 @@ from django.urls import reverse
 from regions.context_processors import get_current_region
 from regions.models import Region
 
+from ..contributors import get_top_georeferencers
 from ..models import (
     Collection,
     CollectionRegionStats,
@@ -300,6 +301,9 @@ def source_detail(request, slug):
         else 0,
         "top_rated_image": top_rated_image,
         "rendered_description": rendered_description,
+        "georeferencers": get_top_georeferencers(
+            [collection.pk for collection in collections], region
+        ),
     }
     return render(request, "images/source_detail.html", context)
 
@@ -413,6 +417,7 @@ def collection_detail(request, source_slug, collection_slug):
         else 0,
         "top_rated_image": top_rated_image,
         "rendered_description": rendered_description,
+        "georeferencers": get_top_georeferencers([collection.pk], region),
     }
     return render(request, "images/collection_detail.html", context)
 

@@ -26,6 +26,7 @@ from . import clip_client
 from .embeddings import QUERY_VECTOR_SQL, VECTOR_SQL
 from .models import (
     CollectionEmbeddingStats,
+    CollectionContributorStats,
     CollectionRegionStats,
     CollectionStats,
     DuplicateImagePair,
@@ -36,8 +37,8 @@ from .utils import R2Uploader, R2UploaderError, to_rgb
 
 logger = logging.getLogger(__name__)
 
-# How long a zeroed CollectionRegionStats row must sit untouched before the
-# reconcile below drops it. An internal safety margin against deleting a row a
+# How long a zeroed CollectionRegionStats or CollectionContributorStats row
+# must sit untouched before its reconcile below drops it. An internal safety margin against deleting a row a
 # concurrent refresh is about to rewrite, not a tunable.
 EMPTY_REGION_STATS_TTL = timedelta(days=1)
 
@@ -571,6 +572,20 @@ def reconcile_collection_region_stats():
     # still be about to write it.
     CollectionRegionStats.objects.filter(
         total_images=0, updated_at__lt=timezone.now() - EMPTY_REGION_STATS_TTL
+    ).delete()
+
+
+@shared_task(ignore_result=True)
+def reconcile_collection_contributor_stats():
+    """Recompute every CollectionContributorStats row from scratch.
+
+    The same backstop as reconcile_collection_region_stats, including the
+    garbage collection of rows zeroed by refreshes.
+    """
+    CollectionContributorStats.refresh_for()
+    CollectionContributorStats.objects.filter(
+        georeference_count=0,
+        updated_at__lt=timezone.now() - EMPTY_REGION_STATS_TTL,
     ).delete()
 
 
