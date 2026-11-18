@@ -186,6 +186,7 @@
                             </div>
                         {% endif %}
 
+                        {% if current_image.original_url %}
                         <div class="col-lg-4 col-md-4 col-sm-6">
                             <div class="d-flex">
                                 <dt class="text-muted small me-2">Original URL:</dt>
@@ -196,6 +197,7 @@
                                 </dd>
                             </div>
                         </div>
+                        {% endif %}
 
                         <div class="col-lg-4 col-md-4 col-sm-6">
                             <div class="d-flex">
@@ -505,7 +507,7 @@
             isGeoreferenced: {{ current_image.georeferences.exists|yesno:"true,false" }},
             title: "{{ current_image.title|default:"null"|escapejs }}",
             permalink: "{{ current_image.display_permalink }}",
-            originalUrl: "{{ current_image.original_url }}",
+            originalUrl: "{{ current_image.original_url|default:''|escapejs }}",
             description: "{{ current_image.description|default:"null"|escapejs }}",
             dateDisplay: "{{ current_image.date_display }}",
             difficulty: "{{ current_image.difficulty|default:"null"|safe }}",

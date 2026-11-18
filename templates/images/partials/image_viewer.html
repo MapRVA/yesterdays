@@ -66,9 +66,11 @@
         <div class="text-center">
             <i class="fas fa-image fa-4x text-muted mb-3"></i>
             <p class="text-muted mb-3">Image could not be loaded</p>
+            {% if image.original_url %}
             <a href="{{ image.original_url }}" target="_blank" class="btn btn-outline-primary">
                 <i class="fas fa-external-link-alt me-1"></i>View Original Image
             </a>
+            {% endif %}
         </div>
     </div>
     {% endif %}

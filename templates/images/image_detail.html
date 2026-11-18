@@ -267,13 +267,15 @@
                                 <dd class="col-sm-7">{{ image.description }}</dd>
                             {% endif %}
 
-                            <dt class="col-sm-5">Source:</dt>
-                            <dd class="col-sm-7">
-                                <a href="{{ image.original_url }}" target="_blank" class="text-decoration-none" id="source-link">
-                                    <span id="source-domain">Loading...</span>
-                                    <i class="fas fa-external-link-alt ms-1 small"></i>
-                                </a>
-                            </dd>
+                            {% if image.original_url %}
+                                <dt class="col-sm-5">Source:</dt>
+                                <dd class="col-sm-7">
+                                    <a href="{{ image.original_url }}" target="_blank" class="text-decoration-none" id="source-link">
+                                        <span id="source-domain">Loading...</span>
+                                        <i class="fas fa-external-link-alt ms-1 small"></i>
+                                    </a>
+                                </dd>
+                            {% endif %}
 
                             {% if image.license %}
                                 <dt class="col-sm-5">License:</dt>
@@ -611,9 +613,11 @@
 
                         <!-- External links -->
                         <div class="d-grid gap-2">
+                            {% if image.original_url %}
                             <a href="{{ image.original_url }}" target="_blank" class="btn btn-outline-success btn-sm">
                                 <i class="fas fa-external-link-alt me-1"></i>View Original Source
                             </a>
+                            {% endif %}
                             {% if image.embedding %}
                             <a href="{% url 'images:find_similar_images' image.id %}" class="btn btn-outline-primary btn-sm">
                                 <i class="fas fa-search me-1"></i>Find Similar Images
