@@ -1,3 +1,4 @@
+import hashlib
 import logging
 from urllib.parse import urlencode
 
@@ -21,6 +22,7 @@ from django.db.models import (
 from django.db.models.functions import Lower
 from django.http import (
     Http404,
+    HttpResponse,
     HttpResponseBadRequest,
     HttpResponsePermanentRedirect,
     JsonResponse,
@@ -912,6 +914,66 @@ def subject_map_info(request, qid):
             "date_range": wikidata_item.date_range if wikidata_item else "",
         }
     )
+
+
+# One point per mapped, non-generic subject, with the same properties as a
+# feature of the osm_elements vector tiles so the map's hover and pin code
+# reads either.
+# ST_PointOnSurface over all of a subject's elements always lands on one of
+# them: inside a polygon, on a line, or on the point itself.
+SUBJECT_MAP_POINTS_SQL = """
+    SELECT json_build_object(
+        'type', 'FeatureCollection',
+        'features', COALESCE(json_agg(json_build_object(
+            'type', 'Feature',
+            'geometry', ST_AsGeoJSON(subject_points.point, 6)::json,
+            'properties', json_build_object(
+                'subject_name', subject_points.title,
+                'subject_key', subject_points.subject_key,
+                'image_ids', subject_points.image_ids
+            )
+        ) ORDER BY subject_points.subject_key), '[]'::json)
+    )::text
+    FROM (
+        SELECT
+            s.title,
+            -- Mirrors Subject.url_key: the Q-ID, then "-<slug>" if any.
+            w.wikidata_id || COALESCE('-' || NULLIF(s.slug, ''), '') AS subject_key,
+            ST_PointOnSurface(ST_Collect(oe.geometry)) AS point,
+            (
+                SELECT string_agg(CAST(sm.image_id AS text), ',' ORDER BY sm.image_id)
+                FROM images_subjectmapping sm
+                WHERE sm.subject_id = s.id
+            ) AS image_ids
+        FROM subjects_osmelement oe
+        INNER JOIN subjects_subject s ON s.id = oe.subject_id
+        INNER JOIN subjects_wikidataitem w ON w.id = s.wikidata_item_id
+        WHERE NOT s.generic
+            AND EXISTS (
+                SELECT 1 FROM images_subjectmapping sm WHERE sm.subject_id = s.id
+            )
+        GROUP BY s.id, w.wikidata_id
+    ) subject_points
+"""
+
+
+def subject_map_points(request):
+    """GeoJSON of every mapped subject as a single point.
+
+    The subjects map clusters these client-side below
+    ``SUBJECT_MAP_MIN_ZOOM``, where it requests no OSM element tiles. Cached
+    like those tiles, since both change whenever the OSM refresh runs.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(SUBJECT_MAP_POINTS_SQL)
+        body = cursor.fetchone()[0].encode()
+
+    response = HttpResponse(body, content_type="application/geo+json")
+    response["Cache-Control"] = (
+        f"public, max-age=0, s-maxage={settings.SUBJECT_MAP_TILE_CACHE_SECONDS}"
+    )
+    response["ETag"] = f'"{hashlib.md5(body).hexdigest()}"'
+    return response
 
 
 def legacy_subject_redirect(request, legacy_slug, view_name):

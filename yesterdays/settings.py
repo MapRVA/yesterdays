@@ -539,9 +539,10 @@ MEMGRAPH_TIMEOUT = int(os.getenv("MEMGRAPH_TIMEOUT", "60"))
 
 # How long the subjects-map info panel's JSON responses may be cached.
 SUBJECT_MAP_INFO_CACHE_SECONDS = int(os.getenv("SUBJECT_MAP_INFO_CACHE_SECONDS", "300"))
-# Below this zoom the subjects map requests no OSM element tiles: outlines
-# aren't legible there, and a low-zoom tile would sweep the whole table.
-SUBJECT_MAP_MIN_ZOOM = int(os.getenv("SUBJECT_MAP_MIN_ZOOM", "6"))
+# Below this zoom the subjects map requests no OSM element tiles (outlines
+# aren't legible there, and a low-zoom tile would sweep the whole table) and
+# shows each subject as a single, clustered point instead.
+SUBJECT_MAP_MIN_ZOOM = int(os.getenv("SUBJECT_MAP_MIN_ZOOM", "10"))
 # Edge-cache lifetime for OSM element tiles; browsers always revalidate.
 SUBJECT_MAP_TILE_CACHE_SECONDS = int(os.getenv("SUBJECT_MAP_TILE_CACHE_SECONDS", "300"))
 

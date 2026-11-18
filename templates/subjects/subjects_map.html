@@ -41,6 +41,7 @@
      data-tiles-url="{% url 'images:vector_tiles' v=tile_version z=0 x=0 y=0 %}"
      data-osm-elements-url="{% url 'images:osm_elements_tiles' z=0 x=0 y=0 %}"
      data-osm-elements-min-zoom="{{ osm_element_min_zoom }}"
+     data-subject-points-url="{% url 'subjects:subject_map_points' %}"
      data-info-url="{% url 'subjects:subject_map_info' qid='Q0' %}"
      data-subject-url="{% url 'subjects:subject_detail' qid='Q0' %}"
      @subjects-map:preview.window="preview($event.detail)"

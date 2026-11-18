@@ -1,14 +1,21 @@
-import type { Map as MapLibreMap, Point } from "maplibre-gl";
+import type {
+  GeoJSONSource,
+  MapGeoJSONFeature,
+  Map as MapLibreMap,
+  Point,
+} from "maplibre-gl";
 import {
   IMAGE_CIRCLES_LAYER,
   IMAGE_DIRECTIONS_LAYER,
+  SUBJECT_CLUSTERS_LAYER,
   SUBJECT_LAYER_IDS,
+  imageDirectionsFilter,
 } from "./layers";
 import { SUBJECT_MAP_EVENTS } from "./types";
 import type { SubjectFeatureProperties, SubjectHit } from "./types";
 
-// Rewriting the image-point paint properties is the expensive part of a
-// hover, so it trails the panel update by a beat.
+// Restyling the image points and refiltering their arrows is the expensive
+// part of a hover, so it trails the panel update by a beat.
 const HIGHLIGHT_DEBOUNCE_MS = 10;
 
 export interface SubjectInteractions {
@@ -38,6 +45,28 @@ export function registerSubjectInteractions(
   // querying a missing layer makes MapLibre fire an error event.
   function queryableLayers(): string[] {
     return SUBJECT_LAYER_IDS.filter((id) => map.getLayer(id));
+  }
+
+  function clusterAt(point: Point): MapGeoJSONFeature | null {
+    if (!map.getLayer(SUBJECT_CLUSTERS_LAYER)) return null;
+    return (
+      map.queryRenderedFeatures(point, { layers: [SUBJECT_CLUSTERS_LAYER] })[0] ??
+      null
+    );
+  }
+
+  // Zooms to where the cluster splits apart, centred on it.
+  async function expandCluster(cluster: MapGeoJSONFeature): Promise<void> {
+    if (cluster.geometry.type !== "Point") return;
+    const source = map.getSource<GeoJSONSource>(cluster.source);
+    if (!source) return;
+    const zoom = await source.getClusterExpansionZoom(
+      cluster.properties.cluster_id as number,
+    );
+    map.easeTo({
+      center: cluster.geometry.coordinates as [number, number],
+      zoom,
+    });
   }
 
   function subjectAt(point: Point): SubjectHit | null {
@@ -78,8 +107,9 @@ export function registerSubjectInteractions(
         opacity,
       );
     }
+    // Arrows are filtered rather than faded: see imageDirectionsFilter.
     if (map.getLayer(IMAGE_DIRECTIONS_LAYER)) {
-      map.setPaintProperty(IMAGE_DIRECTIONS_LAYER, "icon-opacity", opacity);
+      map.setFilter(IMAGE_DIRECTIONS_LAYER, imageDirectionsFilter(imageIds));
     }
   }
 
@@ -92,7 +122,7 @@ export function registerSubjectInteractions(
 
   map.on("mousemove", (e) => {
     const hit = subjectAt(e.point);
-    map.getCanvas().style.cursor = hit ? "pointer" : "";
+    map.getCanvas().style.cursor = hit || clusterAt(e.point) ? "pointer" : "";
 
     if (pinnedKey) return;
 
@@ -119,6 +149,12 @@ export function registerSubjectInteractions(
   // A tap arrives here too, which is what makes the panel reachable on
   // touch: it pins the subject instead of navigating away from the map.
   map.on("click", (e) => {
+    const cluster = clusterAt(e.point);
+    if (cluster) {
+      void expandCluster(cluster);
+      return;
+    }
+
     const hit = subjectAt(e.point);
 
     if (!hit) {

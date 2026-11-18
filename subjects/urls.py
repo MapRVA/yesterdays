@@ -56,6 +56,11 @@ urlpatterns = [
         name="subject_map_info",
     ),
     path(
+        "api/map-points/",
+        views.subject_map_points,
+        name="subject_map_points",
+    ),
+    path(
         "api/bulk-add/",
         views.bulk_add_subject_to_images,
         name="bulk_add_subject_to_images",

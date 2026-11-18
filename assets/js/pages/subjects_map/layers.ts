@@ -7,9 +7,22 @@ import { DIRECTION_SPRITE_ID as DIRECTION_ICON } from "../../components/map_disp
 import { DIRECTION_SPRITE_URL as DIRECTION_ICON_URL } from "../../components/map_display/direction_sprite";
 import type { SubjectsMapUrls } from "./types";
 
-// Subject geometry layers, ordered so the topmost queryable feature is also
-// the visually topmost one: large polygons < small polygons < lines < points.
+// Below the OSM element tiles' min zoom, every subject is one point from
+// this GeoJSON source, clustered by MapLibre.
+const SUBJECT_POINTS_SOURCE = "subject-points";
+export const SUBJECT_CLUSTERS_LAYER = "subject-clusters";
+const SUBJECT_CLUSTER_COUNT_LAYER = "subject-cluster-count";
+const SUBJECT_POINT_LAYER = "subject-point";
+
+// Pixel radius within which subject points merge into a cluster.
+const CLUSTER_RADIUS = 50;
+
+// Subject layers, ordered so the topmost queryable feature is also the
+// visually topmost one: large polygons < small polygons < lines < points.
+// The lone subject point only draws below the tiles' min zoom, where none of
+// the geometry layers do.
 export const SUBJECT_LAYER_IDS = [
+  SUBJECT_POINT_LAYER,
   "osm-elements-points",
   "osm-elements-lines",
   "osm-elements-polygons-small-fill",
@@ -21,7 +34,27 @@ export const SUBJECT_LAYER_IDS = [
 export const IMAGE_CIRCLES_LAYER = "image-circles";
 export const IMAGE_DIRECTIONS_LAYER = "image-directions";
 
+// Direction arrows are symbols, and MapLibre places every symbol a layer
+// admits, drawn or not. Unfiltered, an image tile is thousands of arrows that
+// sit on top of each other when zoomed out, which makes cross-tile placement
+// quadratic and freezes the page. So arrows only ever admit the highlighted
+// images, and only once zoomed in far enough to tell them apart.
+const IMAGE_DIRECTIONS_MIN_ZOOM = 12;
+
+// The arrows for exactly these images; none for an empty list.
+export function imageDirectionsFilter(imageIds: number[]): FilterSpecification {
+  if (imageIds.length === 0) return false;
+  return [
+    "all",
+    ["has", "direction"],
+    ["in", ["get", "id"], ["literal", imageIds]],
+  ];
+}
+
 const SUBJECT_COLOR = "#ff6b35";
+
+// Shared by both subject sources; MapLibre lists an identical string once.
+const SUBJECT_ATTRIBUTION = "Subject geometries © OpenStreetMap Contributors";
 
 // Polygons below this area (in square degrees) are drawn on top of, and more
 // opaquely than, the larger ones, so a small building inside a park stays
@@ -59,18 +92,21 @@ export function addCustomLayers(
     minzoom: urls.osmElementMinZoom,
     maxzoom: 14,
     scheme: "xyz",
-    attribution: "Subject geometries © OpenStreetMap Contributors",
+    attribution: SUBJECT_ATTRIBUTION,
   });
 
+  // No image tiles while subjects are clustered: below the outlines' min zoom
+  // the points would be too dense to read, and each tile is every image.
   map.addSource("images", {
     type: "vector",
     tiles: [urls.imageTiles],
-    minzoom: 0,
+    minzoom: urls.osmElementMinZoom,
     maxzoom: 14,
   });
 
   // Image points stay invisible until a subject is hovered or pinned, at
-  // which point interactions.ts reveals just that subject's images.
+  // which point interactions.ts reveals just that subject's images. Circles
+  // aren't placed like symbols, so hiding them by opacity costs nothing.
   map.addLayer({
     id: IMAGE_CIRCLES_LAYER,
     type: "circle",
@@ -173,6 +209,84 @@ export function addCustomLayers(
       "circle-stroke-color": "#fff",
     },
   });
+
+  addSubjectPointLayers(map, urls);
+}
+
+// Zoomed out past the OSM element tiles, subjects collapse to clustered
+// points. Every layer here stops at that zoom (a layer's maxzoom is
+// exclusive), so exactly one representation is ever on screen.
+function addSubjectPointLayers(map: MapLibreMap, urls: SubjectsMapUrls): void {
+  const maxzoom = urls.osmElementMinZoom;
+
+  map.addSource(SUBJECT_POINTS_SOURCE, {
+    type: "geojson",
+    data: urls.subjectPoints,
+    cluster: true,
+    clusterRadius: CLUSTER_RADIUS,
+    // Clusters must break apart before the outlines take over.
+    clusterMaxZoom: maxzoom - 1,
+    attribution: SUBJECT_ATTRIBUTION,
+  });
+
+  map.addLayer({
+    id: SUBJECT_CLUSTERS_LAYER,
+    type: "circle",
+    source: SUBJECT_POINTS_SOURCE,
+    maxzoom,
+    filter: ["has", "point_count"],
+    paint: {
+      "circle-color": SUBJECT_COLOR,
+      "circle-opacity": 0.85,
+      "circle-stroke-width": 2,
+      "circle-stroke-color": "#fff",
+      "circle-radius": [
+        "step",
+        ["get", "point_count"],
+        14,
+        10,
+        18,
+        50,
+        23,
+        200,
+        28,
+      ],
+    },
+  });
+
+  map.addLayer({
+    id: SUBJECT_CLUSTER_COUNT_LAYER,
+    type: "symbol",
+    source: SUBJECT_POINTS_SOURCE,
+    maxzoom,
+    filter: ["has", "point_count"],
+    layout: {
+      "text-field": ["get", "point_count_abbreviated"],
+      // The Protomaps style's glyphs only cover its own Noto Sans faces.
+      "text-font": ["Noto Sans Medium"],
+      "text-size": 13,
+      "text-allow-overlap": true,
+      "text-ignore-placement": true,
+    },
+    paint: {
+      "text-color": "#fff",
+    },
+  });
+
+  map.addLayer({
+    id: SUBJECT_POINT_LAYER,
+    type: "circle",
+    source: SUBJECT_POINTS_SOURCE,
+    maxzoom,
+    filter: ["!", ["has", "point_count"]],
+    paint: {
+      "circle-radius": 6,
+      "circle-color": SUBJECT_COLOR,
+      "circle-opacity": 0.7,
+      "circle-stroke-width": 2,
+      "circle-stroke-color": "#fff",
+    },
+  });
 }
 
 // The direction arrows need an image loaded over the network, so they land
@@ -190,7 +304,9 @@ async function addDirectionLayer(map: MapLibreMap): Promise<void> {
         type: "symbol",
         source: "images",
         "source-layer": "image_points",
-        filter: ["has", "direction"],
+        minzoom: IMAGE_DIRECTIONS_MIN_ZOOM,
+        // interactions.ts swaps in the highlighted images' ids.
+        filter: imageDirectionsFilter([]),
         layout: {
           "icon-image": DIRECTION_ICON,
           "icon-overlap": "always",
@@ -199,9 +315,6 @@ async function addDirectionLayer(map: MapLibreMap): Promise<void> {
           "icon-rotate": ["to-number", ["get", "direction"]],
           "icon-rotation-alignment": "map",
           "icon-pitch-alignment": "map",
-        },
-        paint: {
-          "icon-opacity": 0,
         },
       },
       map.getLayer(IMAGE_CIRCLES_LAYER) ? IMAGE_CIRCLES_LAYER : undefined,

@@ -1,5 +1,6 @@
 import importlib
 import json
+import math
 import re
 from datetime import date, timedelta
 from pathlib import Path
@@ -2811,3 +2812,146 @@ class SubjectSimilarImagesRegionTests(TestCase):
         self.assertIsNone(response.context["browse_region"])
         self.assertFalse(response.context["region_fallback"])
         self.assertNotContains(response, "of 4 images in")
+
+
+def _tile_xy(lon, lat, z):
+    """The XYZ tile containing a WGS84 point at zoom z."""
+    n = 2**z
+    x = int((lon + 180) / 360 * n)
+    y = int((1 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2 * n)
+    return x, y
+
+
+class SubjectsMapDataTests(TestCase):
+    """What the subjects map is fed: OSM outline tiles and clustered points."""
+
+    LANDMARK = (-77.4360, 37.5410)
+    HYDRANT = (9.4867, 0.4306)
+
+    @classmethod
+    def setUpTestData(cls):
+        source = Source.objects.create(
+            name="Archive", slug="archive", url="https://example.com", description=""
+        )
+        collection = Collection.objects.create(
+            source=source, name="Photos", slug="photos"
+        )
+        cls.images = [
+            Image.objects.create(
+                collection=collection,
+                title=f"Image {i}",
+                permalink=f"https://example.com/{i}.jpg",
+            )
+            for i in range(3)
+        ]
+
+        cls.landmark = _subject("Old City Hall", "old-city-hall", "Q7083694")
+        lon, lat = cls.LANDMARK
+        d = 0.0005
+        OsmElement.objects.create(
+            osm_type="W",
+            osm_id=1,
+            subject=cls.landmark,
+            geometry=Polygon(
+                (
+                    (lon - d, lat - d),
+                    (lon - d, lat + d),
+                    (lon + d, lat + d),
+                    (lon + d, lat - d),
+                    (lon - d, lat - d),
+                ),
+                srid=4326,
+            ),
+        )
+        # A second element of the same subject: still one point on the map.
+        OsmElement.objects.create(
+            osm_type="N",
+            osm_id=2,
+            subject=cls.landmark,
+            geometry=Point(lon + d / 2, lat, srid=4326),
+        )
+        SubjectMapping.objects.create(image=cls.images[0], subject=cls.landmark)
+        SubjectMapping.objects.create(image=cls.images[1], subject=cls.landmark)
+
+        cls.hydrant = _subject("fire hydrant", "fire-hydrant", "Q634299")
+        cls.hydrant.generic = True
+        cls.hydrant.save(update_fields=["generic"])
+        OsmElement.objects.create(
+            osm_type="N",
+            osm_id=3,
+            subject=cls.hydrant,
+            geometry=Point(*cls.HYDRANT, srid=4326),
+        )
+        SubjectMapping.objects.create(image=cls.images[2], subject=cls.hydrant)
+
+        # Has geometry but no images, so there is nothing to show for it.
+        unmapped = _subject("Unmapped", "unmapped", "Q999001")
+        OsmElement.objects.create(
+            osm_type="N",
+            osm_id=4,
+            subject=unmapped,
+            geometry=Point(lon + 0.01, lat, srid=4326),
+        )
+
+    def _points(self):
+        response = self.client.get(reverse("subjects:subject_map_points"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/geo+json")
+        return response.json()
+
+    def _tile(self, lon, lat, z=14):
+        x, y = _tile_xy(lon, lat, z)
+        response = self.client.get(
+            reverse("images:osm_elements_tiles", kwargs={"z": z, "x": x, "y": y})
+        )
+        self.assertEqual(response.status_code, 200)
+        return response.content
+
+    def test_points_are_one_per_mapped_non_generic_subject(self):
+        data = self._points()
+
+        self.assertEqual(data["type"], "FeatureCollection")
+        self.assertEqual(
+            [f["properties"]["subject_key"] for f in data["features"]],
+            ["Q7083694-old-city-hall"],
+        )
+
+    def test_point_carries_the_tile_feature_properties_and_lies_on_the_subject(self):
+        (feature,) = self._points()["features"]
+
+        self.assertEqual(
+            feature["properties"],
+            {
+                "subject_name": "Old City Hall",
+                "subject_key": "Q7083694-old-city-hall",
+                "image_ids": f"{self.images[0].id},{self.images[1].id}",
+            },
+        )
+        self.assertEqual(feature["geometry"]["type"], "Point")
+        lon, lat = feature["geometry"]["coordinates"]
+        self.assertAlmostEqual(lon, self.LANDMARK[0], delta=0.001)
+        self.assertAlmostEqual(lat, self.LANDMARK[1], delta=0.001)
+
+    def test_points_are_edge_cached_like_the_tiles(self):
+        response = self.client.get(reverse("subjects:subject_map_points"))
+
+        self.assertIn("s-maxage=", response["Cache-Control"])
+        self.assertIn("max-age=0", response["Cache-Control"])
+        self.assertTrue(response["ETag"])
+
+    def test_outline_tiles_include_regular_subjects(self):
+        self.assertTrue(self._tile(*self.LANDMARK))
+
+    def test_outline_tiles_skip_generic_subjects(self):
+        self.assertEqual(self._tile(*self.HYDRANT), b"")
+
+    def test_unmarking_a_generic_subject_puts_it_back_on_the_map(self):
+        Subject.objects.filter(pk=self.hydrant.pk).update(generic=False)
+
+        keys = [f["properties"]["subject_key"] for f in self._points()["features"]]
+        self.assertIn("Q634299-fire-hydrant", keys)
+        self.assertTrue(self._tile(*self.HYDRANT))
+
+    @override_settings(SUBJECT_MAP_MIN_ZOOM=10)
+    def test_outline_tiles_are_empty_below_the_min_zoom(self):
+        self.assertEqual(self._tile(*self.LANDMARK, z=9), b"")

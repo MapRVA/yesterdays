@@ -1,6 +1,7 @@
 // Entry point for the standalone subjects map (templates/subjects/subjects_map.html).
-// Subject geometries come from the osm_elements vector tiles; hovering or
-// tapping one reveals it in the info card handled by ./panel.
+// Subject geometries come from the osm_elements vector tiles; zoomed out
+// further, each subject is a single point, clustered. Hovering or tapping a
+// subject reveals it in the info card handled by ./panel.
 import "../../../styles/pages/subjects-map.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -38,6 +39,10 @@ document.addEventListener("DOMContentLoaded", () => {
     imageTiles: withPointsParam(toTileTemplate(wrapper.dataset.tilesUrl ?? "")),
     osmElementTiles: toTileTemplate(wrapper.dataset.osmElementsUrl ?? ""),
     osmElementMinZoom: Number(wrapper.dataset.osmElementsMinZoom ?? 0),
+    subjectPoints: new URL(
+      wrapper.dataset.subjectPointsUrl ?? "",
+      window.location.origin,
+    ).href,
   };
 
   const map = new maplibregl.Map({

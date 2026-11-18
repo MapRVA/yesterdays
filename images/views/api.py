@@ -614,6 +614,8 @@ def osm_elements_vector_tiles_endpoint(request, z, x, y):
             INNER JOIN subjects_wikidataitem w ON w.id = s.wikidata_item_id
             INNER JOIN images_subjectmapping sm ON s.id = sm.subject_id
             WHERE ST_Intersects(oe.geometry, ST_Transform(ST_TileEnvelope(%s, %s, %s), 4326))
+                -- Generic subjects ("fire station") match OSM elements anywhere.
+                AND NOT s.generic
             GROUP BY oe.id, s.id, oe.osm_id, oe.osm_type, oe.geometry, s.title, s.slug, w.wikidata_id, oe.geometry_area
             ORDER BY
                 CASE

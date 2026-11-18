@@ -43,8 +43,11 @@ export interface SubjectMapInfo {
 export interface SubjectsMapUrls {
   imageTiles: string;
   osmElementTiles: string;
-  // Below this zoom the server answers empty, so don't request at all.
+  // Below this zoom the server answers empty, so don't request at all; the
+  // clustered subject points stand in for the geometries there.
   osmElementMinZoom: number;
+  // GeoJSON of one point per subject (subjects:subject_map_points).
+  subjectPoints: string;
 }
 
 // Bridge between the map modules and the Alpine panel: neither holds a
