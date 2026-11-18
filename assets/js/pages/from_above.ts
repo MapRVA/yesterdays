@@ -6,6 +6,7 @@ import "../../styles/pages/from-above.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import maplibregl from "maplibre-gl";
+import { ATTRIBUTION_CONTROL_OPTIONS } from "../components/map_display/attribution";
 import type { FeatureCollection, MultiPolygon, Polygon } from "geojson";
 import { imageGrid } from "../components/image_grid";
 import { initialMapStyle } from "../components/layer_control";
@@ -156,6 +157,7 @@ window.Alpine.data("aerialsPage", function (): AerialsPage {
       window.setupPMTilesProtocol();
       const newMap = new maplibregl.Map({
         container,
+        attributionControl: ATTRIBUTION_CONTROL_OPTIONS,
         style: initialMapStyle(),
         ...initialMapView(),
       });

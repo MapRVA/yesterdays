@@ -5,6 +5,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { Polygon } from "geojson";
 import maplibregl from "maplibre-gl";
 import type { Map as MapLibreMap, Marker } from "maplibre-gl";
+import { ATTRIBUTION_CONTROL_OPTIONS } from "../components/map_display/attribution";
 import {
   RegionBoundsEditor,
   type RegionBounds,
@@ -126,6 +127,7 @@ function buildMap(
   const fit = bounds ?? (center ? null : WORLD_BOUNDS);
   const map = new maplibregl.Map({
     container,
+    attributionControl: ATTRIBUTION_CONTROL_OPTIONS,
     style: protomapsStyleUrl(),
     ...(fit
       ? {

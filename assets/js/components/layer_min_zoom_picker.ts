@@ -1,5 +1,6 @@
 import maplibregl from "maplibre-gl";
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
+import { ATTRIBUTION_CONTROL_OPTIONS } from "./map_display/attribution";
 import type { Polygon, Position } from "geojson";
 import type { MapLayerType } from "./layer_control/types";
 import {
@@ -201,6 +202,7 @@ export class LayerMinZoomPicker {
 
     const map = new maplibregl.Map({
       container: this.options.container,
+      attributionControl: ATTRIBUTION_CONTROL_OPTIONS,
       style: this.style,
       center: this.center,
       zoom: this.zoom,

@@ -11,6 +11,7 @@ import "../../styles/components/image-viewer.css";
 
 // JS imports
 import maplibregl from "maplibre-gl";
+import { ATTRIBUTION_CONTROL_OPTIONS } from "../components/map_display/attribution";
 import {
   Geoman,
   type FeatureCreatedFwdEvent,
@@ -134,6 +135,7 @@ function initFromAbove(config: FromAboveConfig): void {
 
   const map = new maplibregl.Map({
     container: "mymap",
+    attributionControl: ATTRIBUTION_CONTROL_OPTIONS,
     style: initialMapStyle(),
     ...initialMapView(),
   });

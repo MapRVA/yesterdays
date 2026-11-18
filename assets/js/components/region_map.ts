@@ -11,6 +11,7 @@ import "../../styles/components/region-map.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import maplibregl from "maplibre-gl";
+import { ATTRIBUTION_CONTROL_OPTIONS } from "./map_display/attribution";
 import { WORLD_BOUNDS } from "../constants/map";
 import { onColorSchemeChange, protomapsStyleUrl } from "./map_display/basemap";
 
@@ -178,6 +179,7 @@ export function initRegionMap({
 
   const map = new maplibregl.Map({
     container,
+    attributionControl: ATTRIBUTION_CONTROL_OPTIONS,
     style: protomapsStyleUrl(),
     // With no regions there is nothing to frame, so show the whole world,
     // as every other map does without a region.

@@ -8,6 +8,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 import maplibregl from "maplibre-gl";
 import type { Map as MapLibreMap } from "maplibre-gl";
+import { ATTRIBUTION_CONTROL_OPTIONS } from "../components/map_display/attribution";
 import type { Polygon } from "geojson";
 import { LayerExtentEditor } from "../components/layer_extent_editor";
 import { LayerMinZoomPicker } from "../components/layer_min_zoom_picker";
@@ -158,6 +159,7 @@ document.addEventListener("alpine:init", () => {
         if (!container) throw new Error("Missing #layer-preview-map");
         const map = new maplibregl.Map({
           container,
+          attributionControl: ATTRIBUTION_CONTROL_OPTIONS,
           style,
           ...initialMapView(),
         });

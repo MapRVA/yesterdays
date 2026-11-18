@@ -5,6 +5,7 @@ import "../../../styles/pages/subjects-map.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import maplibregl from "maplibre-gl";
+import { ATTRIBUTION_CONTROL_OPTIONS } from "../../components/map_display/attribution";
 import {
   onColorSchemeChange,
   protomapsStyleUrl,
@@ -41,6 +42,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const map = new maplibregl.Map({
     container,
+    attributionControl: ATTRIBUTION_CONTROL_OPTIONS,
     style: protomapsStyleUrl(),
     ...initialMapView(),
   });

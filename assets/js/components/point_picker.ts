@@ -25,6 +25,7 @@
  */
 
 import maplibregl, { type Map as MapLibreMap } from "maplibre-gl";
+import { ATTRIBUTION_CONTROL_OPTIONS } from "./map_display/attribution";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./map_display/pmtiles_protocol";
 import { initialMapStyle, LayerControl } from "./layer_control";
@@ -103,6 +104,7 @@ export function initPointPicker(options: PointPickerOptions): PointPicker {
 
   const map = new maplibregl.Map({
     container: mapId,
+    attributionControl: ATTRIBUTION_CONTROL_OPTIONS,
     style: initialMapStyle(),
     ...(initial
       ? { center: initial, zoom: PLACED_POINT_ZOOM }

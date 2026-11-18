@@ -1,8 +1,13 @@
-import maplibregl from "maplibre-gl";
+import maplibregl, { type AttributionControlOptions } from "maplibre-gl";
 
-// MapLibre's own default credit, which passing options would otherwise drop
-const MAPLIBRE_CREDIT =
-  '<a href="https://maplibre.org/" target="_blank">MapLibre</a>';
+/**
+ * MapLibre's default attribution control, minus the "MapLibre" credit it adds
+ * on its own. Pass as `attributionControl` to every `new maplibregl.Map` that
+ * doesn't mount its attribution through one of the helpers below.
+ */
+export const ATTRIBUTION_CONTROL_OPTIONS: AttributionControlOptions = {
+  compact: true,
+};
 
 /**
  * Show the map's attribution (MapLibre's AttributionControl, so it still
@@ -19,10 +24,7 @@ export function mountExternalAttribution(
   container: HTMLElement,
   fullscreenControl: maplibregl.FullscreenControl,
 ): void {
-  const control = new maplibregl.AttributionControl({
-    compact: false,
-    customAttribution: MAPLIBRE_CREDIT,
-  });
+  const control = new maplibregl.AttributionControl({ compact: false });
   const element = control.onAdd(map);
   container.appendChild(element);
 
@@ -48,10 +50,8 @@ export function mountExternalAttribution(
  * corner so it stays clear of the slider in the bottom-right.
  */
 export function addCornerAttribution(map: maplibregl.Map): void {
-  map.addControl(
-    new maplibregl.AttributionControl({ customAttribution: MAPLIBRE_CREDIT }),
-    "bottom-left",
-  );
+  // An options object, even empty: with none, MapLibre adds its own credit
+  map.addControl(new maplibregl.AttributionControl({}), "bottom-left");
 }
 
 /**
@@ -59,10 +59,7 @@ export function addCornerAttribution(map: maplibregl.Map): void {
  * start with an expanded attribution
  */
 export function addCollapsedAttribution(map: maplibregl.Map): void {
-  const control = new maplibregl.AttributionControl({
-    compact: true,
-    customAttribution: MAPLIBRE_CREDIT,
-  });
+  const control = new maplibregl.AttributionControl({ compact: true });
   map.addControl(control);
   control._updateCompactMinimize();
 }
