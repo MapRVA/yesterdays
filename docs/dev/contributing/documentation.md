@@ -7,7 +7,15 @@ It is additionally configured in `/zensical.toml`.
 
 ## Hosting locally
 
-Use the following command to host this site locally:
+Some interactive demos run the main site's own frontend code, which is bundled into `/docs/usage/demos/` with [Bun](https://bun.sh).
+Build them once (and again after changing the frontend code they use):
+
+```
+bun install
+bun run docs:demos
+```
+
+Then use the following command to host this site locally:
 
 ```
 uv run zensical serve

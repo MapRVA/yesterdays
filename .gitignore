@@ -3,6 +3,9 @@ models
 /static
 celerybeat-schedule.db
 
+# Docs demo scripts bundled from assets/ by `bun run docs:demos`
+/docs/usage/demos/image-viewer.js
+
 ## Claude-specific
 .claude
 CLAUDE.md

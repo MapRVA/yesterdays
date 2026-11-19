@@ -5,9 +5,10 @@ on:
       - trunk
     paths:
       - docs/**
-      - assets/images/surveillance-direction.png
-      - assets/styles/components/georeference-joystick.css
-      - assets/styles/components/image-viewer.css
+      # The demos symlink to and bundle from the app's frontend sources.
+      - assets/**
+      - package.json
+      - bun.lock
       - zensical.toml
       - pyproject.toml
       - uv.lock
@@ -25,6 +26,23 @@ jobs:
     steps:
       - uses: actions/configure-pages@v6
       - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Keep in lockstep with the oven/bun COPY in the Containerfile
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - name: Bundle demo scripts from the app's TypeScript
+        run: bun run docs:demos
+      # Zensical silently skips dangling symlinks, so a renamed asset would
+      # otherwise vanish from the built site without failing the build.
+      - name: Check for dangling symlinks in docs
+        run: |
+          broken=$(find docs -xtype l)
+          if [ -n "$broken" ]; then
+            echo "::error::Dangling symlinks in docs/:"
+            echo "$broken"
+            exit 1
+          fi
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # 8.2.0
       - run: uv sync --only-group docs
       - run: uv run --only-group docs zensical build --clean --strict
